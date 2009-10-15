@@ -1,17 +1,21 @@
 
 #include "l4x2.idl"
+#include "posix-base.idl"
 
 // NOTE: this doesn't reflect any actual IPC interface in µiX.
 
 module Muix
 {
 
-interface MemServ: L4X2::FaultHandler
+[StubPrefix(__memserv)]
+interface Memserv: L4X2::FaultHandler
 {
 	typedef long pid_t;
 
-	void create_space(in pid_t pid);
-	void destroy_space(in pid_t pid);
+	void create_space(in pid_t pid)
+		raises(Posix::Errno);
+	void destroy_space(in pid_t pid)
+		raises(Posix::Errno);
 };
 
 

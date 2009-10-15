@@ -8,11 +8,11 @@
 module L4X2
 {
 
-native __l4_word_t;
-typedef __l4_word_t word;
+native l4_word_t;
+typedef l4_word_t word;
 
-native __l4_mapgrantitem_t;
-typedef __l4_mapgrantitem_t MapGrantItem;
+native l4_mapgrantitem_t;
+typedef l4_mapgrantitem_t MapGrantItem;
 
 
 interface FaultHandler

@@ -1,0 +1,23 @@
+
+#ifndef _POSIX_BASE_IDL
+#define _POSIX_BASE_IDL
+
+module Posix
+{
+
+/* NegativeReturn: return x; where x < 0 pops this exception. therefore this
+ * exception is only applicable to operations that return void or a signed
+ * integral type (in which case this protocol maps over all negative return
+ * values).
+ *
+ * ReplyLabel: when this exception is returned, L4_Label(tag) is the value given.
+ */
+//[NegativeReturn(errno), ReplyLabel(1)]
+exception Errno {
+	unsigned short errno;
+};
+
+
+};
+
+#endif
