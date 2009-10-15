@@ -24,8 +24,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <assert.h>
+#include <ctype.h>
 #include <glib.h>
 #include <libIDL/IDL.h>
+
+
+#define IFACE_REPO_ID(t) IDL_IDENT_REPO_ID(IDL_INTERFACE((t)).ident)
+#define IFACE_NAME(t) (IDL_IDENT(IDL_INTERFACE((t)).ident).str)
+#define METHOD_NAME(t) (IDL_IDENT(IDL_OP_DCL((t)).ident).str)
+
 
 
 static int msg_callback(
@@ -40,6 +48,7 @@ static int msg_callback(
 }
 
 
+#if !1
 static gboolean tree_func(
 	IDL_tree_func_data *tf,
 	gpointer userdata)
@@ -83,9 +92,156 @@ static gboolean tree_func(
 			return TRUE;
 	}
 }
+#endif
 
 
-bool parse_idl_file(const char *filename)
+static bool collect_methods(
+	GList **methods_p,
+	GHashTable *ifaces_seen,
+	IDL_ns ns,
+	IDL_tree iface)
+{
+	/* depth-first recursion so that operation overlap errors etc. are caught
+	 * as close to the inheritance graph's root (i.e. the interfaces we're
+	 * going to use) as possible.
+	 *
+	 * multiple inherited inheritance of interfaces is A-OK.
+	 */
+	for(IDL_tree cur = IDL_INTERFACE(iface).inheritance_spec;
+		cur != NULL;
+		cur = IDL_LIST(cur).next)
+	{
+		IDL_tree inh_id = IDL_LIST(cur).data;
+		char *inh_repoid = IDL_IDENT_REPO_ID(inh_id);
+		if(g_hash_table_lookup(ifaces_seen, inh_repoid) == NULL) {
+			IDL_tree inh_iface_id = IDL_ns_resolve_this_scope_ident(ns,
+				IDL_IDENT_TO_NS(inh_id), inh_id);
+			if(inh_iface_id == NULL) {
+				fprintf(stderr, "can't find inherited interface `%s'\n",
+					inh_repoid);
+				return false;
+			}
+
+			assert(IDL_NODE_TYPE(inh_iface_id) == IDLN_GENTREE);
+			inh_iface_id = IDL_GENTREE(inh_iface_id).data;
+			assert(IDL_NODE_TYPE(inh_iface_id) == IDLN_IDENT);
+#if 0
+			printf("%s: recursing to `%s'\n", __FUNCTION__,
+				IDL_IDENT_REPO_ID(inh_iface_id));
+#endif
+			IDL_tree inh_iface = IDL_NODE_UP(inh_iface_id);
+			assert(IDL_NODE_TYPE(inh_iface) == IDLN_INTERFACE);
+
+			g_hash_table_insert(ifaces_seen, inh_repoid, inh_iface);
+			if(!collect_methods(methods_p, ifaces_seen, ns, inh_iface)) {
+				return false;
+			}
+		}
+	}
+
+	/* then the actual methods. */
+	for(IDL_tree cur = IDL_INTERFACE(iface).body;
+		cur != NULL;
+		cur = IDL_LIST(cur).next)
+	{
+		IDL_tree op = IDL_LIST(cur).data;
+		if(IDL_NODE_TYPE(op) != IDLN_OP_DCL) continue;
+		*methods_p = g_list_prepend(*methods_p, op);
+	}
+
+	return true;
+}
+
+
+static char *decapsify(const char *name)
+{
+	const int len = strlen(name);
+	int ncaps = 0;
+	for(int i=0; i < len; i++) if(isupper(name[i])) ncaps++;
+	char *out = g_malloc(sizeof(char) * (len + ncaps + 1));
+	int o = 0;
+	for(int i=0; i < len; i++) {
+		if(isupper(name[i])) {
+			if(i > 0) out[o++] = '_';
+			out[o++] = tolower(name[i]);
+		} else {
+			out[o++] = name[i];
+		}
+	}
+	out[o] = '\0';
+	return out;
+}
+
+
+static char *iface_prefix(IDL_ns ns, IDL_tree iface)
+{
+	char *ifname = decapsify(IFACE_NAME(iface));
+	return ifname;
+}
+
+
+static void print_vtable(
+	FILE *of,
+	IDL_tree file_tree,
+	IDL_ns ns,
+	IDL_tree iface)
+{
+	GList *methods = NULL;
+	GHashTable *ifaces_seen = g_hash_table_new(&g_str_hash, &g_str_equal);
+	g_hash_table_insert(ifaces_seen, IFACE_REPO_ID(iface), iface);
+	collect_methods(&methods, ifaces_seen, ns, iface);
+	g_hash_table_destroy(ifaces_seen);
+	methods = g_list_reverse(methods);
+
+	char *prefix = iface_prefix(ns, iface);
+	fprintf(of, "struct %s_vtable {\n", prefix);
+
+	for(GList *cur = g_list_first(methods);
+		cur != NULL;
+		cur = g_list_next(cur))
+	{
+		IDL_tree method = cur->data;
+		fprintf(of, "\t/* entry for `%s' */\n", METHOD_NAME(method));
+	}
+	fprintf(of, "};\n");
+	g_list_free(methods);
+	g_free(prefix);
+}
+
+
+static gboolean pick_ifaces(IDL_tree_func_data *tf, gpointer userdata)
+{
+	GHashTable *ifaces = userdata;
+	switch(IDL_NODE_TYPE(tf->tree)) {
+		default: return FALSE;
+
+		case IDLN_SRCFILE:
+		case IDLN_MODULE:
+		case IDLN_LIST:
+			return TRUE;
+
+		case IDLN_INTERFACE: {
+			char *name = IDL_IDENT(IDL_INTERFACE(tf->tree).ident).str;
+			g_hash_table_insert(ifaces, name, tf->tree);
+			return FALSE;
+		}
+	}
+}
+
+
+/* result is <char *> -> <IDL_tree [nodetype IDLN_INTERFACE]>, where the key is
+ * allocated within the given tree and is the unqualified name of the interface
+ * in question.
+ */
+static GHashTable *collect_ifaces(IDL_tree tree, IDL_ns ns)
+{
+	GHashTable *ifaces = g_hash_table_new(&g_str_hash, &g_str_equal);
+	IDL_tree_walk_in_order(tree, &pick_ifaces, ifaces);
+	return ifaces;
+}
+
+
+bool do_idl_file(const char *filename)
 {
 	IDL_tree tree = NULL;
 	IDL_ns ns = NULL;
@@ -101,9 +257,17 @@ bool parse_idl_file(const char *filename)
 		return false;
 	}
 
-	printf("IDL_parse_filename() returned %d (tree %p, ns %p)\n",
-		n, tree, ns);
-	IDL_tree_walk_in_order(tree, &tree_func, ns);
+	GHashTable *ifaces = collect_ifaces(tree, ns);
+	GHashTableIter iter;
+	g_hash_table_iter_init(&iter, ifaces);
+	gpointer key, value;
+	while(g_hash_table_iter_next(&iter, &key, &value)) {
+		printf("vtable for `%s':\n", (const char *)key);
+		print_vtable(stdout, tree, ns, (IDL_tree)value);
+	}
+
+	g_hash_table_destroy(ifaces);
+
 
 	IDL_ns_free(ns);
 	IDL_tree_free(tree);
@@ -122,7 +286,8 @@ int main(int argc, char *argv[])
 	IDL_check_cast_enable(TRUE);
 	bool ok = true;
 	for(int i=1; i<argc; i++) {
-		ok = ok && parse_idl_file(argv[i]);
+		bool status = do_idl_file(argv[i]);
+		ok = ok && status;
 	}
 	return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }
