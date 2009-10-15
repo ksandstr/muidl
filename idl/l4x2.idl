@@ -1,0 +1,33 @@
+
+#ifndef _L4X2_IDL
+#define _L4X2_IDL
+
+// make-believe IDL for L4.X2 protocols
+
+
+module L4X2
+{
+
+native word;
+typedef word threadid;
+
+// not distinguished. the IDL compiler just needs to understand that these
+// structures take up 2 consecutive words.
+[Storage(TYPED)]
+struct MapGrantItem {
+	word first;
+	word second;
+};
+
+interface FaultHandler
+{
+	[TagMask(0xfff00000), Label(0xff40)]
+	MapGrantItem handle_fault(
+		[MR(1)] in word faddr,
+		[MR(2)] in word fip);
+};
+
+
+};
+
+#endif

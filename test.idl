@@ -1,29 +1,12 @@
 
+#include "l4x2.idl"
+
 // NOTE: this doesn't reflect any actual IPC interface in µiX.
 
 module Muix
 {
 
-typedef unsigned long threadid;
-native word;
-
-
-struct MapItem {
-	word first;
-	word second;
-};
-
-// from L4.X2
-interface FaultHandler
-{
-	[TagMask(0xfff00000), Label(0xff40)]
-	MapItem handle_fault(
-		[MR(1)] in word faddr,
-		[MR(2)] in word fip);
-};
-
-
-interface MemServ: FaultHandler
+interface MemServ: L4X2::FaultHandler
 {
 	typedef long pid_t;
 
