@@ -1,0 +1,31 @@
+
+PKG=libIDL-2.0 glib-2.0
+CFLAGS:=-std=gnu99 -Wall -g $(shell pkg-config --cflags $(PKG))
+LIBS:=-lm $(shell pkg-config --libs $(PKG))
+
+.PHONY: all clean distclean
+
+
+all: tags muidl
+
+
+clean:
+	rm -f *.o
+
+
+distclean: clean
+	rm -f muidl
+	@rm -f tags
+
+
+muidl: muidl.o
+	$(CC) -o $@ $^ $(CFLAGS) $(LIBS)
+
+
+tags: $(wildcard *.[ch])
+	@ctags -R *
+
+
+%.o: %.c
+	$(CC) -c -o $@ $< $(CFLAGS)
+
