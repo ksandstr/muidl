@@ -2,3 +2,4 @@
 muidl
 *.o
 .*.sw[opn]
+tags
