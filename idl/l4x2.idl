@@ -8,16 +8,12 @@
 module L4X2
 {
 
-native word;
-typedef word threadid;
+native __l4_word_t;
+typedef __l4_word_t word;
 
-// not distinguished. the IDL compiler just needs to understand that these
-// structures take up 2 consecutive words.
-[Storage(TYPED)]
-struct MapGrantItem {
-	word first;
-	word second;
-};
+native __l4_mapgrantitem_t;
+typedef __l4_mapgrantitem_t MapGrantItem;
+
 
 interface FaultHandler
 {
@@ -27,7 +23,6 @@ interface FaultHandler
 		[MR(2)] in word fip);
 };
 
-
-};
+}; // module
 
 #endif
