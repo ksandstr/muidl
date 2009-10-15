@@ -48,20 +48,16 @@ static gboolean tree_func(
 	IDL_tree t = tf->tree;
 	switch(IDL_NODE_TYPE(t)) {
 		case IDLN_INTERFACE: {
-			IDL_tree ident = t->u.idl_interface.ident;
-			printf("interface: `%s'\n", ident->u.idl_ident.str);
+			IDL_tree ident = IDL_INTERFACE(t).ident;
+			printf("interface `%s' (repo id `%s')\n", IDL_IDENT(ident).str,
+				IDL_IDENT_REPO_ID(ident));
 			for(IDL_tree inh = IDL_INTERFACE(t).inheritance_spec;
 				inh != NULL;
 				inh = IDL_LIST(inh).next)
 			{
-				IDL_tree data = IDL_LIST(inh).data;
-				printf("  inherits `%s'\n", IDL_IDENT(data).str);
-				gboolean conflict = FALSE;
-				IDL_tree real = IDL_ns_lookup_cur_scope(ns, data, &conflict);
-				if(real != NULL) {
-					printf("  resolved has type %d%s\n", IDL_NODE_TYPE(real),
-						conflict ? " (conflict)" : " (no conflict)");
-				}
+				IDL_tree id = IDL_LIST(inh).data;
+				printf("  inherits `%s' (repo id `%s')\n", IDL_IDENT(id).str,
+					IDL_IDENT_REPO_ID(id));
 			}
 
 			return TRUE;
@@ -93,8 +89,10 @@ bool parse_idl_file(const char *filename)
 {
 	IDL_tree tree = NULL;
 	IDL_ns ns = NULL;
-	int n = IDL_parse_filename(filename, "", &msg_callback,
-		&tree, &ns, IDLF_PROPERTIES | IDLF_XPIDL, IDL_WARNING1);
+	int n = IDL_parse_filename(filename, "-I idl", &msg_callback,
+		&tree, &ns, IDLF_PROPERTIES | IDLF_XPIDL | IDLF_SHOW_CPP_ERRORS
+			| IDLF_COMBINE_REOPENED_MODULES | IDLF_INHIBIT_INCLUDES,
+		IDL_WARNING1);
 	if(n == IDL_ERROR) {
 		fprintf(stderr, "IDL_parse_filename() failed.\n");
 		return false;
