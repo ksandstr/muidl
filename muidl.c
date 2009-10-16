@@ -195,6 +195,42 @@ static IDL_tree get_type_spec(IDL_tree node)
 }
 
 
+/* returns "true" for non-primitive types that shouldn't be passed by
+ * value.
+ */
+static bool is_compound_type(IDL_tree type)
+{
+	if(type == NULL) return false;	/* void is not a compound type. */
+	switch(IDL_NODE_TYPE(type)) {
+		/* unsupported things */
+		case IDLN_TYPE_ANY:
+		case IDLN_TYPE_OBJECT:
+		case IDLN_TYPE_TYPECODE:
+		case IDLN_TYPE_FIXED:
+
+		/* actual compound types we'll see */
+		case IDLN_TYPE_ARRAY:
+		case IDLN_TYPE_SEQUENCE:
+		case IDLN_TYPE_STRUCT:
+		case IDLN_TYPE_UNION:
+			return true;
+
+		case IDLN_NATIVE:
+			if(IS_WORD_TYPE(type)) return false;
+			else if(IS_MAPGRANT_TYPE(type)) return true;
+			else {
+				/* FIXME: don't exit */
+				fprintf(stderr, "%s: unknown native type `%s'\n",
+					__FUNCTION__, NATIVE_NAME(type));
+				exit(EXIT_FAILURE);
+			}
+
+		default:
+			return false;
+	}
+}
+
+
 static const char *basic_type(IDL_ns ns, IDL_tree op_type)
 {
 	if(op_type == NULL) return "void";
@@ -220,17 +256,15 @@ static const char *basic_type(IDL_ns ns, IDL_tree op_type)
 			}
 
 			case IDLN_NATIVE: {
-				const char *nname = IDL_IDENT(IDL_NATIVE(op_type).ident).str;
-				if(strcmp(nname, "l4_word_t") == 0) {
+				if(IS_WORD_TYPE(op_type)) {
 					return "L4_Word_t";
-				} else if(strcmp(nname, "l4_mapgrantitem_t") == 0) {
-					/* FIXME: this should be handled as a structure
-					 * out-parameter!
-					 */
-					return "L4_MapGrantItem_t";
+				} else if(IS_MAPGRANT_TYPE(op_type)) {
+					fprintf(stderr, "%s: caller must handle native l4_mapgrantitem_t\n",
+						__FUNCTION__);
+					abort();
 				} else {
 					fprintf(stderr, "%s: native type `%s' not supported\n",
-						__FUNCTION__, nname);
+						__FUNCTION__, NATIVE_NAME(op_type));
 					exit(EXIT_FAILURE);
 				}
 				break;
@@ -254,10 +288,77 @@ static const char *basic_type(IDL_ns ns, IDL_tree op_type)
 			case IDLN_TYPE_UNION:
 
 			default:
-				fprintf(stderr, "%s: <%s> not implemented\n",
-					__FUNCTION__, NODETYPESTR(op_type));
+				if(is_compound_type(op_type)) {
+					fprintf(stderr, "%s: <%s> is a compound type\n",
+						__FUNCTION__, NODETYPESTR(op_type));
+				} else {
+					fprintf(stderr, "%s: <%s> not implemented\n",
+						__FUNCTION__, NODETYPESTR(op_type));
+				}
 				exit(EXIT_FAILURE);
 		}
+	}
+}
+
+
+/* returns the unabbreviated C name of a struct, union, interfacedcl, opdcl (in
+ * which case the stub's name is returned), enum, or const.
+ *
+ * the return value must be g_free()'d.
+ */
+static char *long_name(IDL_ns ns, IDL_tree node)
+{
+	/* FIXME: compute a prefix properly */
+	const char *prefix = "", *name;
+	switch(IDL_NODE_TYPE(node)) {
+		case IDLN_TYPE_STRUCT:
+			name = IDL_IDENT(IDL_TYPE_STRUCT(node).ident).str;
+			break;
+
+		case IDLN_TYPE_UNION:
+			name = IDL_IDENT(IDL_TYPE_UNION(node).ident).str;
+			break;
+
+		case IDLN_INTERFACE:
+			name = IDL_IDENT(IDL_INTERFACE(node).ident).str;
+			break;
+
+		case IDLN_OP_DCL:
+			/* FIXME: handle interface StubPrefix property! */
+			name = IDL_IDENT(IDL_OP_DCL(node).ident).str;
+			break;
+
+		case IDLN_TYPE_ENUM:
+			name = IDL_IDENT(IDL_TYPE_ENUM(node).ident).str;
+			break;
+
+		default:
+			fprintf(stderr, "%s: not defined for <%s>\n", __FUNCTION__,
+				NODETYPESTR(node));
+			abort();
+	}
+	return g_strconcat(prefix, name, NULL);
+}
+
+
+/* handles the "rigid" compound types, i.e. structs, unions, and arrays.
+ * return value is allocated and must be g_free()'d.
+ */
+static char *rigid_type(IDL_ns ns, IDL_tree type)
+{
+	switch(IDL_NODE_TYPE(type)) {
+		case IDLN_TYPE_STRUCT: {
+			char *l = long_name(ns, type),
+				*ret = g_strdup_printf("struct %s", l);
+			g_free(l);
+			return ret;
+		}
+
+		case IDLN_TYPE_UNION:
+		case IDLN_TYPE_ARRAY:
+
+		default:
+			return g_strdup(basic_type(ns, type));
 	}
 }
 
@@ -286,18 +387,18 @@ static const char *return_type(IDL_ns ns, IDL_tree op)
 			exit(EXIT_FAILURE);
 		}
 	} else if(has_negs_exns(ns, op)) {
-		if(op_type == NULL) return "int";
+		if(op_type == NULL || is_compound_type(op_type)) return "int";
 		else if(IDL_NODE_TYPE(op_type) != IDLN_TYPE_INTEGER
 				|| !IDL_TYPE_INTEGER(op_type).f_signed)
 		{
 			fprintf(stderr,
 				"return type for a NegativeReturn raising operation must be\n"
-				"void or a signed short, long or long long.\n");
+				"void, a signed short, long, long long, or a compound type.\n");
 			exit(EXIT_FAILURE);
 		}
 	}
 
-	return basic_type(ns, op_type);
+	return is_compound_type(op_type) ? "void" : basic_type(ns, op_type);
 }
 
 
@@ -337,10 +438,33 @@ static void print_vtable(
 	{
 		IDL_tree op = cur->data;
 
-		const char *rettyp = return_type(ns, op);
+		const char *rettypstr = return_type(ns, op);
 		char *name = decapsify(METHOD_NAME(op));
-		fprintf(of, "\t%s%s(*%s)(", rettyp, type_space(rettyp), name);
+		fprintf(of, "\t%s%s(*%s)(", rettypstr, type_space(rettypstr),
+			name);
 		g_free(name);
+
+		bool first_param = true;
+		IDL_tree rettyp = get_type_spec(IDL_OP_DCL(op).op_type_spec);
+		if(is_compound_type(rettyp)) {
+			/* compound type return values are declared as the first parameter,
+			 * because they're on the "left side".
+			 */
+			first_param = false;
+			if(IS_MAPGRANT_TYPE(rettyp)) {
+				fprintf(of, "L4_MapGrantItem_t *_result");
+			} else if(IDL_NODE_TYPE(rettyp) == IDLN_TYPE_SEQUENCE) {
+				IDL_tree elemtyp = get_type_spec(
+					IDL_TYPE_SEQUENCE(rettyp).simple_type_spec);
+				char *b = rigid_type(ns, elemtyp);
+				fprintf(of, "%s **_result_ptr, unsigned *_result_len", b);
+				g_free(b);
+			} else {
+				fprintf(stderr, "%s: compound type <%s> not supported as return type\n",
+					__FUNCTION__, NODETYPESTR(rettyp));
+				exit(EXIT_FAILURE);
+			}
+		}
 
 		IDL_tree params = IDL_OP_DCL(op).parameter_dcls;
 		for(IDL_tree iter = params;
@@ -348,14 +472,16 @@ static void print_vtable(
 			iter = IDL_LIST(iter).next)
 		{
 			IDL_tree p = IDL_LIST(iter).data,
-				decl = IDL_PARAM_DCL(p).simple_declarator;
-			const char *type = param_type(ns, get_type_spec(
-					IDL_PARAM_DCL(p).param_type_spec)),
+				decl = IDL_PARAM_DCL(p).simple_declarator,
+				type = get_type_spec(IDL_PARAM_DCL(p).param_type_spec);
+			const char *typestr = param_type(ns, type),
 				*name = IDL_IDENT(decl).str;
-			if(iter != params) fprintf(of, ", ");
+			if(first_param) first_param = false; else fprintf(of, ", ");
 			switch(IDL_PARAM_DCL(p).attr) {
 				case IDL_PARAM_IN:
-					fprintf(of, "%s%s%s", type, type_space(type), name);
+					fprintf(of, "%s%s%s%s",
+						is_compound_type(type) ? "const " : "",
+						typestr, type_space(typestr), name);
 					break;
 
 				case IDL_PARAM_OUT:

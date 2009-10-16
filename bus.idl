@@ -1,0 +1,39 @@
+
+
+#include "posix-base.idl"
+
+module Muix
+{
+
+
+[StubPrefix(__bus)]
+interface Bus
+{
+	[ValuePrefix("")]
+	enum bus_type {
+		BUS_ISA,
+		BUS_EISA,
+		BUS_PCI
+	};
+
+	// returned by enumerate_devices()
+	[NoInterfacePrefix]
+	struct bus_item
+	{
+		octet bus_type, bus_id;
+
+		// as for PCI devices
+		unsigned short product, vendor;
+		unsigned long device_id;
+	};
+
+	typedef sequence<bus_item, 256> devicelist;
+
+	devicelist enumerate_devices(
+		in long prod_id,		/* -1 for any product ID */
+		in long vendor_id)		/* -1 for any vendor ID */
+			raises(Posix::Errno);
+};
+
+
+};	// module
