@@ -195,29 +195,32 @@ static IDL_tree get_type_spec(IDL_tree node)
 }
 
 
-/* returns "true" for non-primitive types that shouldn't be passed by
- * value.
+/* returns "true" for types that are passed by value.
+ *
+ * the type bestiary is divided into three categories:
+ *   - value types (shorts, longs, words, etc), which are passed and returned
+ *     by value, and are simple members of structs and unions;
+ *   - rigid types (unions, structs, arrays), which are passed and returned by
+ *     reference, and are simple members of structs and unions;
+ *   - long types (sequences, "any", fixed, etc), which have special handling
+ *     for each, and are separately allocated members of structs and unions.
  */
-static bool is_compound_type(IDL_tree type)
+static bool is_value_type(IDL_tree type)
 {
-	if(type == NULL) return false;	/* void is not a compound type. */
+	if(type == NULL) return false;	/* void is not a value type. */
 	switch(IDL_NODE_TYPE(type)) {
-		/* unsupported things */
-		case IDLN_TYPE_ANY:
-		case IDLN_TYPE_OBJECT:
-		case IDLN_TYPE_TYPECODE:
-		case IDLN_TYPE_FIXED:
-
-		/* actual compound types we'll see */
+		/* rigid & long types */
 		case IDLN_TYPE_ARRAY:
 		case IDLN_TYPE_SEQUENCE:
 		case IDLN_TYPE_STRUCT:
 		case IDLN_TYPE_UNION:
-			return true;
+		case IDLN_TYPE_ANY:
+		case IDLN_TYPE_FIXED:
+			return false;
 
 		case IDLN_NATIVE:
-			if(IS_WORD_TYPE(type)) return false;
-			else if(IS_MAPGRANT_TYPE(type)) return true;
+			if(IS_WORD_TYPE(type)) return true;
+			else if(IS_MAPGRANT_TYPE(type)) return false;	/* rigid */
 			else {
 				/* FIXME: don't exit */
 				fprintf(stderr, "%s: unknown native type `%s'\n",
@@ -225,76 +228,76 @@ static bool is_compound_type(IDL_tree type)
 				exit(EXIT_FAILURE);
 			}
 
+		/* value types. */
+		case IDLN_TYPE_INTEGER:
+		case IDLN_TYPE_FLOAT:
+		case IDLN_TYPE_CHAR:
+		case IDLN_TYPE_WIDE_CHAR:
+		case IDLN_TYPE_BOOLEAN:
+		case IDLN_TYPE_OCTET:
+		case IDLN_TYPE_ENUM:
+			return true;
+
 		default:
-			return false;
+			fprintf(stderr, "%s: unsupported type <%s>\n",
+				__FUNCTION__, NODETYPESTR(type));
+			exit(EXIT_FAILURE);
 	}
 }
 
 
-static const char *basic_type(IDL_ns ns, IDL_tree op_type)
+/* returns the C type of value types and void. */
+static const char *c_value_type(IDL_tree type)
 {
-	if(op_type == NULL) return "void";
-	else {
-		switch(IDL_NODE_TYPE(op_type)) {
+	if(type == NULL) return "void";
+	else if(!is_value_type(type)) {
+		fprintf(stderr, "%s: <%s> is not a value type\n", __FUNCTION__,
+			NODETYPESTR(type));
+		exit(EXIT_FAILURE);
+	} else {
+		switch(IDL_NODE_TYPE(type)) {
 			case IDLN_TYPE_INTEGER: {
 				static const char *ityps[] = {
 					[IDL_INTEGER_TYPE_SHORT] = "uint16_t",
 					[IDL_INTEGER_TYPE_LONG] = "uint32_t",
 					[IDL_INTEGER_TYPE_LONGLONG] = "uint64_t",
 				};
-				int t = IDL_TYPE_INTEGER(op_type).f_type;
+				int t = IDL_TYPE_INTEGER(type).f_type;
 				assert(t < G_N_ELEMENTS(ityps));
-				return ityps[t] +
-					(IDL_TYPE_INTEGER(op_type).f_signed ? 1 : 0);
-			}
-
-			case IDLN_IDENT: {
-				assert(IDL_NODE_TYPE(op_type->up) == IDLN_LIST);
-				assert(IDL_NODE_TYPE(op_type->up->up) == IDLN_TYPE_DCL);
-				IDL_tree type = get_type_spec(op_type->up->up);
-				return basic_type(ns, type);
+				return ityps[t] + (IDL_TYPE_INTEGER(type).f_signed ? 1 : 0);
 			}
 
 			case IDLN_NATIVE: {
-				if(IS_WORD_TYPE(op_type)) {
+				if(IS_WORD_TYPE(type)) {
 					return "L4_Word_t";
-				} else if(IS_MAPGRANT_TYPE(op_type)) {
-					fprintf(stderr, "%s: caller must handle native l4_mapgrantitem_t\n",
-						__FUNCTION__);
-					abort();
 				} else {
 					fprintf(stderr, "%s: native type `%s' not supported\n",
-						__FUNCTION__, NATIVE_NAME(op_type));
+						__FUNCTION__, NATIVE_NAME(type));
 					exit(EXIT_FAILURE);
 				}
 				break;
 			}
 
-			case IDLN_TYPE_FLOAT:
-			case IDLN_TYPE_FIXED:
-			case IDLN_TYPE_CHAR:
-			case IDLN_TYPE_WIDE_CHAR:
-			case IDLN_TYPE_STRING:
-			case IDLN_TYPE_WIDE_STRING:
-			case IDLN_TYPE_BOOLEAN:
-			case IDLN_TYPE_OCTET:
-			case IDLN_TYPE_ANY:
-			case IDLN_TYPE_OBJECT:
-			case IDLN_TYPE_TYPECODE:
-			case IDLN_TYPE_ENUM:
-			case IDLN_TYPE_SEQUENCE:
-			case IDLN_TYPE_ARRAY:
-			case IDLN_TYPE_STRUCT:
-			case IDLN_TYPE_UNION:
+			case IDLN_TYPE_FLOAT: {
+				static const char *ftyps[] = {
+					[IDL_FLOAT_TYPE_FLOAT] = "float",
+					[IDL_FLOAT_TYPE_DOUBLE] = "double",
+					[IDL_FLOAT_TYPE_LONGDOUBLE] = "long double",
+				};
+				int t = IDL_TYPE_FLOAT(type).f_type;
+				assert(t < G_N_ELEMENTS(ftyps));
+				return ftyps[t];
+			}
 
+			case IDLN_TYPE_CHAR: return "char";
+			case IDLN_TYPE_WIDE_CHAR: return "wchar_t";
+			case IDLN_TYPE_BOOLEAN: return "bool";
+			case IDLN_TYPE_OCTET: return "uint8_t";
+
+			case IDLN_TYPE_ENUM:
 			default:
-				if(is_compound_type(op_type)) {
-					fprintf(stderr, "%s: <%s> is a compound type\n",
-						__FUNCTION__, NODETYPESTR(op_type));
-				} else {
-					fprintf(stderr, "%s: <%s> not implemented\n",
-						__FUNCTION__, NODETYPESTR(op_type));
-				}
+				fprintf(stderr, "%s: <%s> not implemented\n", __FUNCTION__,
+					NODETYPESTR(type));
 				exit(EXIT_FAILURE);
 		}
 	}
@@ -358,7 +361,7 @@ static char *rigid_type(IDL_ns ns, IDL_tree type)
 		case IDLN_TYPE_ARRAY:
 
 		default:
-			return g_strdup(basic_type(ns, type));
+			return g_strdup(c_value_type(type));
 	}
 }
 
@@ -367,7 +370,7 @@ static const char *param_type(IDL_ns ns, IDL_tree type)
 {
 	if(IS_MAPGRANT_TYPE(type)) return "L4_MapGrantItem_t *";
 
-	return basic_type(ns, type);
+	return c_value_type(type);
 }
 
 
@@ -387,18 +390,18 @@ static const char *return_type(IDL_ns ns, IDL_tree op)
 			exit(EXIT_FAILURE);
 		}
 	} else if(has_negs_exns(ns, op)) {
-		if(op_type == NULL || is_compound_type(op_type)) return "int";
+		if(op_type == NULL || !is_value_type(op_type)) return "int";
 		else if(IDL_NODE_TYPE(op_type) != IDLN_TYPE_INTEGER
 				|| !IDL_TYPE_INTEGER(op_type).f_signed)
 		{
 			fprintf(stderr,
 				"return type for a NegativeReturn raising operation must be\n"
-				"void, a signed short, long, long long, or a compound type.\n");
+				"void, a signed short, long, long long, or a non-value type.\n");
 			exit(EXIT_FAILURE);
 		}
 	}
 
-	return is_compound_type(op_type) ? "void" : basic_type(ns, op_type);
+	return !is_value_type(op_type) ? "void" : c_value_type(op_type);
 }
 
 
@@ -446,7 +449,7 @@ static void print_vtable(
 
 		bool first_param = true;
 		IDL_tree rettyp = get_type_spec(IDL_OP_DCL(op).op_type_spec);
-		if(is_compound_type(rettyp)) {
+		if(rettyp != NULL && !is_value_type(rettyp)) {
 			/* compound type return values are declared as the first parameter,
 			 * because they're on the "left side".
 			 */
@@ -480,7 +483,7 @@ static void print_vtable(
 			switch(IDL_PARAM_DCL(p).attr) {
 				case IDL_PARAM_IN:
 					fprintf(of, "%s%s%s%s",
-						is_compound_type(type) ? "const " : "",
+						is_value_type(type) ? "" : "const ",
 						typestr, type_space(typestr), name);
 					break;
 
