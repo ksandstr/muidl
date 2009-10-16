@@ -34,6 +34,11 @@
 #define IFACE_NAME(t) (IDL_IDENT(IDL_INTERFACE((t)).ident).str)
 #define METHOD_NAME(t) (IDL_IDENT(IDL_OP_DCL((t)).ident).str)
 
+#define NODETYPESTR(n) ({ \
+		IDL_tree __n = (n); \
+		__n == NULL ? "(nil)" : IDL_tree_type_names[IDL_NODE_TYPE(__n)]; \
+	})
+
 
 
 static int msg_callback(
@@ -48,53 +53,6 @@ static int msg_callback(
 }
 
 
-#if !1
-static gboolean tree_func(
-	IDL_tree_func_data *tf,
-	gpointer userdata)
-{
-	IDL_ns ns = userdata;
-	IDL_tree t = tf->tree;
-	switch(IDL_NODE_TYPE(t)) {
-		case IDLN_INTERFACE: {
-			IDL_tree ident = IDL_INTERFACE(t).ident;
-			printf("interface `%s' (repo id `%s')\n", IDL_IDENT(ident).str,
-				IDL_IDENT_REPO_ID(ident));
-			for(IDL_tree inh = IDL_INTERFACE(t).inheritance_spec;
-				inh != NULL;
-				inh = IDL_LIST(inh).next)
-			{
-				IDL_tree id = IDL_LIST(inh).data;
-				printf("  inherits `%s' (repo id `%s')\n", IDL_IDENT(id).str,
-					IDL_IDENT_REPO_ID(id));
-			}
-
-			return TRUE;
-		}
-
-		case IDLN_OP_DCL: {
-			IDL_tree ident = IDL_OP_DCL(t).ident;
-			printf("operation: `%s' %s\n", IDL_IDENT(ident).str,
-				IDL_OP_DCL(t).f_oneway ? "(oneway)" : "(two-way)");
-			const char *tagmask = IDL_tree_property_get(ident, "TagMask"),
-				*label = IDL_tree_property_get(ident, "Label");
-			printf("  tagmask `%s', label `%s'\n", tagmask, label);
-			return FALSE;
-		}
-
-		case IDLN_TYPE_STRUCT: {
-			IDL_tree ident = t->u.idl_type_struct.ident;
-			printf("struct: `%s'\n", ident->u.idl_ident.str);
-			return FALSE;
-		}
-
-		default:
-			return TRUE;
-	}
-}
-#endif
-
-
 static bool collect_methods(
 	GList **methods_p,
 	GHashTable *ifaces_seen,
@@ -105,7 +63,8 @@ static bool collect_methods(
 	 * as close to the inheritance graph's root (i.e. the interfaces we're
 	 * going to use) as possible.
 	 *
-	 * multiple inherited inheritance of interfaces is A-OK.
+	 * to contrast: interface inheritance is idempotent, so multiple
+	 * overlapping inheritance of interfaces is A-OK.
 	 */
 	for(IDL_tree cur = IDL_INTERFACE(iface).inheritance_spec;
 		cur != NULL;
@@ -180,6 +139,146 @@ static char *iface_prefix(IDL_ns ns, IDL_tree iface)
 }
 
 
+/* does the operation given have a NegativeReturn exception? */
+static bool has_negs_exns(IDL_ns ns, IDL_tree op)
+{
+	bool has_negs = false;
+	for(IDL_tree cur = IDL_OP_DCL(op).raises_expr;
+		cur != NULL;
+		cur = IDL_LIST(cur).next)
+	{
+		IDL_tree r = IDL_NODE_UP(IDL_LIST(cur).data);
+		/* FIXME: check properties instead */
+		const char *exrid = IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL(r).ident);
+		bool add = false;
+		if(strcmp(exrid, "IDL:Posix/Errno:1.0") == 0) add = true;
+		if(add && has_negs) {
+			/* FIXME: blow up cleanly */
+			fprintf(stderr, "two exceptions specify NegativeReturn for `%s'\n",
+				IDL_IDENT(IDL_OP_DCL(op).ident).str);
+			exit(EXIT_FAILURE);
+		}
+		has_negs = has_negs || add;
+	}
+	return has_negs;
+}
+
+
+/* chase typedefs down to the non-typedef type. */
+static IDL_tree get_type_spec(IDL_tree node)
+{
+	if(node == NULL) return NULL;
+
+	switch(IDL_NODE_TYPE(node)) {
+		case IDLN_TYPE_DCL:
+			return get_type_spec(IDL_TYPE_DCL(node).type_spec);
+
+		case IDLN_PARAM_DCL:
+			return get_type_spec(IDL_PARAM_DCL(node).param_type_spec);
+
+		case IDLN_MEMBER:
+			return get_type_spec(IDL_MEMBER(node).type_spec);
+
+		case IDLN_LIST:
+		case IDLN_IDENT:
+			return get_type_spec(IDL_get_parent_node(node, IDLN_ANY, NULL));
+
+		default:
+			return node;
+	}
+}
+
+
+static char *basic_return_type(IDL_ns ns, IDL_tree op_type)
+{
+	if(op_type == NULL) return g_strdup("void");
+	else {
+		switch(IDL_NODE_TYPE(op_type)) {
+			case IDLN_TYPE_INTEGER: {
+				static const char *ityps[] = {
+					[IDL_INTEGER_TYPE_SHORT] = "uint16_t",
+					[IDL_INTEGER_TYPE_LONG] = "uint32_t",
+					[IDL_INTEGER_TYPE_LONGLONG] = "uint64_t",
+				};
+				int t = IDL_TYPE_INTEGER(op_type).f_type;
+				assert(t < G_N_ELEMENTS(ityps));
+				return g_strdup(ityps[t] +
+					(IDL_TYPE_INTEGER(op_type).f_signed ? 1 : 0));
+			}
+
+			case IDLN_IDENT: {
+				assert(IDL_NODE_TYPE(op_type->up) == IDLN_LIST);
+				assert(IDL_NODE_TYPE(op_type->up->up) == IDLN_TYPE_DCL);
+				IDL_tree type = get_type_spec(op_type->up->up);
+				return basic_return_type(ns, type);
+			}
+
+			case IDLN_NATIVE: {
+				const char *nname = IDL_IDENT(IDL_NATIVE(op_type).ident).str;
+				if(strcmp(nname, "l4_word_t") == 0) {
+					return g_strdup("L4_Word_t");
+				} else if(strcmp(nname, "l4_mapgrantitem_t") == 0) {
+					/* FIXME: this should be handled as a structure
+					 * out-parameter!
+					 */
+					return g_strdup("L4_MapGrantItem_t");
+				} else {
+					fprintf(stderr, "%s: native type `%s' not supported\n",
+						__FUNCTION__, nname);
+					exit(EXIT_FAILURE);
+				}
+				break;
+			}
+
+			case IDLN_TYPE_FLOAT:
+			case IDLN_TYPE_FIXED:
+			case IDLN_TYPE_CHAR:
+			case IDLN_TYPE_WIDE_CHAR:
+			case IDLN_TYPE_STRING:
+			case IDLN_TYPE_WIDE_STRING:
+			case IDLN_TYPE_BOOLEAN:
+			case IDLN_TYPE_OCTET:
+			case IDLN_TYPE_ANY:
+			case IDLN_TYPE_OBJECT:
+			case IDLN_TYPE_TYPECODE:
+			case IDLN_TYPE_ENUM:
+			case IDLN_TYPE_SEQUENCE:
+			case IDLN_TYPE_ARRAY:
+			case IDLN_TYPE_STRUCT:
+			case IDLN_TYPE_UNION:
+
+			default:
+				fprintf(stderr, "%s: nodetype <%s> not implemented\n",
+					__FUNCTION__, NODETYPESTR(op_type));
+				exit(EXIT_FAILURE);
+		}
+	}
+}
+
+
+static char *return_type(IDL_ns ns, IDL_tree op)
+{
+	IDL_tree op_type = IDL_OP_DCL(op).op_type_spec;
+	if(IDL_OP_DCL(op).f_oneway) {
+		/* FIXME: fail gracefully from these */
+		if(op_type != NULL) {
+			fprintf(stderr, "can't have non-void return type for oneway operation `%s'\n",
+				METHOD_NAME(op));
+			exit(EXIT_FAILURE);
+		}
+		if(IDL_OP_DCL(op).raises_expr != NULL) {
+			fprintf(stderr, "can't have exceptions for a oneway operation `%s'\n",
+				METHOD_NAME(op));
+			exit(EXIT_FAILURE);
+		}
+	} else if(has_negs_exns(ns, op)) {
+		/* FIXME: enforce that the return type is integral and signed */
+	}
+
+	return basic_return_type(ns, op_type);
+}
+
+
 static void print_vtable(
 	FILE *of,
 	IDL_tree file_tree,
@@ -194,14 +293,30 @@ static void print_vtable(
 	methods = g_list_reverse(methods);
 
 	char *prefix = iface_prefix(ns, iface);
-	fprintf(of, "struct %s_vtable {\n", prefix);
+	fprintf(of, "struct %s_vtable\n{\n", prefix);
 
 	for(GList *cur = g_list_first(methods);
 		cur != NULL;
 		cur = g_list_next(cur))
 	{
-		IDL_tree method = cur->data;
-		fprintf(of, "\t/* entry for `%s' */\n", METHOD_NAME(method));
+		IDL_tree op = cur->data;
+		IDL_tree type_spec = IDL_OP_DCL(op).op_type_spec,
+			params = IDL_OP_DCL(op).parameter_dcls,
+			raises = IDL_OP_DCL(op).raises_expr,
+			context = IDL_OP_DCL(op).context_expr;
+		fprintf(of, "\t/* entry for `%s' */\n", METHOD_NAME(op));
+#if 0
+		printf("op_type_spec = <%s>\n", NODETYPESTR(type_spec));
+		printf("params = <%s>\n", NODETYPESTR(params));
+		printf("raises = <%s>\n", NODETYPESTR(raises));
+		printf("context = <%s>\n", NODETYPESTR(context));
+#endif
+
+		char *rettyp = return_type(ns, op),
+			*name = decapsify(METHOD_NAME(op));
+		fprintf(of, "\t%s (*%s)(void),\n", rettyp, name);
+		g_free(rettyp);
+		g_free(name);
 	}
 	fprintf(of, "};\n");
 	g_list_free(methods);
@@ -262,7 +377,7 @@ bool do_idl_file(const char *filename)
 	g_hash_table_iter_init(&iter, ifaces);
 	gpointer key, value;
 	while(g_hash_table_iter_next(&iter, &key, &value)) {
-		printf("vtable for `%s':\n", (const char *)key);
+		fprintf(stdout, "/* vtable for `%s': */\n", (const char *)key);
 		print_vtable(stdout, tree, ns, (IDL_tree)value);
 	}
 
