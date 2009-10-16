@@ -33,6 +33,12 @@
 #define IFACE_REPO_ID(t) IDL_IDENT_REPO_ID(IDL_INTERFACE((t)).ident)
 #define IFACE_NAME(t) (IDL_IDENT(IDL_INTERFACE((t)).ident).str)
 #define METHOD_NAME(t) (IDL_IDENT(IDL_OP_DCL((t)).ident).str)
+#define NATIVE_NAME(t) (IDL_IDENT(IDL_NATIVE((t)).ident).str)
+
+#define IS_MAPGRANT_TYPE(t) (IDL_NODE_TYPE((t)) == IDLN_NATIVE \
+	&& strcmp(NATIVE_NAME((t)), "l4_mapgrantitem_t") == 0)
+#define IS_WORD_TYPE(t) (IDL_NODE_TYPE((t)) == IDLN_NATIVE \
+	&& strcmp(NATIVE_NAME((t)), "l4_word_t") == 0)
 
 #define NODETYPESTR(n) ({ \
 		IDL_tree __n = (n); \
@@ -189,9 +195,9 @@ static IDL_tree get_type_spec(IDL_tree node)
 }
 
 
-static char *basic_return_type(IDL_ns ns, IDL_tree op_type)
+static const char *basic_type(IDL_ns ns, IDL_tree op_type)
 {
-	if(op_type == NULL) return g_strdup("void");
+	if(op_type == NULL) return "void";
 	else {
 		switch(IDL_NODE_TYPE(op_type)) {
 			case IDLN_TYPE_INTEGER: {
@@ -202,26 +208,26 @@ static char *basic_return_type(IDL_ns ns, IDL_tree op_type)
 				};
 				int t = IDL_TYPE_INTEGER(op_type).f_type;
 				assert(t < G_N_ELEMENTS(ityps));
-				return g_strdup(ityps[t] +
-					(IDL_TYPE_INTEGER(op_type).f_signed ? 1 : 0));
+				return ityps[t] +
+					(IDL_TYPE_INTEGER(op_type).f_signed ? 1 : 0);
 			}
 
 			case IDLN_IDENT: {
 				assert(IDL_NODE_TYPE(op_type->up) == IDLN_LIST);
 				assert(IDL_NODE_TYPE(op_type->up->up) == IDLN_TYPE_DCL);
 				IDL_tree type = get_type_spec(op_type->up->up);
-				return basic_return_type(ns, type);
+				return basic_type(ns, type);
 			}
 
 			case IDLN_NATIVE: {
 				const char *nname = IDL_IDENT(IDL_NATIVE(op_type).ident).str;
 				if(strcmp(nname, "l4_word_t") == 0) {
-					return g_strdup("L4_Word_t");
+					return "L4_Word_t";
 				} else if(strcmp(nname, "l4_mapgrantitem_t") == 0) {
 					/* FIXME: this should be handled as a structure
 					 * out-parameter!
 					 */
-					return g_strdup("L4_MapGrantItem_t");
+					return "L4_MapGrantItem_t";
 				} else {
 					fprintf(stderr, "%s: native type `%s' not supported\n",
 						__FUNCTION__, nname);
@@ -248,7 +254,7 @@ static char *basic_return_type(IDL_ns ns, IDL_tree op_type)
 			case IDLN_TYPE_UNION:
 
 			default:
-				fprintf(stderr, "%s: nodetype <%s> not implemented\n",
+				fprintf(stderr, "%s: <%s> not implemented\n",
 					__FUNCTION__, NODETYPESTR(op_type));
 				exit(EXIT_FAILURE);
 		}
@@ -256,10 +262,18 @@ static char *basic_return_type(IDL_ns ns, IDL_tree op_type)
 }
 
 
-/* FIXME: fail gracefully */
-static char *return_type(IDL_ns ns, IDL_tree op)
+static const char *param_type(IDL_ns ns, IDL_tree type)
 {
-	IDL_tree op_type = IDL_OP_DCL(op).op_type_spec;
+	if(IS_MAPGRANT_TYPE(type)) return "L4_MapGrantItem_t *";
+
+	return basic_type(ns, type);
+}
+
+
+/* FIXME: fail gracefully */
+static const char *return_type(IDL_ns ns, IDL_tree op)
+{
+	IDL_tree op_type = get_type_spec(IDL_OP_DCL(op).op_type_spec);
 	if(IDL_OP_DCL(op).f_oneway) {
 		if(op_type != NULL) {
 			fprintf(stderr, "can't have non-void return type for oneway operation `%s'\n",
@@ -272,10 +286,9 @@ static char *return_type(IDL_ns ns, IDL_tree op)
 			exit(EXIT_FAILURE);
 		}
 	} else if(has_negs_exns(ns, op)) {
-		IDL_tree rettyp = get_type_spec(op_type);
-		if(rettyp == NULL) return g_strdup("int");
-		else if(IDL_NODE_TYPE(rettyp) != IDLN_TYPE_INTEGER
-				|| !IDL_TYPE_INTEGER(rettyp).f_signed)
+		if(op_type == NULL) return "int";
+		else if(IDL_NODE_TYPE(op_type) != IDLN_TYPE_INTEGER
+				|| !IDL_TYPE_INTEGER(op_type).f_signed)
 		{
 			fprintf(stderr,
 				"return type for a NegativeReturn raising operation must be\n"
@@ -284,7 +297,21 @@ static char *return_type(IDL_ns ns, IDL_tree op)
 		}
 	}
 
-	return basic_return_type(ns, op_type);
+	return basic_type(ns, op_type);
+}
+
+
+/* returns what should go in between this "type-section" and the variable name
+ * to satisfy arbitrary aesthetic criteria.
+ *
+ * this doesn't play well with declaring multiple variables on a single line,
+ * but fuck it -- i'm not carrying "type section" and "variable section"
+ * separately.
+ */
+static const char *type_space(const char *ctype)
+{
+	int len = strlen(ctype);
+	return ctype[len-1] == '*' ? "" : " ";
 }
 
 
@@ -309,23 +336,36 @@ static void print_vtable(
 		cur = g_list_next(cur))
 	{
 		IDL_tree op = cur->data;
-		IDL_tree type_spec = IDL_OP_DCL(op).op_type_spec,
-			params = IDL_OP_DCL(op).parameter_dcls,
-			raises = IDL_OP_DCL(op).raises_expr,
-			context = IDL_OP_DCL(op).context_expr;
-		fprintf(of, "\t/* entry for `%s' */\n", METHOD_NAME(op));
-#if 0
-		printf("op_type_spec = <%s>\n", NODETYPESTR(type_spec));
-		printf("params = <%s>\n", NODETYPESTR(params));
-		printf("raises = <%s>\n", NODETYPESTR(raises));
-		printf("context = <%s>\n", NODETYPESTR(context));
-#endif
 
-		char *rettyp = return_type(ns, op),
-			*name = decapsify(METHOD_NAME(op));
-		fprintf(of, "\t%s (*%s)(void),\n", rettyp, name);
-		g_free(rettyp);
+		const char *rettyp = return_type(ns, op);
+		char *name = decapsify(METHOD_NAME(op));
+		fprintf(of, "\t%s%s(*%s)(", rettyp, type_space(rettyp), name);
 		g_free(name);
+
+		IDL_tree params = IDL_OP_DCL(op).parameter_dcls;
+		for(IDL_tree iter = params;
+			iter != NULL;
+			iter = IDL_LIST(iter).next)
+		{
+			IDL_tree p = IDL_LIST(iter).data,
+				decl = IDL_PARAM_DCL(p).simple_declarator;
+			const char *type = param_type(ns, get_type_spec(
+					IDL_PARAM_DCL(p).param_type_spec)),
+				*name = IDL_IDENT(decl).str;
+			if(iter != params) fprintf(of, ", ");
+			switch(IDL_PARAM_DCL(p).attr) {
+				case IDL_PARAM_IN:
+					fprintf(of, "%s%s%s", type, type_space(type), name);
+					break;
+
+				case IDL_PARAM_OUT:
+				case IDL_PARAM_INOUT:
+					fprintf(of, "out or in-out parameters not done\n");
+					break;
+			}
+		}
+
+		fprintf(of, "),\n");
 	}
 	fprintf(of, "};\n");
 	g_list_free(methods);
