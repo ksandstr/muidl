@@ -256,11 +256,11 @@ static char *basic_return_type(IDL_ns ns, IDL_tree op_type)
 }
 
 
+/* FIXME: fail gracefully */
 static char *return_type(IDL_ns ns, IDL_tree op)
 {
 	IDL_tree op_type = IDL_OP_DCL(op).op_type_spec;
 	if(IDL_OP_DCL(op).f_oneway) {
-		/* FIXME: fail gracefully from these */
 		if(op_type != NULL) {
 			fprintf(stderr, "can't have non-void return type for oneway operation `%s'\n",
 				METHOD_NAME(op));
@@ -272,7 +272,16 @@ static char *return_type(IDL_ns ns, IDL_tree op)
 			exit(EXIT_FAILURE);
 		}
 	} else if(has_negs_exns(ns, op)) {
-		/* FIXME: enforce that the return type is integral and signed */
+		IDL_tree rettyp = get_type_spec(op_type);
+		if(rettyp == NULL) return g_strdup("int");
+		else if(IDL_NODE_TYPE(rettyp) != IDLN_TYPE_INTEGER
+				|| !IDL_TYPE_INTEGER(rettyp).f_signed)
+		{
+			fprintf(stderr,
+				"return type for a NegativeReturn raising operation must be\n"
+				"void or a signed short, long or long long.\n");
+			exit(EXIT_FAILURE);
+		}
 	}
 
 	return basic_return_type(ns, op_type);
