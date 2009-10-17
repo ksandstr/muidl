@@ -45,6 +45,12 @@
 		__n == NULL ? "(nil)" : IDL_tree_type_names[IDL_NODE_TYPE(__n)]; \
 	})
 
+#define NOTDEFINED(t) do { \
+		fprintf(stderr, "%s: not defined for <%s>\n", __FUNCTION__, \
+			NODETYPESTR((t))); \
+		assert(0); \
+		abort(); \
+	} while(0)
 
 
 static int msg_callback(
@@ -336,9 +342,7 @@ static char *long_name(IDL_ns ns, IDL_tree node)
 			break;
 
 		default:
-			fprintf(stderr, "%s: not defined for <%s>\n", __FUNCTION__,
-				NODETYPESTR(node));
-			abort();
+			NOTDEFINED(node);
 	}
 	return g_strconcat(prefix, name, NULL);
 }
@@ -361,16 +365,8 @@ static char *rigid_type(IDL_ns ns, IDL_tree type)
 		case IDLN_TYPE_ARRAY:
 
 		default:
-			return g_strdup(c_value_type(type));
+			NOTDEFINED(type);
 	}
-}
-
-
-static const char *param_type(IDL_ns ns, IDL_tree type)
-{
-	if(IS_MAPGRANT_TYPE(type)) return "L4_MapGrantItem_t *";
-
-	return c_value_type(type);
 }
 
 
@@ -402,6 +398,31 @@ static const char *return_type(IDL_ns ns, IDL_tree op)
 	}
 
 	return !is_value_type(op_type) ? "void" : c_value_type(op_type);
+}
+
+
+/* returns the type as the type of an in-parameter. these are the same for
+ * server skeletons and caller stub prototypes. defined only for value and
+ * rigid types; long types are handled differently in each case.
+ */
+static char *in_param_type(IDL_ns ns, IDL_tree tree)
+{
+	if(is_value_type(tree)) return g_strdup(c_value_type(tree));
+	switch(IDL_NODE_TYPE(tree)) {
+		case IDLN_TYPE_STRUCT: {
+			char *sname = long_name(ns, tree),
+				*ret = g_strdup_printf("struct %s", sname);
+			g_free(sname);
+			return ret;
+		}
+
+		case IDLN_TYPE_ARRAY:
+		case IDLN_TYPE_UNION:
+			/* TODO */
+
+		default:
+			NOTDEFINED(tree);
+	}
 }
 
 
@@ -474,23 +495,31 @@ static void print_vtable(
 			iter != NULL;
 			iter = IDL_LIST(iter).next)
 		{
+			if(first_param) first_param = false; else fprintf(of, ", ");
 			IDL_tree p = IDL_LIST(iter).data,
 				decl = IDL_PARAM_DCL(p).simple_declarator,
 				type = get_type_spec(IDL_PARAM_DCL(p).param_type_spec);
-			const char *typestr = param_type(ns, type),
-				*name = IDL_IDENT(decl).str;
-			if(first_param) first_param = false; else fprintf(of, ", ");
+			const char *name = IDL_IDENT(decl).str;
+			char *typestr;
 			switch(IDL_PARAM_DCL(p).attr) {
 				case IDL_PARAM_IN:
-					fprintf(of, "%s%s%s%s",
-						is_value_type(type) ? "" : "const ",
-						typestr, type_space(typestr), name);
+					if(IDL_NODE_TYPE(p) == IDLN_TYPE_SEQUENCE) {
+						NOTDEFINED(p);
+					}
+					typestr = in_param_type(ns, type);
 					break;
 
 				case IDL_PARAM_OUT:
 				case IDL_PARAM_INOUT:
 					fprintf(of, "out or in-out parameters not done\n");
+					typestr = NULL;
 					break;
+			}
+			if(typestr != NULL) {
+				fprintf(of, "%s%s%s%s",
+					is_value_type(type) ? "" : "const ",
+					typestr, type_space(typestr), name);
+				g_free(typestr);
 			}
 		}
 
