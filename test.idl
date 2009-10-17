@@ -2,7 +2,8 @@
 #include "l4x2.idl"
 #include "posix-base.idl"
 
-// NOTE: this doesn't reflect any actual IPC interface in µiX.
+
+/* NOTE: this doesn't reflect any production interface in µiX. */
 
 module Muix
 {
@@ -14,13 +15,23 @@ interface Memserv: L4X2::FaultHandler
 	typedef long pid_t;
 	typedef sequence<word> wordseq;
 
+	[Prefix("")]
+	enum mapping_type
+	{
+		MAP_TYPE_SHARED,
+		MAP_TYPE_ANONYMOUS,
+		MAP_TYPE_L4_SPECIAL,
+		MAP_TYPE_FILE,
+		MAP_TYPE_DMA
+	};
+
 	/* ordinary memserv calls. */
 
 	[Label(0xf210)]
 	void create_mapping(
 		in word start,
 		in word flags,
-		in word type,
+		in mapping_type type,
 		in word length,
 		in string name,
 		in word file_fs,	/* only if type is a file mapping */
@@ -36,8 +47,8 @@ interface Memserv: L4X2::FaultHandler
 	[Label(0xf212)]
 	void list_mappings(
 		in pid_t space_id,
-		in word first_address,
-		out wordseq start_addresses)
+		in word first_addr,
+		out wordseq start_addrs)
 		raises(Posix::Errno);
 
 

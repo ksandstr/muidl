@@ -55,6 +55,9 @@
 	} while(0)
 
 
+static char *long_name(IDL_ns ns, IDL_tree node);
+
+
 static int msg_callback(
 	int level,
 	int num,
@@ -257,13 +260,13 @@ static bool is_value_type(IDL_tree type)
 
 
 /* returns the C type of value types and void. */
-static const char *c_value_type(IDL_tree type)
+static char *value_type(IDL_ns ns, IDL_tree type)
 {
-	if(type == NULL) return "void";
+	if(type == NULL) return g_strdup("void");
 	else if(!is_value_type(type)) {
 		fprintf(stderr, "%s: <%s> is not a value type\n", __FUNCTION__,
 			NODETYPESTR(type));
-		exit(EXIT_FAILURE);
+		abort();
 	} else {
 		switch(IDL_NODE_TYPE(type)) {
 			case IDLN_TYPE_INTEGER: {
@@ -274,12 +277,13 @@ static const char *c_value_type(IDL_tree type)
 				};
 				int t = IDL_TYPE_INTEGER(type).f_type;
 				assert(t < G_N_ELEMENTS(ityps));
-				return ityps[t] + (IDL_TYPE_INTEGER(type).f_signed ? 1 : 0);
+				return g_strdup(ityps[t] +
+						(IDL_TYPE_INTEGER(type).f_signed ? 1 : 0));
 			}
 
 			case IDLN_NATIVE: {
-				if(IS_WORD_TYPE(type)) return "L4_Word_t";
-				else if(IS_FPAGE_TYPE(type)) return "L4_Fpage_t";
+				if(IS_WORD_TYPE(type)) return g_strdup("L4_Word_t");
+				else if(IS_FPAGE_TYPE(type)) return g_strdup("L4_Fpage_t");
 				else {
 					fprintf(stderr, "%s: native type `%s' not supported\n",
 						__FUNCTION__, NATIVE_NAME(type));
@@ -296,15 +300,21 @@ static const char *c_value_type(IDL_tree type)
 				};
 				int t = IDL_TYPE_FLOAT(type).f_type;
 				assert(t < G_N_ELEMENTS(ftyps));
-				return ftyps[t];
+				return g_strdup(ftyps[t]);
 			}
 
-			case IDLN_TYPE_CHAR: return "char";
-			case IDLN_TYPE_WIDE_CHAR: return "wchar_t";
-			case IDLN_TYPE_BOOLEAN: return "bool";
-			case IDLN_TYPE_OCTET: return "uint8_t";
+			case IDLN_TYPE_CHAR: return g_strdup("char");
+			case IDLN_TYPE_WIDE_CHAR: return g_strdup("wchar_t");
+			case IDLN_TYPE_BOOLEAN: return g_strdup("bool");
+			case IDLN_TYPE_OCTET: return g_strdup("uint8_t");
 
-			case IDLN_TYPE_ENUM:
+			case IDLN_TYPE_ENUM: {
+				char *s = long_name(ns, type),
+					*ret = g_strdup_printf("enum %s", s);
+				g_free(s);
+				return ret;
+			}
+
 			default:
 				fprintf(stderr, "%s: <%s> not implemented\n", __FUNCTION__,
 					NODETYPESTR(type));
@@ -342,6 +352,7 @@ static char *long_name(IDL_ns ns, IDL_tree node)
 			break;
 
 		case IDLN_TYPE_ENUM:
+			/* FIXME: handle Prefix property! */
 			name = IDL_IDENT(IDL_TYPE_ENUM(node).ident).str;
 			break;
 
@@ -374,10 +385,17 @@ static char *rigid_type(IDL_ns ns, IDL_tree type)
 }
 
 
+#define IS_USHORT_TYPE(op_type) \
+	(IDL_NODE_TYPE((op_type)) == IDLN_TYPE_INTEGER \
+	&& !IDL_TYPE_INTEGER((op_type)).f_signed \
+	&& IDL_TYPE_INTEGER((op_type)).f_type == IDL_INTEGER_TYPE_SHORT)
+
 /* FIXME: fail gracefully */
-static const char *return_type(IDL_ns ns, IDL_tree op)
+static char *return_type(IDL_ns ns, IDL_tree op)
 {
 	IDL_tree op_type = get_type_spec(IDL_OP_DCL(op).op_type_spec);
+
+	/* oneway restrictions. */
 	if(IDL_OP_DCL(op).f_oneway) {
 		if(op_type != NULL) {
 			fprintf(stderr, "can't have non-void return type for oneway operation `%s'\n",
@@ -389,19 +407,24 @@ static const char *return_type(IDL_ns ns, IDL_tree op)
 				METHOD_NAME(op));
 			exit(EXIT_FAILURE);
 		}
-	} else if(has_negs_exns(ns, op)) {
-		if(op_type == NULL || !is_value_type(op_type)) return "int";
-		else if(IDL_NODE_TYPE(op_type) != IDLN_TYPE_INTEGER
-				|| !IDL_TYPE_INTEGER(op_type).f_signed)
+	}
+
+	/* NegativeReturn restrictions. */
+	if(has_negs_exns(ns, op)) {
+		if(op_type == NULL || !is_value_type(op_type)
+			|| IS_USHORT_TYPE(op_type))
 		{
+			return g_strdup("int");
+		} else {
 			fprintf(stderr,
 				"return type for a NegativeReturn raising operation must be\n"
-				"void, a signed short, long, long long, or a non-value type.\n");
+				"void, an unsigned short, or a non-value type.\n");
 			exit(EXIT_FAILURE);
 		}
 	}
 
-	return !is_value_type(op_type) ? "void" : c_value_type(op_type);
+	if(op_type == NULL || !is_value_type(op_type)) return g_strdup("void");
+	else return value_type(ns, op_type);
 }
 
 
@@ -411,7 +434,7 @@ static const char *return_type(IDL_ns ns, IDL_tree op)
  */
 static char *in_param_type(IDL_ns ns, IDL_tree tree)
 {
-	if(is_value_type(tree)) return g_strdup(c_value_type(tree));
+	if(is_value_type(tree)) return value_type(ns, tree);
 	switch(IDL_NODE_TYPE(tree)) {
 		case IDLN_TYPE_STRUCT: {
 			char *sname = long_name(ns, tree),
@@ -460,7 +483,8 @@ static void print_out_param(
 		b = in_param_type(ns, elemtyp);
 		fprintf(of, "%s **%s_ptr, unsigned *%s_len", b, name, name);
 	} else if(is_value_type(type)) {
-		fprintf(of, "%s *%s_ptr", c_value_type(type), name);
+		b = value_type(ns, type);
+		fprintf(of, "%s *%s_ptr", b, name);
 	} else if(IS_MAPGRANT_TYPE(type)) {
 		fprintf(of, "L4_MapGrantItem_t *%s_ptr", name);
 	} else {
@@ -493,10 +517,11 @@ static void print_vtable(
 	{
 		IDL_tree op = cur->data;
 
-		const char *rettypstr = return_type(ns, op);
-		char *name = decapsify(METHOD_NAME(op));
+		char *rettypstr = return_type(ns, op),
+			*name = decapsify(METHOD_NAME(op));
 		fprintf(of, "\t%s%s(*%s)(", rettypstr, type_space(rettypstr),
 			name);
+		g_free(rettypstr);
 		g_free(name);
 
 		bool first_param = true;
