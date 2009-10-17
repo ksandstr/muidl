@@ -37,6 +37,8 @@
 
 #define IS_MAPGRANT_TYPE(t) (IDL_NODE_TYPE((t)) == IDLN_NATIVE \
 	&& strcmp(NATIVE_NAME((t)), "l4_mapgrantitem_t") == 0)
+#define IS_FPAGE_TYPE(t) (IDL_NODE_TYPE((t)) == IDLN_NATIVE \
+	&& strcmp(NATIVE_NAME((t)), "l4_fpage_t") == 0)
 #define IS_WORD_TYPE(t) (IDL_NODE_TYPE((t)) == IDLN_NATIVE \
 	&& strcmp(NATIVE_NAME((t)), "l4_word_t") == 0)
 
@@ -225,7 +227,7 @@ static bool is_value_type(IDL_tree type)
 			return false;
 
 		case IDLN_NATIVE:
-			if(IS_WORD_TYPE(type)) return true;
+			if(IS_WORD_TYPE(type) || IS_FPAGE_TYPE(type)) return true;
 			else if(IS_MAPGRANT_TYPE(type)) return false;	/* rigid */
 			else {
 				/* FIXME: don't exit */
@@ -274,9 +276,9 @@ static const char *c_value_type(IDL_tree type)
 			}
 
 			case IDLN_NATIVE: {
-				if(IS_WORD_TYPE(type)) {
-					return "L4_Word_t";
-				} else {
+				if(IS_WORD_TYPE(type)) return "L4_Word_t";
+				else if(IS_FPAGE_TYPE(type)) return "L4_Fpage_t";
+				else {
 					fprintf(stderr, "%s: native type `%s' not supported\n",
 						__FUNCTION__, NATIVE_NAME(type));
 					exit(EXIT_FAILURE);
@@ -440,6 +442,30 @@ static const char *type_space(const char *ctype)
 }
 
 
+static void print_out_param(
+	FILE *of,
+	IDL_ns ns,
+	IDL_tree type,
+	const char *name)
+{
+	char *b = NULL;
+	if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
+		IDL_tree elemtyp = get_type_spec(
+			IDL_TYPE_SEQUENCE(type).simple_type_spec);
+		b = in_param_type(ns, elemtyp);
+		fprintf(of, "%s **%s_ptr, unsigned *%s_len", b, name, name);
+	} else if(is_value_type(type)) {
+		fprintf(of, "%s *%s_ptr", c_value_type(type), name);
+	} else if(IS_MAPGRANT_TYPE(type)) {
+		fprintf(of, "L4_MapGrantItem_t *%s_ptr", name);
+	} else {
+		b = rigid_type(ns, type);
+		fprintf(of, "%s *%s_ptr", b, name);
+	}
+	g_free(b);
+}
+
+
 static void print_vtable(
 	FILE *of,
 	IDL_tree file_tree,
@@ -475,19 +501,7 @@ static void print_vtable(
 			 * because they're on the "left side".
 			 */
 			first_param = false;
-			if(IS_MAPGRANT_TYPE(rettyp)) {
-				fprintf(of, "L4_MapGrantItem_t *_result");
-			} else if(IDL_NODE_TYPE(rettyp) == IDLN_TYPE_SEQUENCE) {
-				IDL_tree elemtyp = get_type_spec(
-					IDL_TYPE_SEQUENCE(rettyp).simple_type_spec);
-				char *b = rigid_type(ns, elemtyp);
-				fprintf(of, "%s **_result_ptr, unsigned *_result_len", b);
-				g_free(b);
-			} else {
-				fprintf(stderr, "%s: compound type <%s> not supported as return type\n",
-					__FUNCTION__, NODETYPESTR(rettyp));
-				exit(EXIT_FAILURE);
-			}
+			print_out_param(of, ns, rettyp, "_result");
 		}
 
 		IDL_tree params = IDL_OP_DCL(op).parameter_dcls;
@@ -500,7 +514,7 @@ static void print_vtable(
 				decl = IDL_PARAM_DCL(p).simple_declarator,
 				type = get_type_spec(IDL_PARAM_DCL(p).param_type_spec);
 			const char *name = IDL_IDENT(decl).str;
-			char *typestr;
+			char *typestr = NULL;
 			switch(IDL_PARAM_DCL(p).attr) {
 				case IDL_PARAM_IN:
 					if(IDL_NODE_TYPE(p) == IDLN_TYPE_SEQUENCE) {
@@ -510,8 +524,11 @@ static void print_vtable(
 					break;
 
 				case IDL_PARAM_OUT:
+					print_out_param(of, ns, type, name);
+					break;
+
 				case IDL_PARAM_INOUT:
-					fprintf(of, "out or in-out parameters not done\n");
+					fprintf(of, "in-out parameters not done\n");
 					typestr = NULL;
 					break;
 			}

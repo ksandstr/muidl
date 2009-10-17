@@ -10,10 +10,18 @@ module Muix
 [StubPrefix(__memserv)]
 interface Memserv: L4X2::FaultHandler
 {
+	typedef L4X2::word word;
 	typedef long pid_t;
 
-	void create_space(in pid_t pid)
+	[Label(0xf205)]
+	void create_space(
+		in pid_t pid,
+		in word kip_addr,
+		in word utcb_addr,
+		out L4X2::Fpage kip_area,
+		out L4X2::Fpage utcb_area)
 		raises(Posix::Errno);
+
 	void destroy_space(in pid_t pid)
 		raises(Posix::Errno);
 };

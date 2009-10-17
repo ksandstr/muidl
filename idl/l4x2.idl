@@ -14,6 +14,9 @@ typedef l4_word_t word;
 native l4_mapgrantitem_t;
 typedef l4_mapgrantitem_t MapGrantItem;
 
+native l4_fpage_t;
+typedef l4_fpage_t Fpage;
+
 
 interface FaultHandler
 {
