@@ -12,6 +12,36 @@ interface Memserv: L4X2::FaultHandler
 {
 	typedef L4X2::word word;
 	typedef long pid_t;
+	typedef sequence<word> wordseq;
+
+	/* ordinary memserv calls. */
+
+	[Label(0xf210)]
+	void create_mapping(
+		in word start,
+		in word flags,
+		in word type,
+		in word length,
+		in string name,
+		in word file_fs,	/* only if type is a file mapping */
+		in word file_sfd,	/* -''- */
+		in word file_offset_last_addr,	/* -''- */
+		out word result)
+		raises(Posix::Errno);
+
+	[Label(0xf211)]
+	void unmap_range(in word start, in word length)
+		raises(Posix::Errno);
+
+	[Label(0xf212)]
+	void list_mappings(
+		in pid_t space_id,
+		in word first_address,
+		out wordseq start_addresses)
+		raises(Posix::Errno);
+
+
+	/* roottask-privileged calls. */
 
 	[Label(0xf205)]
 	void create_space(
@@ -22,7 +52,12 @@ interface Memserv: L4X2::FaultHandler
 		out L4X2::Fpage utcb_area)
 		raises(Posix::Errno);
 
+	[Label(0xf206)]
 	void destroy_space(in pid_t pid)
+		raises(Posix::Errno);
+
+	[Label(0xf207)]
+	void fork_space(in pid_t from_space, in pid_t to_space)
 		raises(Posix::Errno);
 };
 

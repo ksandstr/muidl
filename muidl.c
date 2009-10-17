@@ -224,6 +224,8 @@ static bool is_value_type(IDL_tree type)
 		case IDLN_TYPE_UNION:
 		case IDLN_TYPE_ANY:
 		case IDLN_TYPE_FIXED:
+		case IDLN_TYPE_STRING:
+		case IDLN_TYPE_WIDE_STRING:
 			return false;
 
 		case IDLN_NATIVE:
@@ -413,10 +415,13 @@ static char *in_param_type(IDL_ns ns, IDL_tree tree)
 	switch(IDL_NODE_TYPE(tree)) {
 		case IDLN_TYPE_STRUCT: {
 			char *sname = long_name(ns, tree),
-				*ret = g_strdup_printf("struct %s", sname);
+				*ret = g_strdup_printf("struct %s *", sname);
 			g_free(sname);
 			return ret;
 		}
+
+		case IDLN_TYPE_STRING: return g_strdup("const char *");
+		case IDLN_TYPE_WIDE_STRING: return g_strdup("const wchar_t *");
 
 		case IDLN_TYPE_ARRAY:
 		case IDLN_TYPE_UNION:
@@ -505,6 +510,7 @@ static void print_vtable(
 		}
 
 		IDL_tree params = IDL_OP_DCL(op).parameter_dcls;
+		if(first_param && params == NULL) fprintf(of, "void");
 		for(IDL_tree iter = params;
 			iter != NULL;
 			iter = IDL_LIST(iter).next)
@@ -514,13 +520,14 @@ static void print_vtable(
 				decl = IDL_PARAM_DCL(p).simple_declarator,
 				type = get_type_spec(IDL_PARAM_DCL(p).param_type_spec);
 			const char *name = IDL_IDENT(decl).str;
-			char *typestr = NULL;
 			switch(IDL_PARAM_DCL(p).attr) {
 				case IDL_PARAM_IN:
 					if(IDL_NODE_TYPE(p) == IDLN_TYPE_SEQUENCE) {
 						NOTDEFINED(p);
 					}
-					typestr = in_param_type(ns, type);
+					char *typestr = in_param_type(ns, type);
+					fprintf(of, "%s%s%s", typestr, type_space(typestr), name);
+					g_free(typestr);
 					break;
 
 				case IDL_PARAM_OUT:
@@ -529,14 +536,7 @@ static void print_vtable(
 
 				case IDL_PARAM_INOUT:
 					fprintf(of, "in-out parameters not done\n");
-					typestr = NULL;
 					break;
-			}
-			if(typestr != NULL) {
-				fprintf(of, "%s%s%s%s",
-					is_value_type(type) ? "" : "const ",
-					typestr, type_space(typestr), name);
-				g_free(typestr);
 			}
 		}
 
