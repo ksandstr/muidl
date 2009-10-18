@@ -15,7 +15,7 @@ interface Memserv: L4X2::FaultHandler
 	typedef long pid_t;
 	typedef sequence<word> wordseq;
 
-	[Prefix("")]
+	[NoValuePrefix]
 	enum mapping_type
 	{
 		MAP_TYPE_SHARED,

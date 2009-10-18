@@ -331,8 +331,25 @@ static char *value_type(IDL_ns ns, IDL_tree type)
  */
 static char *long_name(IDL_ns ns, IDL_tree node)
 {
-	/* FIXME: compute a prefix properly */
-	const char *prefix = "", *name;
+	char *prefix;
+	IDL_tree mod = IDL_get_parent_node(node, IDLN_MODULE, NULL),
+		iface = IDL_get_parent_node(node, IDLN_INTERFACE, NULL);
+	char *modname = NULL, *ifacename = NULL;
+	if(mod != NULL) {
+		modname = decapsify(IDL_IDENT(IDL_MODULE(mod).ident).str);
+	}
+	if(iface != NULL) {
+		ifacename = decapsify(IDL_IDENT(IDL_INTERFACE(iface).ident).str);
+	}
+	if(mod != NULL && iface != NULL) {
+		prefix = g_strdup_printf("%s_%s_", modname, ifacename);
+	} else if(mod != NULL) prefix = g_strdup_printf("%s_", modname);
+	else if(iface != NULL) prefix = g_strdup_printf("%s_", ifacename);
+	else prefix = g_strdup("");
+	if(modname != NULL) g_free(modname);
+	if(ifacename != NULL) g_free(ifacename);
+
+	const char *name;
 	switch(IDL_NODE_TYPE(node)) {
 		case IDLN_TYPE_STRUCT:
 			name = IDL_IDENT(IDL_TYPE_STRUCT(node).ident).str;
@@ -352,14 +369,16 @@ static char *long_name(IDL_ns ns, IDL_tree node)
 			break;
 
 		case IDLN_TYPE_ENUM:
-			/* FIXME: handle Prefix property! */
 			name = IDL_IDENT(IDL_TYPE_ENUM(node).ident).str;
 			break;
 
 		default:
 			NOTDEFINED(node);
 	}
-	return g_strconcat(prefix, name, NULL);
+
+	char *ret = g_strconcat(prefix, name, NULL);
+	g_free(prefix);
+	return ret;
 }
 
 
