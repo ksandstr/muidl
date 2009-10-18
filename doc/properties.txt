@@ -1,0 +1,52 @@
+
+IDL properties defined by µidl
+
+
+For interfaces:
+
+StubPrefix(__prefix) -- forces a constant prefix for generated stubs and
+disables prefix abbreviation for them (since there's presumably nothing to
+abbreviate anymore). TODO
+
+
+For operations:
+
+Label(u16) -- the operation's message label. TODO
+
+TagMask(u32/64) -- a mask applied to the raw representation of the message
+tag before it is compared with Label. This permits definition of handlers for
+the L4.X2 protocols. TODO
+
+
+For operation parameters:
+
+MR(n) -- force an in-parameter or an out-parameter into a particular message
+word. When applied to inout parameters, equivalent to InMR(n), OutMR(n). TODO
+
+InMR(n), OutMR(n) -- force an in-out parameter's message words on either side
+of the transfer. TODO
+
+
+For enums:
+
+NoValuePrefix -- instead of [mod_][iface_]enumname_valuename, put just
+"valuename" in the enumeration field. TODO
+
+
+For structs:
+
+NoPacked -- don't emit the C structure declaration with
+__attribute__((__packed__)).
+
+
+For exceptions (libIDL doesn't recognize properties on exceptions yet!):
+
+NegativeReturn(fieldname) -- pass fieldname, which must be an unsigned short
+or octet type, in the return value of a stub that is declared to raise this
+exception. To pop the exception, the server-side uses a negative return
+code. TODO
+
+Label(u16) -- the label by which this exception is identified by. May not
+overlap the labels of other exceptions declared as raised by the same
+operation. TODO
+
