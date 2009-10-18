@@ -55,6 +55,16 @@
 	} while(0)
 
 
+struct print_ctx
+{
+	FILE *of;
+	IDL_ns ns;
+
+	/* these are obeyed by whichever. */
+	bool forward_only;
+};
+
+
 static char *long_name(IDL_ns ns, IDL_tree node);
 
 
@@ -346,8 +356,8 @@ static char *long_name(IDL_ns ns, IDL_tree node)
 	} else if(mod != NULL) prefix = g_strdup_printf("%s_", modname);
 	else if(iface != NULL) prefix = g_strdup_printf("%s_", ifacename);
 	else prefix = g_strdup("");
-	if(modname != NULL) g_free(modname);
-	if(ifacename != NULL) g_free(ifacename);
+	g_free(modname);
+	g_free(ifacename);
 
 	const char *name;
 	switch(IDL_NODE_TYPE(node)) {
@@ -592,6 +602,77 @@ static void print_vtable(
 }
 
 
+static gboolean print_struct_decls(IDL_tree_func_data *tf, gpointer userdata)
+{
+	struct print_ctx *print = userdata;
+	FILE *of = print->of;
+
+	switch(IDL_NODE_TYPE(tf->tree)) {
+		default: return FALSE;
+
+		case IDLN_LIST:
+		case IDLN_MODULE:
+		case IDLN_SRCFILE:
+		case IDLN_INTERFACE:
+			return TRUE;
+
+		case IDLN_TYPE_STRUCT:
+			break;
+	}
+
+	char *l = long_name(print->ns, tf->tree);
+	fprintf(of, "struct %s", l);
+	g_free(l);
+	if(print->forward_only) fprintf(of, ";\n");
+	else {
+		IDL_tree prop_node = IDL_TYPE_STRUCT(tf->tree).ident;
+		const bool packed = IDL_tree_property_get(prop_node, "NoPacked") == NULL;
+		fprintf(of, "\n{\n");
+		for(IDL_tree cur = IDL_TYPE_STRUCT(tf->tree).member_list;
+			cur != NULL;
+			cur = IDL_LIST(cur).next)
+		{
+			IDL_tree member = IDL_LIST(cur).data,
+				type = get_type_spec(IDL_MEMBER(member).type_spec);
+
+			char *typestr = NULL;
+			if(is_value_type(type)) {
+				typestr = value_type(print->ns, type);
+			} else {
+				/* TODO: we should definitely support strings, but their
+				 * allocation and deallocation will be a vaguely CORBA-esque
+				 * problem -- we'd have to output _new and _free functions for
+				 * each, and that'll get _yukky_ once sequences of non-rigid
+				 * structures come into play.
+				 *
+				 * maybe restrict this to strings of a constant maximum length?
+				 * this shit is just the over-the-wire format anyhow.
+				 */
+				NOTDEFINED(type);
+			}
+
+			for(IDL_tree dcl_node = IDL_MEMBER(member).dcls;
+				dcl_node != NULL;
+				dcl_node = IDL_LIST(dcl_node).next)
+			{
+				IDL_tree ident = IDL_LIST(dcl_node).data;
+				const char *name = IDL_IDENT(ident).str;
+				if(is_value_type(type)) {
+					fprintf(of, "\t%s %s;\n", typestr, name);
+				} else {
+					/* TODO */
+					NOTDEFINED(type);
+				}
+			}
+
+			g_free(typestr);
+		}
+		fprintf(of, "}%s;\n", packed ? " __attribute__((__packed__))" : "");
+	}
+	return FALSE;		/* we do this ourselves, thanks. */
+}
+
+
 static gboolean pick_ifaces(IDL_tree_func_data *tf, gpointer userdata)
 {
 	GHashTable *ifaces = userdata;
@@ -649,8 +730,18 @@ bool do_idl_file(const char *filename)
 		print_vtable(stdout, tree, ns, (IDL_tree)value);
 	}
 
-	g_hash_table_destroy(ifaces);
+	struct print_ctx print_ctx = {
+		.of = stdout, .ns = ns,
+		.forward_only = true,
+	};
+	/* prints forward declarations. (could be cuter.) */
+	IDL_tree_walk_in_order(tree, &print_struct_decls, &print_ctx);
+	fprintf(print_ctx.of, "\n");
+	print_ctx.forward_only = false;
+	/* and the actual declarations. */
+	IDL_tree_walk_in_order(tree, &print_struct_decls, &print_ctx);
 
+	g_hash_table_destroy(ifaces);
 
 	IDL_ns_free(ns);
 	IDL_tree_free(tree);
