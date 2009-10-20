@@ -8,6 +8,14 @@
 module Muix
 {
 
+struct unrelated_to_muix
+{
+	long foo;
+	string<20> bar;
+	octet zort;
+	unsigned short blammo;
+};
+
 [StubPrefix(__memserv)]
 interface Memserv: L4X2::FaultHandler
 {

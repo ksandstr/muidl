@@ -66,6 +66,7 @@ struct print_ctx
 
 
 static char *long_name(IDL_ns ns, IDL_tree node);
+static bool is_rigid_type(IDL_ns ns, IDL_tree type);
 
 
 static int msg_callback(
@@ -392,6 +393,43 @@ static char *long_name(IDL_ns ns, IDL_tree node)
 }
 
 
+static bool is_struct_rigid(IDL_ns ns, IDL_tree type)
+{
+	for(IDL_tree cur = IDL_TYPE_STRUCT(type).member_list;
+		cur != NULL;
+		cur = IDL_LIST(cur).next)
+	{
+		IDL_tree member = IDL_LIST(cur).data,
+			type = get_type_spec(IDL_MEMBER(member).type_spec);
+		if(!is_rigid_type(ns, type)) return false;
+	}
+	return true;
+}
+
+
+static bool is_rigid_type(IDL_ns ns, IDL_tree type)
+{
+	if(type == NULL) return false;	/* void is not a rigid type either. */
+	switch(IDL_NODE_TYPE(type)) {
+		default: return is_value_type(type);
+		case IDLN_TYPE_STRUCT: return is_struct_rigid(ns, type);
+
+		case IDLN_TYPE_STRING:
+			/* only bounded strings are rigid. */
+			return IDL_TYPE_STRING(type).positive_int_const != NULL;
+
+		case IDLN_TYPE_WIDE_STRING:
+			/* same for wide strings. */
+			return IDL_TYPE_WIDE_STRING(type).positive_int_const != NULL;
+
+		case IDLN_TYPE_UNION:
+		case IDLN_TYPE_ARRAY:
+			/* TODO: is rigid if the element type is, but... */
+			NOTDEFINED(type);
+	}
+}
+
+
 /* handles the "rigid" compound types, i.e. structs, unions, and arrays.
  * return value is allocated and must be g_free()'d.
  */
@@ -404,6 +442,9 @@ static char *rigid_type(IDL_ns ns, IDL_tree type)
 			g_free(l);
 			return ret;
 		}
+
+		case IDLN_TYPE_STRING: return g_strdup("char");
+		case IDLN_TYPE_WIDE_STRING: return g_strdup("wchar_t");
 
 		case IDLN_TYPE_UNION:
 		case IDLN_TYPE_ARRAY:
@@ -635,18 +676,58 @@ static gboolean print_struct_decls(IDL_tree_func_data *tf, gpointer userdata)
 			IDL_tree member = IDL_LIST(cur).data,
 				type = get_type_spec(IDL_MEMBER(member).type_spec);
 
-			char *typestr = NULL;
+			char *typestr = NULL, *suffix = NULL;
+			unsigned long max_size = 0;
 			if(is_value_type(type)) {
 				typestr = value_type(print->ns, type);
+			} else if(is_rigid_type(print->ns, type)) {
+				typestr = rigid_type(print->ns, type);
+
+				/* and an array bound suffix. */
+				IDL_tree bound;
+				unsigned long extra;
+				switch(IDL_NODE_TYPE(type)) {
+					case IDLN_TYPE_STRING:
+						bound = IDL_TYPE_STRING(type).positive_int_const;
+						extra = 1;	/* '\0' terminator */
+						break;
+
+					case IDLN_TYPE_WIDE_STRING:
+						bound = IDL_TYPE_WIDE_STRING(type).positive_int_const;
+						extra = 1;
+						break;
+
+					case IDLN_TYPE_SEQUENCE:
+						bound = IDL_TYPE_SEQUENCE(type).positive_int_const;
+						extra = 0;
+						break;
+
+/* IDLN_TYPE_ARRAY appears as data in the member.dcls list rather than in the
+ * decl_type. obviously. so this needs to be folded into the dcls iteration.
+ */
+#if 0
+					case IDLN_TYPE_ARRAY: {
+						IDL_tree size_list = IDL_TYPE_ARRAY(type).size_list;
+						if(IDL_LIST(size_list).next != NULL) {
+							/* (can we do this gracefully?) */
+							fprintf(stderr, "%s: µidl doesn't support multi-dimensional arrays\n", __FUNCTION__);
+							exit(EXIT_FAILURE);
+						}
+						bound = IDL_LIST(size_list).data;
+						extra = 0;
+						break;
+					}
+#endif
+
+					default:
+						NOTDEFINED(type);
+				}
+				assert(bound != NULL);
+				max_size = (unsigned long)IDL_INTEGER(bound).value;
+				suffix = g_strdup_printf("[%lu]", max_size + extra);
 			} else {
-				/* TODO: we should definitely support strings, but their
-				 * allocation and deallocation will be a vaguely CORBA-esque
-				 * problem -- we'd have to output _new and _free functions for
-				 * each, and that'll get _yukky_ once sequences of non-rigid
-				 * structures come into play.
-				 *
-				 * maybe restrict this to strings of a constant maximum length?
-				 * this shit is just the over-the-wire format anyhow.
+				/* only constant maximum length types are permitted in
+				 * µidl structs.
 				 */
 				NOTDEFINED(type);
 			}
@@ -659,6 +740,16 @@ static gboolean print_struct_decls(IDL_tree_func_data *tf, gpointer userdata)
 				const char *name = IDL_IDENT(ident).str;
 				if(is_value_type(type)) {
 					fprintf(of, "\t%s %s;\n", typestr, name);
+				} else if(is_rigid_type(print->ns, type)) {
+					if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
+						const char *t;
+						if(max_size <= 255) t = "uint8_t";
+						else if(max_size <= 65535) t = "uint16_t";
+						else t = "unsigned";
+						fprintf(of, "\t%s %s_len;\n", t, name);
+					}
+					fprintf(of, "\t%s %s%s;\n", typestr, name,
+						suffix != NULL ? suffix : "");
 				} else {
 					/* TODO */
 					NOTDEFINED(type);
@@ -666,6 +757,7 @@ static gboolean print_struct_decls(IDL_tree_func_data *tf, gpointer userdata)
 			}
 
 			g_free(typestr);
+			g_free(suffix);
 		}
 		fprintf(of, "}%s;\n", packed ? " __attribute__((__packed__))" : "");
 	}
