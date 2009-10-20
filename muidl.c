@@ -702,23 +702,6 @@ static gboolean print_struct_decls(IDL_tree_func_data *tf, gpointer userdata)
 						extra = 0;
 						break;
 
-/* IDLN_TYPE_ARRAY appears as data in the member.dcls list rather than in the
- * decl_type. obviously. so this needs to be folded into the dcls iteration.
- */
-#if 0
-					case IDLN_TYPE_ARRAY: {
-						IDL_tree size_list = IDL_TYPE_ARRAY(type).size_list;
-						if(IDL_LIST(size_list).next != NULL) {
-							/* (can we do this gracefully?) */
-							fprintf(stderr, "%s: µidl doesn't support multi-dimensional arrays\n", __FUNCTION__);
-							exit(EXIT_FAILURE);
-						}
-						bound = IDL_LIST(size_list).data;
-						extra = 0;
-						break;
-					}
-#endif
-
 					default:
 						NOTDEFINED(type);
 				}
@@ -736,23 +719,45 @@ static gboolean print_struct_decls(IDL_tree_func_data *tf, gpointer userdata)
 				dcl_node != NULL;
 				dcl_node = IDL_LIST(dcl_node).next)
 			{
-				IDL_tree ident = IDL_LIST(dcl_node).data;
-				const char *name = IDL_IDENT(ident).str;
-				if(is_value_type(type)) {
-					fprintf(of, "\t%s %s;\n", typestr, name);
-				} else if(is_rigid_type(print->ns, type)) {
-					if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
-						const char *t;
-						if(max_size <= 255) t = "uint8_t";
-						else if(max_size <= 65535) t = "uint16_t";
-						else t = "unsigned";
-						fprintf(of, "\t%s %s_len;\n", t, name);
+				IDL_tree data = IDL_LIST(dcl_node).data;
+				if(IDL_NODE_TYPE(data) == IDLN_IDENT) {
+					const char *name = IDL_IDENT(data).str;
+					if(is_value_type(type)) {
+						fprintf(of, "\t%s %s;\n", typestr, name);
+					} else if(is_rigid_type(print->ns, type)) {
+						if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
+							const char *t;
+							if(max_size <= 255) t = "uint8_t";
+							else if(max_size <= 65535) t = "uint16_t";
+							else t = "unsigned";
+							fprintf(of, "\t%s %s_len;\n", t, name);
+						}
+						fprintf(of, "\t%s %s%s;\n", typestr, name,
+							suffix != NULL ? suffix : "");
+					} else {
+						/* TODO */
+						NOTDEFINED(type);
 					}
-					fprintf(of, "\t%s %s%s;\n", typestr, name,
-						suffix != NULL ? suffix : "");
+				} else if(IDL_NODE_TYPE(data) == IDLN_TYPE_ARRAY) {
+					IDL_tree ident = IDL_TYPE_ARRAY(data).ident,
+						size_list = IDL_TYPE_ARRAY(data).size_list;
+					const char *name = IDL_IDENT(ident).str;
+					if(IDL_LIST(size_list).next != NULL) {
+						fprintf(stderr, "%s: µidl doesn't support multi-dimensional arrays\n", __FUNCTION__);
+						exit(EXIT_FAILURE);
+					}
+					/* we'll disallow sequences, strings and wide strings. */
+					int nt = IDL_NODE_TYPE(type);
+					if(nt == IDLN_TYPE_SEQUENCE || nt == IDLN_TYPE_STRING
+						|| nt == IDLN_TYPE_WIDE_STRING)
+					{
+						fprintf(stderr, "%s: µidl doesn't permit arrays of sequences, strings, or wide strings\n", __FUNCTION__);
+						exit(EXIT_FAILURE);
+					}
+					fprintf(of, "\t%s %s[%ld];\n", typestr, name,
+						(long)IDL_INTEGER(IDL_LIST(size_list).data).value);
 				} else {
-					/* TODO */
-					NOTDEFINED(type);
+					NOTDEFINED(data);
 				}
 			}
 
