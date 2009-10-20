@@ -342,6 +342,22 @@ static char *value_type(IDL_ns ns, IDL_tree type)
  */
 static char *long_name(IDL_ns ns, IDL_tree node)
 {
+	IDL_tree ident;
+	switch(IDL_NODE_TYPE(node)) {
+		case IDLN_TYPE_STRUCT: ident = IDL_TYPE_STRUCT(node).ident; break;
+		case IDLN_TYPE_UNION: ident = IDL_TYPE_UNION(node).ident; break;
+		case IDLN_INTERFACE: ident = IDL_INTERFACE(node).ident; break;
+		case IDLN_TYPE_ENUM: ident = IDL_TYPE_ENUM(node).ident; break;
+
+		case IDLN_OP_DCL:
+			/* FIXME: handle interface StubPrefix property! */
+			ident = IDL_OP_DCL(node).ident;
+			break;
+
+		default:
+			NOTDEFINED(node);
+	}
+
 	char *prefix;
 	IDL_tree mod = IDL_get_parent_node(node, IDLN_MODULE, NULL),
 		iface = IDL_get_parent_node(node, IDLN_INTERFACE, NULL);
@@ -360,33 +376,7 @@ static char *long_name(IDL_ns ns, IDL_tree node)
 	g_free(modname);
 	g_free(ifacename);
 
-	const char *name;
-	switch(IDL_NODE_TYPE(node)) {
-		case IDLN_TYPE_STRUCT:
-			name = IDL_IDENT(IDL_TYPE_STRUCT(node).ident).str;
-			break;
-
-		case IDLN_TYPE_UNION:
-			name = IDL_IDENT(IDL_TYPE_UNION(node).ident).str;
-			break;
-
-		case IDLN_INTERFACE:
-			name = IDL_IDENT(IDL_INTERFACE(node).ident).str;
-			break;
-
-		case IDLN_OP_DCL:
-			/* FIXME: handle interface StubPrefix property! */
-			name = IDL_IDENT(IDL_OP_DCL(node).ident).str;
-			break;
-
-		case IDLN_TYPE_ENUM:
-			name = IDL_IDENT(IDL_TYPE_ENUM(node).ident).str;
-			break;
-
-		default:
-			NOTDEFINED(node);
-	}
-
+	const char *name = IDL_IDENT(ident).str;
 	char *ret = g_strconcat(prefix, name, NULL);
 	g_free(prefix);
 	return ret;
