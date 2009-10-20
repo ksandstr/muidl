@@ -54,6 +54,12 @@
 		abort(); \
 	} while(0)
 
+#define NOTSUPPORTED(what) do { \
+		fprintf(stderr, "%s: µidl does not support %s\n", \
+			__FUNCTION__, (what)); \
+		exit(EXIT_FAILURE); \
+	} while(0)
+
 
 struct print_ctx
 {
@@ -327,9 +333,7 @@ static char *value_type(IDL_ns ns, IDL_tree type)
 			}
 
 			default:
-				fprintf(stderr, "%s: <%s> not implemented\n", __FUNCTION__,
-					NODETYPESTR(type));
-				exit(EXIT_FAILURE);
+				NOTDEFINED(type);
 		}
 	}
 }
@@ -733,16 +737,14 @@ static gboolean print_struct_decls(IDL_tree_func_data *tf, gpointer userdata)
 						size_list = IDL_TYPE_ARRAY(data).size_list;
 					const char *name = IDL_IDENT(ident).str;
 					if(IDL_LIST(size_list).next != NULL) {
-						fprintf(stderr, "%s: µidl doesn't support multi-dimensional arrays\n", __FUNCTION__);
-						exit(EXIT_FAILURE);
+						NOTSUPPORTED("multi-dimensional arrays");
 					}
 					/* we'll disallow sequences, strings and wide strings. */
 					int nt = IDL_NODE_TYPE(type);
 					if(nt == IDLN_TYPE_SEQUENCE || nt == IDLN_TYPE_STRING
 						|| nt == IDLN_TYPE_WIDE_STRING)
 					{
-						fprintf(stderr, "%s: µidl doesn't permit arrays of sequences, strings, or wide strings\n", __FUNCTION__);
-						exit(EXIT_FAILURE);
+						NOTSUPPORTED("arrays of sequences, strings or wide strings");
 					}
 					fprintf(of, "\t%s %s[%ld];\n", typestr, name,
 						(long)IDL_INTEGER(IDL_LIST(size_list).data).value);
