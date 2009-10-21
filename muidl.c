@@ -92,6 +92,20 @@ static int msg_callback(
 }
 
 
+static bool is_reserved_word(const char *str)
+{
+	/* TODO: this list needs to be expanded quite a bit. */
+	static const char *reserved[] = {
+		"register",
+	};
+	if(str == NULL || str[0] == '\0') return false;
+	for(int i=0; i<G_N_ELEMENTS(reserved); i++) {
+		if(strcmp(str, reserved[i]) == 0) return true;
+	}
+	return false;
+}
+
+
 static bool collect_methods(
 	GList **methods_p,
 	GHashTable *ifaces_seen,
@@ -388,6 +402,11 @@ static char *long_name(IDL_ns ns, IDL_tree node)
 	const char *name = IDL_IDENT(ident).str;
 	char *ret = g_strconcat(prefix, name, NULL);
 	g_free(prefix);
+	if(is_reserved_word(ret)) {
+		char *r2 = g_strconcat("_", ret, NULL);
+		g_free(ret);
+		ret = r2;
+	}
 	return ret;
 }
 
@@ -588,8 +607,8 @@ static void print_vtable(
 
 		char *rettypstr = return_type(ns, op),
 			*name = decapsify(METHOD_NAME(op));
-		fprintf(of, "\t%s%s(*%s)(", rettypstr, type_space(rettypstr),
-			name);
+		fprintf(of, "\t%s%s(*%s%s)(", rettypstr, type_space(rettypstr),
+			is_reserved_word(name) ? "_" : "", name);
 		g_free(rettypstr);
 		g_free(name);
 
@@ -620,7 +639,8 @@ static void print_vtable(
 						NOTDEFINED(p);
 					}
 					char *typestr = in_param_type(ns, type);
-					fprintf(of, "%s%s%s", typestr, type_space(typestr), name);
+					fprintf(of, "%s%s%s%s", typestr, type_space(typestr),
+						is_reserved_word(name) ? "_" : "", name);
 					g_free(typestr);
 					break;
 
@@ -730,8 +750,9 @@ static gboolean print_struct_decls(IDL_tree_func_data *tf, gpointer userdata)
 						else t = "unsigned";
 						fprintf(of, "\t%s %s_len;\n", t, name);
 					}
-				fprintf(of, "\t%s %s%s;\n", typestr, name,
-						suffix != NULL ? suffix : "");
+				fprintf(of, "\t%s %s%s%s;\n", typestr, name,
+					is_reserved_word(name) ? "_" : "",
+					suffix != NULL ? suffix : "");
 				} else {
 					/* TODO */
 					NOTDEFINED(type);
@@ -750,7 +771,8 @@ static gboolean print_struct_decls(IDL_tree_func_data *tf, gpointer userdata)
 				{
 					NOTSUPPORTED("arrays of sequences, strings or wide strings");
 				}
-				fprintf(of, "\t%s %s[%ld];\n", typestr, name,
+				fprintf(of, "\t%s %s%s[%ld];\n", typestr, name,
+					is_reserved_word(name) ? "_" : "",
 					(long)IDL_INTEGER(IDL_LIST(size_list).data).value);
 			} else {
 				NOTDEFINED(data);
