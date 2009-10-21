@@ -70,9 +70,6 @@ struct print_ctx
 	const char *idlfilename;
 	const char *common_header_name;
 
-	/* these are obeyed by whichever. */
-	bool forward_only;
-
 	/* error handling bits */
 	jmp_buf fail_to;
 };
@@ -665,107 +662,106 @@ static gboolean print_struct_decls(IDL_tree_func_data *tf, gpointer userdata)
 	char *l = long_name(print->ns, tf->tree);
 	fprintf(of, "struct %s", l);
 	g_free(l);
-	if(print->forward_only) fprintf(of, ";\n");
-	else {
-		IDL_tree prop_node = IDL_TYPE_STRUCT(tf->tree).ident;
-		const bool packed = IDL_tree_property_get(prop_node, "NoPacked") == NULL;
-		fprintf(of, "\n{\n");
-		for(IDL_tree cur = IDL_TYPE_STRUCT(tf->tree).member_list;
-			cur != NULL;
-			cur = IDL_LIST(cur).next)
-		{
-			IDL_tree member = IDL_LIST(cur).data,
-				type = get_type_spec(IDL_MEMBER(member).type_spec);
 
-			char *typestr = NULL, *suffix = NULL;
-			unsigned long max_size = 0;
-			if(is_value_type(type)) {
-				typestr = value_type(print->ns, type);
-			} else if(is_rigid_type(print->ns, type)) {
-				typestr = rigid_type(print->ns, type);
+	IDL_tree prop_node = IDL_TYPE_STRUCT(tf->tree).ident;
+	const bool packed = IDL_tree_property_get(prop_node, "NoPacked") == NULL;
+	fprintf(of, "\n{\n");
+	for(IDL_tree cur = IDL_TYPE_STRUCT(tf->tree).member_list;
+		cur != NULL;
+		cur = IDL_LIST(cur).next)
+	{
+		IDL_tree member = IDL_LIST(cur).data,
+			type = get_type_spec(IDL_MEMBER(member).type_spec);
 
-				/* and an array bound suffix. */
-				IDL_tree bound;
-				unsigned long extra;
-				switch(IDL_NODE_TYPE(type)) {
-					case IDLN_TYPE_STRING:
-						bound = IDL_TYPE_STRING(type).positive_int_const;
-						extra = 1;	/* '\0' terminator */
-						break;
+		char *typestr = NULL, *suffix = NULL;
+		unsigned long max_size = 0;
+		if(is_value_type(type)) {
+			typestr = value_type(print->ns, type);
+		} else if(is_rigid_type(print->ns, type)) {
+			typestr = rigid_type(print->ns, type);
 
-					case IDLN_TYPE_WIDE_STRING:
-						bound = IDL_TYPE_WIDE_STRING(type).positive_int_const;
-						extra = 1;
-						break;
+			/* and an array bound suffix. */
+			IDL_tree bound;
+			unsigned long extra;
+			switch(IDL_NODE_TYPE(type)) {
+				case IDLN_TYPE_STRING:
+					bound = IDL_TYPE_STRING(type).positive_int_const;
+					extra = 1;	/* '\0' terminator */
+					break;
 
-					case IDLN_TYPE_SEQUENCE:
-						bound = IDL_TYPE_SEQUENCE(type).positive_int_const;
-						extra = 0;
-						break;
+				case IDLN_TYPE_WIDE_STRING:
+					bound = IDL_TYPE_WIDE_STRING(type).positive_int_const;
+					extra = 1;
+					break;
 
-					default:
-						NOTDEFINED(type);
-				}
-				assert(bound != NULL);
-				max_size = (unsigned long)IDL_INTEGER(bound).value;
-				suffix = g_strdup_printf("[%lu]", max_size + extra);
-			} else {
-				/* only constant maximum length types are permitted in
-				 * µidl structs.
-				 */
-				NOTDEFINED(type);
+				case IDLN_TYPE_SEQUENCE:
+					bound = IDL_TYPE_SEQUENCE(type).positive_int_const;
+					extra = 0;
+					break;
+
+				default:
+					NOTDEFINED(type);
 			}
-
-			for(IDL_tree dcl_node = IDL_MEMBER(member).dcls;
-				dcl_node != NULL;
-				dcl_node = IDL_LIST(dcl_node).next)
-			{
-				IDL_tree data = IDL_LIST(dcl_node).data;
-				if(IDL_NODE_TYPE(data) == IDLN_IDENT) {
-					const char *name = IDL_IDENT(data).str;
-					if(is_value_type(type)) {
-						fprintf(of, "\t%s %s;\n", typestr, name);
-					} else if(is_rigid_type(print->ns, type)) {
-						if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
-							const char *t;
-							if(max_size <= 255) t = "uint8_t";
-							else if(max_size <= 65535) t = "uint16_t";
-							else t = "unsigned";
-							fprintf(of, "\t%s %s_len;\n", t, name);
-						}
-						fprintf(of, "\t%s %s%s;\n", typestr, name,
-							suffix != NULL ? suffix : "");
-					} else {
-						/* TODO */
-						NOTDEFINED(type);
-					}
-				} else if(IDL_NODE_TYPE(data) == IDLN_TYPE_ARRAY) {
-					IDL_tree ident = IDL_TYPE_ARRAY(data).ident,
-						size_list = IDL_TYPE_ARRAY(data).size_list;
-					const char *name = IDL_IDENT(ident).str;
-					if(IDL_LIST(size_list).next != NULL) {
-						NOTSUPPORTED("multi-dimensional arrays");
-					}
-					/* we'll disallow sequences, strings and wide strings. */
-					int nt = IDL_NODE_TYPE(type);
-					if(nt == IDLN_TYPE_SEQUENCE || nt == IDLN_TYPE_STRING
-						|| nt == IDLN_TYPE_WIDE_STRING)
-					{
-						NOTSUPPORTED("arrays of sequences, strings or wide strings");
-					}
-					fprintf(of, "\t%s %s[%ld];\n", typestr, name,
-						(long)IDL_INTEGER(IDL_LIST(size_list).data).value);
-				} else {
-					NOTDEFINED(data);
-				}
-			}
-
-			g_free(typestr);
-			g_free(suffix);
+			assert(bound != NULL);
+			max_size = (unsigned long)IDL_INTEGER(bound).value;
+			suffix = g_strdup_printf("[%lu]", max_size + extra);
+		} else {
+			/* only constant maximum length types are permitted in
+			 * µidl structs.
+			 */
+			NOTDEFINED(type);
 		}
-		fprintf(of, "}%s;\n", packed ? " __attribute__((__packed__))" : "");
+
+		for(IDL_tree dcl_node = IDL_MEMBER(member).dcls;
+			dcl_node != NULL;
+			dcl_node = IDL_LIST(dcl_node).next)
+		{
+			IDL_tree data = IDL_LIST(dcl_node).data;
+			if(IDL_NODE_TYPE(data) == IDLN_IDENT) {
+				const char *name = IDL_IDENT(data).str;
+				if(is_value_type(type)) {
+					fprintf(of, "\t%s %s;\n", typestr, name);
+				} else if(is_rigid_type(print->ns, type)) {
+					if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
+						const char *t;
+						if(max_size <= 255) t = "uint8_t";
+					else if(max_size <= 65535) t = "uint16_t";
+						else t = "unsigned";
+						fprintf(of, "\t%s %s_len;\n", t, name);
+					}
+				fprintf(of, "\t%s %s%s;\n", typestr, name,
+						suffix != NULL ? suffix : "");
+				} else {
+					/* TODO */
+					NOTDEFINED(type);
+				}
+			} else if(IDL_NODE_TYPE(data) == IDLN_TYPE_ARRAY) {
+				IDL_tree ident = IDL_TYPE_ARRAY(data).ident,
+					size_list = IDL_TYPE_ARRAY(data).size_list;
+				const char *name = IDL_IDENT(ident).str;
+				if(IDL_LIST(size_list).next != NULL) {
+					NOTSUPPORTED("multi-dimensional arrays");
+				}
+				/* we'll disallow sequences, strings and wide strings. */
+				int nt = IDL_NODE_TYPE(type);
+				if(nt == IDLN_TYPE_SEQUENCE || nt == IDLN_TYPE_STRING
+					|| nt == IDLN_TYPE_WIDE_STRING)
+				{
+					NOTSUPPORTED("arrays of sequences, strings or wide strings");
+				}
+				fprintf(of, "\t%s %s[%ld];\n", typestr, name,
+					(long)IDL_INTEGER(IDL_LIST(size_list).data).value);
+			} else {
+				NOTDEFINED(data);
+			}
+		}
+
+		g_free(typestr);
+		g_free(suffix);
 	}
-	return FALSE;		/* we do this ourselves, thanks. */
+	fprintf(of, "}%s;\n", packed ? " __attribute__((__packed__))" : "");
+
+	return FALSE;	/* let's not go into structures. they're silly. */
 }
 
 
@@ -817,11 +813,6 @@ static void print_common_header(struct print_ctx *pr)
 	fprintf(pr->of, "#ifndef _MUIDL_%s\n#define _MUIDL_%s\n\n",
 		upper, upper);
 
-	/* prints forward declarations. (could be cuter.) */
-	pr->forward_only = true;
-	IDL_tree_walk_in_order(pr->tree, &print_struct_decls, pr);
-	fprintf(pr->of, "\n");
-	pr->forward_only = false;
 	/* and the actual declarations. */
 	IDL_tree_walk_in_order(pr->tree, &print_struct_decls, pr);
 
