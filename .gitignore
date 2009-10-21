@@ -3,3 +3,4 @@ muidl
 *.o
 .*.sw[opn]
 tags
+*-defs.h

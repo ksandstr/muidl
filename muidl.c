@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <setjmp.h>
 #include <assert.h>
 #include <ctype.h>
 #include <glib.h>
@@ -65,9 +66,15 @@ struct print_ctx
 {
 	FILE *of;
 	IDL_ns ns;
+	IDL_tree tree;
+	const char *idlfilename;
+	const char *common_header_name;
 
 	/* these are obeyed by whichever. */
 	bool forward_only;
+
+	/* error handling bits */
+	jmp_buf fail_to;
 };
 
 
@@ -794,6 +801,57 @@ static GHashTable *collect_ifaces(IDL_tree tree, IDL_ns ns)
 }
 
 
+static void print_common_header(struct print_ctx *pr)
+{
+	fprintf(pr->of,
+		"/* THIS FILE WAS GENERATED WITH µidl!\n"
+		" *\n"
+		" * Do not modify it, modify the source IDL file `%s' instead.\n"
+		" */\n\n", pr->idlfilename);
+
+	char *upper = g_utf8_strup(pr->common_header_name, -1);
+	/* (assume it's valid utf8 after strup.) */
+	for(char *p = upper; *p != '\0'; p = g_utf8_next_char(p)) {
+		if(g_ascii_ispunct(*p)) *p = '_';
+	}
+	fprintf(pr->of, "#ifndef _MUIDL_%s\n#define _MUIDL_%s\n\n",
+		upper, upper);
+
+	/* prints forward declarations. (could be cuter.) */
+	pr->forward_only = true;
+	IDL_tree_walk_in_order(pr->tree, &print_struct_decls, pr);
+	fprintf(pr->of, "\n");
+	pr->forward_only = false;
+	/* and the actual declarations. */
+	IDL_tree_walk_in_order(pr->tree, &print_struct_decls, pr);
+
+	fprintf(pr->of, "\n#endif");
+	g_free(upper);
+}
+
+
+/* FIXME: return errors somehow */
+static void print_with(
+	FILE *f,
+	void (*prtfn)(struct print_ctx *),
+	volatile struct print_ctx *pr)
+{
+	if(f == NULL) return;
+
+	FILE *oldof = pr->of;
+	pr->of = f;
+	if(setjmp(((struct print_ctx *)pr)->fail_to)) {
+		fprintf(stderr, "%s: fail handler invoked\n", __FUNCTION__);
+		fclose(f);
+		abort();
+	}
+
+	(*prtfn)((struct print_ctx *)pr);
+	pr->of = oldof;
+	fclose(f);
+}
+
+
 bool do_idl_file(const char *filename)
 {
 	IDL_tree tree = NULL;
@@ -819,18 +877,22 @@ bool do_idl_file(const char *filename)
 		print_vtable(stdout, tree, ns, (IDL_tree)value);
 	}
 
+	char basename[strlen(filename) + 1];
+	memcpy(basename, filename, strlen(filename) + 1);
+	char *dot = strrchr(basename, '.');
+	if(dot != NULL) *dot = '\0';
+	char *commonname = g_strdup_printf("%s-defs.h", basename);
+
 	struct print_ctx print_ctx = {
-		.of = stdout, .ns = ns,
-		.forward_only = true,
+		.of = stdout,
+		.ns = ns, .tree = tree,
+		.idlfilename = filename,
+		.common_header_name = commonname,
 	};
-	/* prints forward declarations. (could be cuter.) */
-	IDL_tree_walk_in_order(tree, &print_struct_decls, &print_ctx);
-	fprintf(print_ctx.of, "\n");
-	print_ctx.forward_only = false;
-	/* and the actual declarations. */
-	IDL_tree_walk_in_order(tree, &print_struct_decls, &print_ctx);
+	print_with(fopen(commonname, "wb"), &print_common_header, &print_ctx);
 
 	g_hash_table_destroy(ifaces);
+	g_free(commonname);
 
 	IDL_ns_free(ns);
 	IDL_tree_free(tree);
