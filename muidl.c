@@ -69,6 +69,7 @@ struct print_ctx
 	IDL_tree tree;
 	const char *idlfilename;
 	const char *common_header_name;
+	GHashTable *ifaces;
 
 	/* error handling bits */
 	jmp_buf fail_to;
@@ -805,6 +806,7 @@ static void print_common_header(struct print_ctx *pr)
 		" * Do not modify it, modify the source IDL file `%s' instead.\n"
 		" */\n\n", pr->idlfilename);
 
+	/* include guard */
 	char *upper = g_utf8_strup(pr->common_header_name, -1);
 	/* (assume it's valid utf8 after strup.) */
 	for(char *p = upper; *p != '\0'; p = g_utf8_next_char(p)) {
@@ -813,10 +815,29 @@ static void print_common_header(struct print_ctx *pr)
 	fprintf(pr->of, "#ifndef _MUIDL_%s\n#define _MUIDL_%s\n\n",
 		upper, upper);
 
-	/* and the actual declarations. */
+	/* struct, union & enum declarations as they appear in the IDL source. this
+	 * is appropriate because IDL doesn't permit forward declaration of
+	 * structs, unions, enums, or typedefs.
+	 */
 	IDL_tree_walk_in_order(pr->tree, &print_struct_decls, pr);
+	fprintf(pr->of, "\n");
 
-	fprintf(pr->of, "\n#endif");
+	/* interface vtables, but only for service implementations (so as to avoid
+	 * polluting the namespace).
+	 */
+	if(g_hash_table_size(pr->ifaces) > 0) {
+		fprintf(pr->of, "#ifdef MUIDL_IMPL_SOURCE\n");
+		GHashTableIter iter;
+		g_hash_table_iter_init(&iter, pr->ifaces);
+		gpointer key, value;
+		while(g_hash_table_iter_next(&iter, &key, &value)) {
+			fprintf(pr->of, "/* vtable for `%s': */\n", (const char *)key);
+			print_vtable(pr->of, pr->tree, pr->ns, (IDL_tree)value);
+		}
+		fprintf(pr->of, "#endif\n\n");
+	}
+
+	fprintf(pr->of, "#endif\n");
 	g_free(upper);
 }
 
@@ -860,13 +881,6 @@ bool do_idl_file(const char *filename)
 	}
 
 	GHashTable *ifaces = collect_ifaces(tree, ns);
-	GHashTableIter iter;
-	g_hash_table_iter_init(&iter, ifaces);
-	gpointer key, value;
-	while(g_hash_table_iter_next(&iter, &key, &value)) {
-		fprintf(stdout, "/* vtable for `%s': */\n", (const char *)key);
-		print_vtable(stdout, tree, ns, (IDL_tree)value);
-	}
 
 	char basename[strlen(filename) + 1];
 	memcpy(basename, filename, strlen(filename) + 1);
@@ -876,7 +890,7 @@ bool do_idl_file(const char *filename)
 
 	struct print_ctx print_ctx = {
 		.of = stdout,
-		.ns = ns, .tree = tree,
+		.ns = ns, .tree = tree, .ifaces = ifaces,
 		.idlfilename = filename,
 		.common_header_name = commonname,
 	};
