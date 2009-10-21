@@ -11,6 +11,7 @@ all: tags muidl
 
 clean:
 	rm -f *.o
+	rm -f {test,bus}-defs.h
 
 
 distclean: clean
