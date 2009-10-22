@@ -22,6 +22,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <stdbool.h>
 #include <setjmp.h>
@@ -71,9 +72,18 @@ struct print_ctx
 	const char *idlfilename;
 	const char *common_header_name;
 	GHashTable *ifaces;
+	int indent_level;
 
 	/* error handling bits */
 	jmp_buf fail_to;
+};
+
+
+struct method_info
+{
+	IDL_tree node;
+	uint16_t label;
+	uint32_t tagmask;
 };
 
 
@@ -396,6 +406,8 @@ static char *long_name(IDL_ns ns, IDL_tree node)
 	char *prefix;
 	IDL_tree mod = IDL_get_parent_node(node, IDLN_MODULE, NULL),
 		iface = IDL_get_parent_node(node, IDLN_INTERFACE, NULL);
+	if(mod == node) mod = NULL;
+	if(iface == node) iface = NULL;
 	char *modname = NULL, *ifacename = NULL;
 	if(mod != NULL) {
 		modname = decapsify(IDL_IDENT(IDL_MODULE(mod).ident).str);
@@ -827,13 +839,53 @@ static GHashTable *collect_ifaces(IDL_tree tree, IDL_ns ns)
 }
 
 
+static void indent(struct print_ctx *pr, int change)
+{
+	if(pr->indent_level + change < 0) {
+		fprintf(stderr, "warning: %s: changing %d by %d results in %d; clamped\n",
+			__FUNCTION__, pr->indent_level, change, pr->indent_level + change);
+		pr->indent_level = 0;
+	} else {
+		pr->indent_level += change;
+	}
+}
+
+
+/* NOTE: code_f() and code_vf() add a newline to the output. */
+static int code_vf(struct print_ctx *pr, const char *fmt, va_list args)
+{
+	char *text = g_strdup_vprintf(fmt, args),
+		**lines = g_strsplit(text, "\n", 0),
+		*prefix = g_strnfill(pr->indent_level, '\t');
+	g_free(text);
+	int total = 0;
+	for(int i=0; lines[i] != NULL; i++) {
+		total += fprintf(pr->of, "%s%s\n", lines[i][0] != '\0' ? prefix : "",
+			lines[i]);
+	}
+	g_strfreev(lines);
+	g_free(prefix);
+	return total;
+}
+
+
+static int code_f(struct print_ctx *pr, const char *fmt, ...)
+{
+	va_list al;
+	va_start(al, fmt);
+	int n = code_vf(pr, fmt, al);
+	va_end(al);
+	return n;
+}
+
+
 static void print_common_header(struct print_ctx *pr)
 {
-	fprintf(pr->of,
+	code_f(pr,
 		"/* THIS FILE WAS GENERATED WITH µidl!\n"
 		" *\n"
 		" * Do not modify it, modify the source IDL file `%s' instead.\n"
-		" */\n\n", pr->idlfilename);
+		" */\n", pr->idlfilename);
 
 	/* include guard */
 	char *upper = g_utf8_strup(pr->common_header_name, -1);
@@ -841,33 +893,198 @@ static void print_common_header(struct print_ctx *pr)
 	for(char *p = upper; *p != '\0'; p = g_utf8_next_char(p)) {
 		if(g_ascii_ispunct(*p)) *p = '_';
 	}
-	fprintf(pr->of, "#ifndef _MUIDL_%s\n#define _MUIDL_%s\n\n",
-		upper, upper);
+	code_f(pr, "#ifndef _MUIDL_%s\n#define _MUIDL_%s\n", upper, upper);
 
 	/* struct, union & enum declarations as they appear in the IDL source. this
 	 * is appropriate because IDL doesn't permit forward declaration of
 	 * structs, unions, enums, or typedefs.
 	 */
 	IDL_tree_walk_in_order(pr->tree, &print_struct_decls, pr);
-	fprintf(pr->of, "\n");
+	code_f(pr, "");
 
 	/* interface vtables, but only for service implementations (so as to avoid
 	 * polluting the namespace).
 	 */
 	if(g_hash_table_size(pr->ifaces) > 0) {
-		fprintf(pr->of, "#ifdef MUIDL_IMPL_SOURCE\n");
+		code_f(pr, "#ifdef MUIDL_IMPL_SOURCE");
 		GHashTableIter iter;
 		g_hash_table_iter_init(&iter, pr->ifaces);
 		gpointer key, value;
 		while(g_hash_table_iter_next(&iter, &key, &value)) {
-			fprintf(pr->of, "/* vtable for `%s': */\n", (const char *)key);
+			code_f(pr, "/* vtable for `%s': */", (const char *)key);
 			print_vtable(pr->of, pr->tree, pr->ns, (IDL_tree)value);
 		}
-		fprintf(pr->of, "#endif\n\n");
+		code_f(pr, "#endif\n");
 	}
 
-	fprintf(pr->of, "#endif\n");
+	code_f(pr, "#endif");
 	g_free(upper);
+}
+
+
+/* this outputs a very generic dispatcher. ones written in customized assembly
+ * code are optimizations, which we won't touch until µidl is reasonably
+ * feature-complete. (i.e. need-to basis, and optimizations don't usually need
+ * to.)
+ */
+static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
+{
+	code_f(pr, "/* dispatcher for `%s' */\n",
+		IDL_IDENT(IDL_INTERFACE(iface).ident).repo_id);
+
+	char *ifacename = long_name(pr->ns, iface);
+	code_f(pr, "L4_Word_t _muidl_%s_dispatch(void)\n{", ifacename);
+	indent(pr, 1);
+	g_free(ifacename);
+
+	GList *methods = all_methods_of_iface(pr->ns, iface);
+
+	/* TODO: get the number and max dimensions of the string buffers we might
+	 * need to receive.
+	 */
+	GList *tagmask_list = NULL;
+	for(GList *cur = g_list_first(methods);
+		cur != NULL;
+		cur = g_list_next(cur))
+	{
+		struct method_info *inf = g_new0(struct method_info, 1);
+		IDL_tree method = cur->data, prop_node = IDL_OP_DCL(method).ident;
+		inf->node = method;
+
+		const char *tagmask = IDL_tree_property_get(prop_node, "TagMask");
+		if(tagmask == NULL) inf->tagmask = ~0ul;
+		else {
+			char *endptr = NULL;
+			inf->tagmask = strtoul(tagmask, &endptr, 0);
+			if(endptr == tagmask && inf->tagmask == 0) {
+				/* FIXME: gracefully! */
+				fprintf(stderr, "error: invalid TagMask value `%s'\n", tagmask);
+				abort();
+			}
+			tagmask_list = g_list_prepend(tagmask_list, inf);
+		}
+
+		const char *label = IDL_tree_property_get(prop_node, "Label");
+		if(tagmask != NULL) {
+			char *endptr = NULL;
+			inf->label = strtoul(label, &endptr, 0);
+			if(endptr == label && inf->label == 0) {
+				fprintf(stderr, "error: invalid Label value `%s'\n", label);
+				abort();
+			}
+		} else {
+			/* FIXME: assign method labels at some point */
+			fprintf(stderr, "error: can't assign automatic label to `%s'\n",
+				METHOD_NAME(method));
+			abort();
+		}
+
+		cur->data = inf;
+	}
+	tagmask_list = g_list_reverse(tagmask_list);
+
+	code_f(pr,
+		"L4_Acceptor_t acc = L4_UntypedWordsAcceptor;\n"
+		"for(;;) {");
+	indent(pr, 1);
+	code_f(pr,
+			"L4_ThreadId_t sender_tid;\n\n"
+			"L4_Accept(acc);\n"
+			"L4_MsgTag_t tag = L4_Wait(&sender);\n"
+			"for(;;) {");
+	indent(pr, 1);
+	code_f(pr,	"if(L4_IpcFailed(tag)) return L4_ErrorCode();\n"
+				"L4_Msg_t msg;\n"
+				"L4_MsgStore(tag, &msg);");
+
+	/* tag-mask dispatched things, in IDL order. */
+	for(GList *cur = g_list_first(tagmask_list);
+		cur != NULL;
+		cur = g_list_next(cur))
+	{
+		struct method_info *inf = cur->data;
+		code_f(pr, "if((tag.raw & 0x%lx) == 0x%lx) {",
+			(unsigned long)inf->tagmask, (unsigned long)inf->label << 16);
+		indent(pr, 1);
+
+		code_f(pr, "/* would dispatch on `%s' here */",
+			METHOD_NAME(inf->node));
+
+		if(g_list_next(cur) != NULL) {
+			indent(pr, -1);
+			code_f(pr, "}");
+		} else {
+			/* last element */
+			indent(pr, -1);
+			code_f(pr, "} else {");
+			indent(pr, 1);
+		}
+	}
+
+	code_f(pr, "switch(L4_Label(tag)) {");
+	indent(pr, 1);
+	for(GList *cur = g_list_first(methods);
+		cur != NULL;
+		cur = g_list_next(cur))
+	{
+		struct method_info *inf = cur->data;
+		if(g_list_find(tagmask_list, inf) != NULL) continue; /* been done */
+
+		/* TODO: actually output dispatching code for operation */
+		code_f(pr, "/* would put code for the `%s' decoder here */",
+			METHOD_NAME(inf->node));
+	}
+
+	code_f(pr, "default:");
+	indent(pr, 1);
+	code_f(pr, "/* FIXME: pop an error or something? */\nbreak;");
+	indent(pr, -1);
+
+	indent(pr, -1);
+	code_f(pr, "}");
+	if(tagmask_list != NULL) {
+		indent(pr, -1);
+		code_f(pr, "}");
+	}
+
+	g_list_foreach(methods, (GFunc)g_free, NULL);
+	g_list_free(methods);
+	g_list_free(tagmask_list);
+
+	indent(pr, -1);
+	code_f(pr,
+			"}");
+
+	indent(pr, -1);
+	code_f(pr,
+		"}");
+
+	indent(pr, -1);
+	code_f(pr, "}");
+}
+
+
+static gboolean iter_print_dispatchers(IDL_tree_func_data *tf, void *ud)
+{
+	switch(IDL_NODE_TYPE(tf->tree)) {
+		case IDLN_LIST:
+		case IDLN_MODULE:
+		case IDLN_SRCFILE:
+			return TRUE;
+
+		default: return FALSE;
+
+		case IDLN_INTERFACE:
+			print_dispatcher_for_iface(tf->tree, (struct print_ctx *)ud);
+			return FALSE;
+	}
+}
+
+
+static void print_dispatcher(struct print_ctx *pr)
+{
+	fprintf(pr->of, "#include \"%s\"\n\n", pr->common_header_name);
+	IDL_tree_walk_in_order(pr->tree, &iter_print_dispatchers, pr);
 }
 
 
@@ -931,9 +1148,12 @@ bool do_idl_file(const char *filename)
 		.common_header_name = commonname,
 	};
 	print_into(commonname, &print_common_header, &print_ctx);
+	char *dispname = g_strdup_printf("%s-dispatch.c", basename);
+	print_into(dispname, &print_dispatcher, &print_ctx);
 
 	g_hash_table_destroy(ifaces);
 	g_free(commonname);
+	g_free(dispname);
 
 	IDL_ns_free(ns);
 	IDL_tree_free(tree);
