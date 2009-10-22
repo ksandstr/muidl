@@ -910,8 +910,10 @@ bool do_idl_file(const char *filename)
 
 	GHashTable *ifaces = collect_ifaces(tree, ns);
 
-	char basename[strlen(filename) + 1];
-	memcpy(basename, filename, strlen(filename) + 1);
+	const char *filepart = strrchr(filename, '/');
+	if(filepart == NULL) filepart = filename; else filepart++;
+	char basename[strlen(filepart) + 1];
+	memcpy(basename, filepart, strlen(filepart) + 1);
 	char *dot = strrchr(basename, '.');
 	if(dot != NULL) *dot = '\0';
 	char *commonname = g_strdup_printf("%s-defs.h", basename);
