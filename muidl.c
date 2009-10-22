@@ -166,6 +166,17 @@ static bool collect_methods(
 }
 
 
+static GList *all_methods_of_iface(IDL_ns ns, IDL_tree iface)
+{
+	GList *methods = NULL;
+	GHashTable *ifaces_seen = g_hash_table_new(&g_str_hash, &g_str_equal);
+	g_hash_table_insert(ifaces_seen, IFACE_REPO_ID(iface), iface);
+	collect_methods(&methods, ifaces_seen, ns, iface);
+	g_hash_table_destroy(ifaces_seen);
+	return g_list_reverse(methods);
+}
+
+
 static char *decapsify(const char *name)
 {
 	const int len = strlen(name);
@@ -590,12 +601,7 @@ static void print_vtable(
 	IDL_ns ns,
 	IDL_tree iface)
 {
-	GList *methods = NULL;
-	GHashTable *ifaces_seen = g_hash_table_new(&g_str_hash, &g_str_equal);
-	g_hash_table_insert(ifaces_seen, IFACE_REPO_ID(iface), iface);
-	collect_methods(&methods, ifaces_seen, ns, iface);
-	g_hash_table_destroy(ifaces_seen);
-	methods = g_list_reverse(methods);
+	GList *methods = all_methods_of_iface(ns, iface);
 
 	char *prefix = iface_prefix(ns, iface);
 	fprintf(of, "struct %s_vtable\n{\n", prefix);
