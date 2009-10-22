@@ -26,6 +26,7 @@
 #include <stdbool.h>
 #include <setjmp.h>
 #include <assert.h>
+#include <errno.h>
 #include <ctype.h>
 #include <glib.h>
 #include <libIDL/IDL.h>
@@ -865,12 +866,17 @@ static void print_common_header(struct print_ctx *pr)
 
 
 /* FIXME: return errors somehow */
-static void print_with(
-	FILE *f,
+static void print_into(
+	const char *filename,
 	void (*prtfn)(struct print_ctx *),
 	volatile struct print_ctx *pr)
 {
-	if(f == NULL) return;
+	FILE *f = fopen(filename, "wb");
+	if(f == NULL) {
+		fprintf(stderr, "can't open `%s' for writing: %s\n", filename,
+			strerror(errno));
+		exit(EXIT_FAILURE);
+	}
 
 	FILE *oldof = pr->of;
 	pr->of = f;
@@ -916,7 +922,7 @@ bool do_idl_file(const char *filename)
 		.idlfilename = filename,
 		.common_header_name = commonname,
 	};
-	print_with(fopen(commonname, "wb"), &print_common_header, &print_ctx);
+	print_into(commonname, &print_common_header, &print_ctx);
 
 	g_hash_table_destroy(ifaces);
 	g_free(commonname);
