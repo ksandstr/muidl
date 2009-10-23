@@ -929,6 +929,13 @@ static void print_common_header(struct print_ctx *pr)
 }
 
 
+static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
+{
+	code_f(pr, "/* would decode operation `%s' here */",
+		METHOD_NAME(inf->node));
+}
+
+
 /* this outputs a very generic dispatcher. ones written in customized assembly
  * code are optimizations, which we won't touch until µidl is reasonably
  * feature-complete. (i.e. need-to basis, and optimizations don't usually need
@@ -989,6 +996,8 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 		cur->data = inf;
 	}
 	tagmask_list = g_list_reverse(tagmask_list);
+	const bool have_switch = g_list_length(tagmask_list) < g_list_length(methods),
+		have_tagmask = g_list_length(tagmask_list) > 0;
 
 	code_f(pr,
 		"L4_Acceptor_t acc = L4_UntypedWordsAcceptor;\n"
@@ -1014,8 +1023,7 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 			(unsigned long)inf->tagmask, (unsigned long)inf->label << 16);
 		indent(pr, 1);
 
-		code_f(pr, "/* would dispatch on `%s' here */",
-			METHOD_NAME(inf->node));
+		print_op_decode(pr, inf);
 
 		if(g_list_next(cur) != NULL) close_brace(pr);
 		else {
@@ -1026,27 +1034,33 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 		}
 	}
 
-	code_f(pr, "switch(L4_Label(tag)) {");
-	indent(pr, 1);
-	for(GList *cur = g_list_first(methods);
-		cur != NULL;
-		cur = g_list_next(cur))
-	{
-		struct method_info *inf = cur->data;
-		if(g_list_find(tagmask_list, inf) != NULL) continue; /* been done */
+	if(have_switch) {
+		code_f(pr, "switch(L4_Label(tag)) {");
+		indent(pr, 1);
+		for(GList *cur = g_list_first(methods);
+			cur != NULL;
+			cur = g_list_next(cur))
+		{
+			struct method_info *inf = cur->data;
+			if(g_list_find(tagmask_list, inf) != NULL) continue; /* been done */
 
-		/* TODO: actually output dispatching code for operation */
-		code_f(pr, "/* would put code for the `%s' decoder here */",
-			METHOD_NAME(inf->node));
+			print_op_decode(pr, inf);
+		}
+
+		code_f(pr, "default:");
+		indent(pr, 1);
 	}
 
-	code_f(pr, "default:");
-	indent(pr, 1);
-	code_f(pr, "/* FIXME: pop an error or something? */\nbreak;");
-	indent(pr, -1);
+	/* handler for unrecognized messages */
+	code_f(pr, "/* FIXME: pop an error or something? */");
+
+	if(have_switch) {
+		code_f(pr, "break;");
+		indent(pr, -1);
+	}
 
 	close_brace(pr);
-	if(tagmask_list != NULL) close_brace(pr);
+	if(have_tagmask) close_brace(pr);
 
 	g_list_foreach(methods, (GFunc)g_free, NULL);
 	g_list_free(methods);
