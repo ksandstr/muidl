@@ -1047,7 +1047,7 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 			print_op_decode(pr, inf);
 		}
 
-		code_f(pr, "default:");
+		code_f(pr, "default: {");
 		indent(pr, 1);
 	}
 
@@ -1055,11 +1055,13 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 	code_f(pr, "/* FIXME: pop an error or something? */");
 
 	if(have_switch) {
+		/* finish the unrecognized-messages handler */
 		code_f(pr, "break;");
-		indent(pr, -1);
+		close_brace(pr);
+		/* and the switch stmt */
+		close_brace(pr);
 	}
 
-	close_brace(pr);
 	if(have_tagmask) close_brace(pr);
 
 	g_list_foreach(methods, (GFunc)g_free, NULL);
