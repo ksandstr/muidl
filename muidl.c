@@ -196,7 +196,7 @@ static char *decapsify(const char *name)
 	int o = 0;
 	for(int i=0; i < len; i++) {
 		if(isupper(name[i])) {
-			if(i > 0) out[o++] = '_';
+			if(i > 0 && islower(name[i-1])) out[o++] = '_';
 			out[o++] = tolower(name[i]);
 		} else {
 			out[o++] = name[i];
@@ -204,13 +204,6 @@ static char *decapsify(const char *name)
 	}
 	out[o] = '\0';
 	return out;
-}
-
-
-static char *iface_prefix(IDL_ns ns, IDL_tree iface)
-{
-	char *ifname = decapsify(IFACE_NAME(iface));
-	return ifname;
 }
 
 
@@ -607,17 +600,25 @@ static void print_out_param(
 }
 
 
+static char *vtable_prefix(IDL_ns ns, IDL_tree iface)
+{
+	char *l = long_name(ns, iface), *ret = decapsify(l);
+	g_free(l);
+	return ret;
+}
+
+
 static void print_vtable(
 	FILE *of,
 	IDL_tree file_tree,
 	IDL_ns ns,
 	IDL_tree iface)
 {
+	char *vtpfx = vtable_prefix(ns, iface);
+	fprintf(of, "struct %s_vtable\n{\n", vtpfx);
+	g_free(vtpfx);
+
 	GList *methods = all_methods_of_iface(ns, iface);
-
-	char *prefix = iface_prefix(ns, iface);
-	fprintf(of, "struct %s_vtable\n{\n", prefix);
-
 	for(GList *cur = g_list_first(methods);
 		cur != NULL;
 		cur = g_list_next(cur))
@@ -677,7 +678,6 @@ static void print_vtable(
 	}
 	fprintf(of, "};\n");
 	g_list_free(methods);
-	g_free(prefix);
 }
 
 
@@ -946,10 +946,13 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 	code_f(pr, "/* dispatcher for `%s' */\n",
 		IDL_IDENT(IDL_INTERFACE(iface).ident).repo_id);
 
-	char *ifacename = long_name(pr->ns, iface);
-	code_f(pr, "L4_Word_t _muidl_%s_dispatch(void)\n{", ifacename);
+	char *vtprefix = vtable_prefix(pr->ns, iface);
+	code_f(pr, "L4_Word_t _muidl_%s_dispatch(", vtprefix);
 	indent(pr, 1);
-	g_free(ifacename);
+	code_f(pr, "struct %s_vtable *vtable)", vtprefix);
+	indent(pr, -1);
+	code_f(pr, "{");
+	indent(pr, 1);
 
 	GList *methods = all_methods_of_iface(pr->ns, iface);
 
@@ -1064,13 +1067,14 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 
 	if(have_tagmask) close_brace(pr);
 
-	g_list_foreach(methods, (GFunc)g_free, NULL);
-	g_list_free(methods);
-	g_list_free(tagmask_list);
-
 	close_brace(pr);	/* inner for loop */
 	close_brace(pr);	/* outer for loop */
 	close_brace(pr);	/* function */
+
+	g_list_foreach(methods, (GFunc)g_free, NULL);
+	g_list_free(methods);
+	g_list_free(tagmask_list);
+	g_free(vtprefix);
 }
 
 
