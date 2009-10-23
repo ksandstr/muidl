@@ -879,6 +879,13 @@ static int code_f(struct print_ctx *pr, const char *fmt, ...)
 }
 
 
+static void close_brace(struct print_ctx *pr)
+{
+	indent(pr, -1);
+	code_f(pr, "}");
+}
+
+
 static void print_common_header(struct print_ctx *pr)
 {
 	code_f(pr,
@@ -1010,10 +1017,8 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 		code_f(pr, "/* would dispatch on `%s' here */",
 			METHOD_NAME(inf->node));
 
-		if(g_list_next(cur) != NULL) {
-			indent(pr, -1);
-			code_f(pr, "}");
-		} else {
+		if(g_list_next(cur) != NULL) close_brace(pr);
+		else {
 			/* last element */
 			indent(pr, -1);
 			code_f(pr, "} else {");
@@ -1040,27 +1045,16 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 	code_f(pr, "/* FIXME: pop an error or something? */\nbreak;");
 	indent(pr, -1);
 
-	indent(pr, -1);
-	code_f(pr, "}");
-	if(tagmask_list != NULL) {
-		indent(pr, -1);
-		code_f(pr, "}");
-	}
+	close_brace(pr);
+	if(tagmask_list != NULL) close_brace(pr);
 
 	g_list_foreach(methods, (GFunc)g_free, NULL);
 	g_list_free(methods);
 	g_list_free(tagmask_list);
 
-	indent(pr, -1);
-	code_f(pr,
-			"}");
-
-	indent(pr, -1);
-	code_f(pr,
-		"}");
-
-	indent(pr, -1);
-	code_f(pr, "}");
+	close_brace(pr);	/* inner for loop */
+	close_brace(pr);	/* outer for loop */
+	close_brace(pr);	/* function */
 }
 
 
