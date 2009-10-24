@@ -936,6 +936,48 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 }
 
 
+static struct method_info *analyse_op_dcl(
+	struct print_ctx *pr,
+	IDL_tree method)
+{
+	struct method_info *inf = g_new(struct method_info, 1);
+	IDL_tree prop_node = IDL_OP_DCL(method).ident;
+	inf->node = method;
+
+	const char *tagmask = IDL_tree_property_get(prop_node, "TagMask");
+	if(tagmask == NULL) inf->tagmask = ~0ul;
+	else {
+		char *endptr = NULL;
+		inf->tagmask = strtoul(tagmask, &endptr, 0);
+		if(endptr == tagmask && inf->tagmask == 0) {
+			fprintf(stderr, "error: invalid TagMask value `%s'\n", tagmask);
+			goto fail;
+		}
+	}
+
+	const char *label = IDL_tree_property_get(prop_node, "Label");
+	if(label == NULL) inf->label = 0;
+	else {
+		char *endptr = NULL;
+		inf->label = strtoul(label, &endptr, 0);
+		if(endptr == label && inf->label == 0) {
+			fprintf(stderr, "error: invalid Label value `%s'\n", label);
+			goto fail;
+		}
+	}
+
+	/* TODO: assign message registers while accounting for explicit MR
+	 * spec properties!
+	 */
+
+	return inf;
+
+fail:
+	g_free(inf);
+	return NULL;
+}
+
+
 /* this outputs a very generic dispatcher. ones written in customized assembly
  * code are optimizations, which we won't touch until µidl is reasonably
  * feature-complete. (i.e. need-to basis, and optimizations don't usually need
@@ -964,32 +1006,14 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 		cur != NULL;
 		cur = g_list_next(cur))
 	{
-		struct method_info *inf = g_new0(struct method_info, 1);
-		IDL_tree method = cur->data, prop_node = IDL_OP_DCL(method).ident;
-		inf->node = method;
-
-		const char *tagmask = IDL_tree_property_get(prop_node, "TagMask");
-		if(tagmask == NULL) inf->tagmask = ~0ul;
-		else {
-			char *endptr = NULL;
-			inf->tagmask = strtoul(tagmask, &endptr, 0);
-			if(endptr == tagmask && inf->tagmask == 0) {
-				/* FIXME: gracefully! */
-				fprintf(stderr, "error: invalid TagMask value `%s'\n", tagmask);
-				abort();
-			}
-			tagmask_list = g_list_prepend(tagmask_list, inf);
+		IDL_tree method = cur->data;
+		struct method_info *inf = analyse_op_dcl(pr, method);
+		if(inf == NULL) {
+			/* FIXME: fail properly */
+			abort();
 		}
 
-		const char *label = IDL_tree_property_get(prop_node, "Label");
-		if(tagmask != NULL) {
-			char *endptr = NULL;
-			inf->label = strtoul(label, &endptr, 0);
-			if(endptr == label && inf->label == 0) {
-				fprintf(stderr, "error: invalid Label value `%s'\n", label);
-				abort();
-			}
-		} else {
+		if(inf->label == 0) {
 			/* FIXME: assign method labels at some point */
 			fprintf(stderr, "error: can't assign automatic label to `%s'\n",
 				METHOD_NAME(method));
@@ -997,6 +1021,9 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 		}
 
 		cur->data = inf;
+		if(inf->tagmask != ~0ul) {
+			tagmask_list = g_list_append(tagmask_list, inf);
+		}
 	}
 	tagmask_list = g_list_reverse(tagmask_list);
 	const bool have_switch = g_list_length(tagmask_list) < g_list_length(methods),
