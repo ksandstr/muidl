@@ -1114,7 +1114,7 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 
 		cur->data = inf;
 		if(inf->tagmask != ~0ul) {
-			tagmask_list = g_list_append(tagmask_list, inf);
+			tagmask_list = g_list_prepend(tagmask_list, inf);
 		}
 	}
 	tagmask_list = g_list_reverse(tagmask_list);
