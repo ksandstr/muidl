@@ -27,6 +27,7 @@
 #include <stdbool.h>
 #include <setjmp.h>
 #include <assert.h>
+#include <alloca.h>
 #include <errno.h>
 #include <ctype.h>
 #include <glib.h>
@@ -79,11 +80,21 @@ struct print_ctx
 };
 
 
+struct param_info
+{
+	const char *name;
+	IDL_tree type, param_dcl;
+	uint8_t first_reg, last_reg;
+};
+
+
 struct method_info
 {
 	IDL_tree node;
 	uint16_t label;
 	uint32_t tagmask;
+	int num_params;
+	struct param_info params[];
 };
 
 
@@ -936,11 +947,17 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 }
 
 
+/* TODO: get the number and max dimensions of the string buffers we'll
+ * send/receive once long types are implemented.
+ */
 static struct method_info *analyse_op_dcl(
 	struct print_ctx *pr,
 	IDL_tree method)
 {
-	struct method_info *inf = g_new(struct method_info, 1);
+	IDL_tree param_list = IDL_OP_DCL(method).parameter_dcls;
+	const int num_params = IDL_list_length(param_list);
+	struct method_info *inf = g_malloc(sizeof(struct method_info)
+		+ sizeof(struct param_info) * num_params);
 	IDL_tree prop_node = IDL_OP_DCL(method).ident;
 	inf->node = method;
 
@@ -966,9 +983,84 @@ static struct method_info *analyse_op_dcl(
 		}
 	}
 
-	/* TODO: assign message registers while accounting for explicit MR
-	 * spec properties!
+	/* first pass: get the highest assigned register number and fill in the
+	 * parameter info bits so we don't have to crawl the list again.
 	 */
+	int num_regs = 0, max_fixreg = 0, ppos = 0;
+	for(IDL_tree cur = param_list; cur != NULL; cur = IDL_LIST(cur).next) {
+		IDL_tree parm = IDL_LIST(cur).data,
+			type = get_type_spec(IDL_PARAM_DCL(parm).param_type_spec),
+			ident = IDL_PARAM_DCL(parm).simple_declarator;
+		struct param_info *pinf = &inf->params[ppos++];
+		pinf->name = IDL_IDENT(ident).str;
+		pinf->type = type;
+		pinf->param_dcl = parm;
+
+		if(is_value_type(type)) num_regs++;
+		else {
+			/* TODO: count and assign MRs for rigid and long types */
+			NOTDEFINED(type);
+		}
+
+		/* FIXME: write a get_ul_property(tree, name, unsigned long *) instead
+		 * and use it here (and above); ffs i've got Java on the brain
+		 */
+		const char *mr = IDL_tree_property_get(ident, "MR");
+		if(mr == NULL) mr = "0";
+		int mr_n = atoi(mr);
+		if(mr_n > 0) {
+			if(mr_n > 63) {
+				fprintf(stderr, "%s: invalid MR specification `%s'\n",
+					__FUNCTION__, mr);
+				goto fail;
+			}
+			pinf->first_reg = mr_n;
+			pinf->last_reg = mr_n;
+			max_fixreg = MAX(max_fixreg, mr_n);
+		} else {
+			pinf->first_reg = 0;
+			pinf->last_reg = 0;
+		}
+	}
+	inf->num_params = ppos;
+
+	/* second pass: verify that fixed registers are referenced at most once,
+	 * and assign other registers around them.
+	 */
+	int taken_len = MAX(num_regs, max_fixreg);
+	/* (one more to permit one-origin addressing.) */
+	bool *taken = alloca(sizeof(bool) * (taken_len + 1));
+	for(int i=1; i <= taken_len; i++) taken[i] = false;
+	int next_reg = 1, r_used = 0;
+	for(int i=0; i < inf->num_params; i++) {
+		struct param_info *pinf = &inf->params[i];
+		if(pinf->first_reg > 0) {
+			assert(pinf->last_reg > 0);
+			assert(pinf->last_reg >= pinf->first_reg);
+			for(int r = pinf->first_reg; r <= pinf->last_reg; r++) {
+				if(taken[r]) {
+					fprintf(stderr, "%s: MR%d fixed multiple times\n",
+						__FUNCTION__, r);
+					goto fail;
+				}
+				taken[r] = true;
+				r_used++;
+			}
+		} else if(is_value_type(pinf->type)) {
+			/* single-word types. */
+			int r;
+			do {
+				r = next_reg++;
+				assert(r <= taken_len);
+			} while(taken[r]);
+			taken[r] = true;
+			r_used++;
+			pinf->first_reg = r;
+			pinf->last_reg = r;
+		} else {
+			NOTDEFINED(pinf->type);
+		}
+	}
 
 	return inf;
 
@@ -998,9 +1090,6 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 
 	GList *methods = all_methods_of_iface(pr->ns, iface);
 
-	/* TODO: get the number and max dimensions of the string buffers we might
-	 * need to receive.
-	 */
 	GList *tagmask_list = NULL;
 	for(GList *cur = g_list_first(methods);
 		cur != NULL;
