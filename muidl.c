@@ -947,6 +947,28 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 }
 
 
+/* returns true on success, including property not found (in which case
+ * *value_p is not modified).
+ */
+static bool get_ul_property(
+	unsigned long *value_p,
+	IDL_tree ident,
+	const char *name)
+{
+	const char *p = IDL_tree_property_get(ident, name);
+	if(p == NULL) return true;
+	char *endptr = NULL;
+	unsigned long ret = strtoul(p, &endptr, 0);
+	if(ret == 0 && endptr == p) {
+		fprintf(stderr, "error: invalid %s property: `%s'\n", name, p);
+		return false;
+	} else {
+		*value_p = ret;
+		return true;
+	}
+}
+
+
 /* TODO: get the number and max dimensions of the string buffers we'll
  * send/receive once long types are implemented.
  */
@@ -961,27 +983,13 @@ static struct method_info *analyse_op_dcl(
 	IDL_tree prop_node = IDL_OP_DCL(method).ident;
 	inf->node = method;
 
-	const char *tagmask = IDL_tree_property_get(prop_node, "TagMask");
-	if(tagmask == NULL) inf->tagmask = ~0ul;
-	else {
-		char *endptr = NULL;
-		inf->tagmask = strtoul(tagmask, &endptr, 0);
-		if(endptr == tagmask && inf->tagmask == 0) {
-			fprintf(stderr, "error: invalid TagMask value `%s'\n", tagmask);
-			goto fail;
-		}
-	}
+	unsigned long tagmask = ~0ul;
+	if(!get_ul_property(&tagmask, prop_node, "TagMask")) goto fail;
+	inf->tagmask = tagmask;
 
-	const char *label = IDL_tree_property_get(prop_node, "Label");
-	if(label == NULL) inf->label = 0;
-	else {
-		char *endptr = NULL;
-		inf->label = strtoul(label, &endptr, 0);
-		if(endptr == label && inf->label == 0) {
-			fprintf(stderr, "error: invalid Label value `%s'\n", label);
-			goto fail;
-		}
-	}
+	unsigned long labelval = 0;
+	if(!get_ul_property(&labelval, prop_node, "Label")) goto fail;
+	inf->label = labelval;
 
 	/* first pass: get the highest assigned register number and fill in the
 	 * parameter info bits so we don't have to crawl the list again.
@@ -1002,16 +1010,11 @@ static struct method_info *analyse_op_dcl(
 			NOTDEFINED(type);
 		}
 
-		/* FIXME: write a get_ul_property(tree, name, unsigned long *) instead
-		 * and use it here (and above); ffs i've got Java on the brain
-		 */
-		const char *mr = IDL_tree_property_get(ident, "MR");
-		if(mr == NULL) mr = "0";
-		int mr_n = atoi(mr);
-		if(mr_n > 0) {
+		unsigned long mr_n = 0;
+		if(!get_ul_property(&mr_n, ident, "MR")) goto fail;
+		else if(mr_n > 0) {
 			if(mr_n > 63) {
-				fprintf(stderr, "%s: invalid MR specification `%s'\n",
-					__FUNCTION__, mr);
+				fprintf(stderr, "MR(%lu) too large\n", mr_n);
 				goto fail;
 			}
 			pinf->first_reg = mr_n;
