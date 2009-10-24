@@ -1126,9 +1126,9 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 		"for(;;) {");
 	indent(pr, 1);
 	code_f(pr,
-			"L4_ThreadId_t sender_tid;\n\n"
 			"L4_Accept(acc);\n"
-			"L4_MsgTag_t tag = L4_Wait(&sender);\n"
+			"L4_ThreadId_t sender_tid;\n"
+			"L4_MsgTag_t tag = L4_Wait(&sender_tid);\n"
 			"for(;;) {");
 	indent(pr, 1);
 	code_f(pr,	"if(L4_IpcFailed(tag)) return L4_ErrorCode();\n"
@@ -1141,15 +1141,18 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 		cur = g_list_next(cur))
 	{
 		struct method_info *inf = cur->data;
-		code_f(pr, "if((tag.raw & 0x%lx) == 0x%lx) {",
+		code_f(pr, "%sif((tag.raw & 0x%lx) == 0x%lx) {",
+			cur == g_list_first(tagmask_list) ? "" : "} else ",
 			(unsigned long)inf->tagmask, (unsigned long)inf->label << 16);
 		indent(pr, 1);
 
 		print_op_decode(pr, inf);
 
-		if(g_list_next(cur) != NULL) close_brace(pr);
+		if(g_list_next(cur) != NULL) indent(pr, -1);
 		else {
-			/* last element */
+			/* last element, falls out into either label switch or
+			 * unknown-handler.
+			 */
 			indent(pr, -1);
 			code_f(pr, "} else {");
 			indent(pr, 1);
@@ -1166,7 +1169,12 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 			struct method_info *inf = cur->data;
 			if(g_list_find(tagmask_list, inf) != NULL) continue; /* been done */
 
+			code_f(pr, "case 0x%lx: {", inf->label);
+			indent(pr, 1);
 			print_op_decode(pr, inf);
+			code_f(pr, "break;");
+			close_brace(pr);
+			code_f(pr, "");		/* aesthetics, man! */
 		}
 
 		code_f(pr, "default: {");
