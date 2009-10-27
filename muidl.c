@@ -1056,7 +1056,7 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 		code_f(pr, "/* blah */");
 	}
 
-	g_free(rettyp);
+	g_free(rtstr);
 	g_free(name);
 	g_list_foreach(parm_list, (GFunc)g_free, NULL);
 }
