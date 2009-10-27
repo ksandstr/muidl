@@ -673,7 +673,7 @@ static void print_vtable(
 				type = get_type_spec(IDL_PARAM_DCL(p).param_type_spec);
 			const char *name = IDL_IDENT(decl).str;
 			switch(IDL_PARAM_DCL(p).attr) {
-				case IDL_PARAM_IN:
+				case IDL_PARAM_IN: {
 					if(IDL_NODE_TYPE(p) == IDLN_TYPE_SEQUENCE) {
 						NOTDEFINED(p);
 					}
@@ -682,6 +682,7 @@ static void print_vtable(
 						is_reserved_word(name) ? "_" : "", name);
 					g_free(typestr);
 					break;
+				}
 
 				case IDL_PARAM_OUT:
 					print_out_param(of, ns, type, name);
