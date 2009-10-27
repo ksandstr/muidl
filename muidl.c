@@ -507,8 +507,10 @@ static char *rigid_type(IDL_ns ns, IDL_tree type)
 	&& IDL_TYPE_INTEGER((op_type)).f_type == IDL_INTEGER_TYPE_SHORT)
 
 /* FIXME: fail gracefully */
-static char *return_type(IDL_ns ns, IDL_tree op)
+static char *return_type(IDL_ns ns, IDL_tree op, bool *real_p)
 {
+	bool spare_bool;
+	if(real_p == NULL) real_p = &spare_bool;
 	IDL_tree op_type = get_type_spec(IDL_OP_DCL(op).op_type_spec);
 
 	/* oneway restrictions. */
@@ -530,6 +532,7 @@ static char *return_type(IDL_ns ns, IDL_tree op)
 		if(op_type == NULL || !is_value_type(op_type)
 			|| IS_USHORT_TYPE(op_type))
 		{
+			*real_p = false;
 			return g_strdup("int");
 		} else {
 			fprintf(stderr,
@@ -539,8 +542,13 @@ static char *return_type(IDL_ns ns, IDL_tree op)
 		}
 	}
 
-	if(op_type == NULL || !is_value_type(op_type)) return g_strdup("void");
-	else return value_type(ns, op_type);
+	if(op_type == NULL || !is_value_type(op_type)) {
+		*real_p = false;
+		return g_strdup("void");
+	} else {
+		*real_p = true;
+		return value_type(ns, op_type);
+	}
 }
 
 
@@ -636,7 +644,7 @@ static void print_vtable(
 	{
 		IDL_tree op = cur->data;
 
-		char *rettypstr = return_type(ns, op),
+		char *rettypstr = return_type(ns, op, NULL),
 			*name = decapsify(METHOD_NAME(op));
 		fprintf(of, "\t%s%s(*%s%s)(", rettypstr, type_space(rettypstr),
 			is_reserved_word(name) ? "_" : "", name);
