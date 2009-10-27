@@ -951,8 +951,114 @@ static void print_common_header(struct print_ctx *pr)
 
 static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 {
-	code_f(pr, "/* would decode operation `%s' here */",
-		METHOD_NAME(inf->node));
+	code_f(pr, "/* decoding of `%s' */", METHOD_NAME(inf->node));
+
+	/* non-automatic valuetype parameter decode
+	 * (automatic valuetypes get implicit conversion at the function call site,
+	 * so we don't decode them explicitly.)
+	 */
+	for(int i=0; i<inf->num_params; i++) {
+		const struct param_info *pinf = &inf->params[i];
+		if(IDL_PARAM_DCL(pinf->param_dcl).attr == IDL_PARAM_OUT) continue;
+
+		if(IS_MAPGRANT_TYPE(pinf->type)) {
+			assert(pinf->first_reg == pinf->last_reg - 1);
+			code_f(pr, "L4_MapItem_t p_%s = {\n"
+				"\t.raw = { L4_MsgWord(&msg, %d), L4_MsgWord(&msg, %d) }\n"
+				"};", pinf->name, (int)pinf->first_reg, (int)pinf->last_reg);
+		} else if(IS_FPAGE_TYPE(pinf->type)) {
+			code_f(pr, "L4_Fpage_t p_%s = { .raw = L4_MsgWord(&msg, %d) };",
+				pinf->name, (int)pinf->first_reg);
+		} else if(is_value_type(pinf->type)) {
+			/* see comment above */
+			continue;
+		} else {
+			NOTDEFINED(pinf->type);
+		}
+	}
+
+	IDL_tree rettyp = get_type_spec(IDL_OP_DCL(inf->node).op_type_spec);
+	bool ret_is_real;
+	char *rtstr = return_type(pr->ns, inf->node, &ret_is_real),
+		*name = decapsify(METHOD_NAME(inf->node));
+	const bool is_voidfn = (rettyp == NULL || strcmp(rtstr, "void") == 0);
+
+	/* build the actual parameter list. */
+	GList *parm_list = NULL;	/* <char *>, g_free()'d at end */
+
+	/* the result out-parameter, if non-valuetype or hidden by error status */
+	if(rettyp != NULL && !ret_is_real) {
+		char *typ;
+		if(is_value_type(rettyp)) typ = value_type(pr->ns, rettyp);
+		else if(IS_MAPGRANT_TYPE(rettyp)) typ = g_strdup("L4_MapItem_t");
+		else typ = rigid_type(pr->ns, rettyp);
+		code_f(pr, "%s result;", typ);
+		parm_list = g_list_append(parm_list, g_strdup("&result"));
+		g_free(typ);
+	}
+
+	for(int i=0; i<inf->num_params; i++) {
+		struct param_info *pinf = &inf->params[i];
+		switch(IDL_PARAM_DCL(pinf->param_dcl).attr) {
+			case IDL_PARAM_IN:
+				if(IS_FPAGE_TYPE(pinf->type)) {
+					parm_list = g_list_append(parm_list,
+						g_strdup_printf("p_%s", pinf->name));
+				} else if(is_value_type(pinf->type)) {
+					for(int r=pinf->first_reg; r <= pinf->last_reg; r++) {
+						parm_list = g_list_append(parm_list,
+							g_strdup_printf("L4_MsgWord(&msg, %d)", r));
+					}
+				} else {
+					NOTDEFINED(pinf->type);
+				}
+				break;
+
+			case IDL_PARAM_INOUT:
+			case IDL_PARAM_OUT:
+				assert("can't go there bob" == NULL);
+		}
+	}
+
+	/* the vtable call. */
+	const char *ret1, *ret2;
+	if(is_voidfn) {
+		ret1 = "";
+		ret2 = "";
+	} else {
+		ret1 = rtstr;
+		ret2 = " retval = ";
+	}
+	if(g_list_first(parm_list) == NULL) {
+		/* parameterless operations that don't even have a result
+		 * parameter.
+		 */
+		code_f(pr, "%s%s(*vtable->%s)();", ret1, ret2, name);
+	} else {
+		for(GList *cur = g_list_first(parm_list);
+			cur != NULL;
+			cur = g_list_next(cur))
+		{
+			const char *str = cur->data,
+				*suffix = g_list_next(cur) != NULL ? "," : ");";
+			if(cur == g_list_first(parm_list)) {
+				code_f(pr, "%s%s(*vtable->%s)(%s%s", ret1, ret2, name,
+					(const char *)g_list_first(parm_list)->data, suffix);
+				indent(pr, 1);
+			} else {
+				code_f(pr, "%s%s", str, suffix);
+			}
+		}
+		indent(pr, -1);
+	}
+
+	if(!IDL_OP_DCL(inf->node).f_oneway) {
+		code_f(pr, "/* blah */");
+	}
+
+	g_free(rettyp);
+	g_free(name);
+	g_list_foreach(parm_list, (GFunc)g_free, NULL);
 }
 
 
