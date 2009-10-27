@@ -1156,6 +1156,7 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 		indent(pr, 1);
 
 		print_op_decode(pr, inf);
+		if(IDL_OP_DCL(inf->node).f_oneway) code_f(pr, "break;");
 
 		if(g_list_next(cur) != NULL) indent(pr, -1);
 		else {
@@ -1169,7 +1170,7 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 	}
 
 	if(have_switch) {
-		code_f(pr, "switch(L4_Label(tag)) {");
+		code_f(pr, "bool reply = true;\nswitch(L4_Label(tag)) {");
 		indent(pr, 1);
 		for(GList *cur = g_list_first(methods);
 			cur != NULL;
@@ -1181,6 +1182,7 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 			code_f(pr, "case 0x%lx: {", inf->label);
 			indent(pr, 1);
 			print_op_decode(pr, inf);
+			if(IDL_OP_DCL(inf->node).f_oneway) code_f(pr, "reply = false;");
 			code_f(pr, "break;");
 			close_brace(pr);
 			code_f(pr, "");		/* aesthetics, man! */
@@ -1199,9 +1201,15 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 		close_brace(pr);
 		/* and the switch stmt */
 		close_brace(pr);
+		/* prevent msgload, replywait for oneway operations */
+		code_f(pr, "if(!reply) break;");
 	}
 
 	if(have_tagmask) close_brace(pr);
+
+	code_f(pr, "L4_MsgLoad(&msg);\n"
+		"L4_Accept(acc);\n"
+		"tag = L4_ReplyWait(sender_tid, &sender_tid);");
 
 	close_brace(pr);	/* inner for loop */
 	close_brace(pr);	/* outer for loop */
