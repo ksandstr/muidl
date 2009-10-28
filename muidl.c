@@ -1000,10 +1000,11 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 			assert(pinf->first_reg == pinf->last_reg - 1);
 			code_f(pr, "L4_MapItem_t p_%s = {\n"
 				"\t.raw = { L4_MsgWord(&msg, %d), L4_MsgWord(&msg, %d) }\n"
-				"};", pinf->name, (int)pinf->first_reg, (int)pinf->last_reg);
+				"};", pinf->name, (int)pinf->first_reg - 1,
+				(int)pinf->last_reg - 1);
 		} else if(IS_FPAGE_TYPE(pinf->type)) {
 			code_f(pr, "L4_Fpage_t p_%s = { .raw = L4_MsgWord(&msg, %d) };",
-				pinf->name, (int)pinf->first_reg);
+				pinf->name, (int)pinf->first_reg - 1);
 		} else if(is_value_type(pinf->type)) {
 			/* see comment above */
 			continue;
@@ -1040,7 +1041,7 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 					add_str_f(&parm_list, "p_%s", pinf->name);
 				} else if(is_value_type(pinf->type)) {
 					for(int r=pinf->first_reg; r <= pinf->last_reg; r++) {
-						add_str_f(&parm_list, "L4_MsgWord(&msg, %d)", r);
+						add_str_f(&parm_list, "L4_MsgWord(&msg, %d)", r - 1);
 					}
 				} else {
 					NOTDEFINED(pinf->type);
