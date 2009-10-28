@@ -949,6 +949,25 @@ static void print_common_header(struct print_ctx *pr)
 }
 
 
+/* NOTE: these actually add items to the _front_, since it is a O(1) operation
+ * (disregarding allocator overhead etc). reverse before use, or iterate back
+ * to front.
+ */
+static void add_str_vf(GList **listptr, const char *fmt, va_list al)
+{
+	*listptr = g_list_prepend(*listptr, g_strdup_vprintf(fmt, al));
+}
+
+
+static void add_str_f(GList **listptr, const char *fmt, ...)
+{
+	va_list al;
+	va_start(al, fmt);
+	add_str_vf(listptr, fmt, al);
+	va_end(al);
+}
+
+
 static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 {
 	code_f(pr, "/* decoding of `%s' */", METHOD_NAME(inf->node));
@@ -993,7 +1012,7 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 		else if(IS_MAPGRANT_TYPE(rettyp)) typ = g_strdup("L4_MapItem_t");
 		else typ = rigid_type(pr->ns, rettyp);
 		code_f(pr, "%s result;", typ);
-		parm_list = g_list_append(parm_list, g_strdup("&result"));
+		add_str_f(&parm_list, "&result");
 		g_free(typ);
 	}
 
@@ -1002,12 +1021,10 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 		switch(IDL_PARAM_DCL(pinf->param_dcl).attr) {
 			case IDL_PARAM_IN:
 				if(IS_FPAGE_TYPE(pinf->type)) {
-					parm_list = g_list_append(parm_list,
-						g_strdup_printf("p_%s", pinf->name));
+					add_str_f(&parm_list, "p_%s", pinf->name);
 				} else if(is_value_type(pinf->type)) {
 					for(int r=pinf->first_reg; r <= pinf->last_reg; r++) {
-						parm_list = g_list_append(parm_list,
-							g_strdup_printf("L4_MsgWord(&msg, %d)", r));
+						add_str_f(&parm_list, "L4_MsgWord(&msg, %d)", r);
 					}
 				} else {
 					NOTDEFINED(pinf->type);
@@ -1035,6 +1052,7 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 		 */
 		code_f(pr, "%s%s(*vtable->%s)();", ret1, ret2, name);
 	} else {
+		parm_list = g_list_reverse(parm_list);
 		for(GList *cur = g_list_first(parm_list);
 			cur != NULL;
 			cur = g_list_next(cur))
