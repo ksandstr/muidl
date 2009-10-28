@@ -97,6 +97,8 @@ struct method_info
 	struct param_info params[];
 };
 
+#define NO_TAGMASK ((uint32_t)~0u)
+
 
 static char *long_name(IDL_ns ns, IDL_tree node);
 static bool is_rigid_type(IDL_ns ns, IDL_tree type);
@@ -1133,7 +1135,7 @@ static struct method_info *analyse_op_dcl(
 	IDL_tree prop_node = IDL_OP_DCL(method).ident;
 	inf->node = method;
 
-	unsigned long tagmask = ~0ul;
+	unsigned long tagmask = NO_TAGMASK;
 	if(!get_ul_property(&tagmask, prop_node, "TagMask")) goto fail;
 	inf->tagmask = tagmask;
 
@@ -1263,7 +1265,7 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 		}
 
 		cur->data = inf;
-		if(inf->tagmask != ~0ul) {
+		if(inf->tagmask != NO_TAGMASK) {
 			tagmask_list = g_list_prepend(tagmask_list, inf);
 		}
 	}
@@ -1291,6 +1293,7 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 		cur = g_list_next(cur))
 	{
 		struct method_info *inf = cur->data;
+		assert(inf->tagmask != NO_TAGMASK);
 		code_f(pr, "%sif((tag.raw & 0x%lx) == 0x%lx) {",
 			cur == g_list_first(tagmask_list) ? "" : "} else ",
 			(unsigned long)inf->tagmask, (unsigned long)inf->label << 16);
