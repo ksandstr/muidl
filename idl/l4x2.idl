@@ -2,6 +2,9 @@
 #ifndef _L4X2_IDL
 #define _L4X2_IDL
 
+/* FIXME: remove this, it doesn't belong here for real */
+#include "posix-base.idl"
+
 // make-believe IDL for L4.X2 protocols
 
 
@@ -24,6 +27,19 @@ interface FaultHandler
 	MapGrantItem handle_fault(
 		[MR(1)] in word faddr,
 		[MR(2)] in word fip);
+
+	/* these only exist for test's sake, move them out at some point */
+	[Label(0xface)]
+	void void_operation(in word foo, in word bar)
+		raises(Posix::Errno);
+
+	[Label(0xfacf)]
+	unsigned short ushort_operation(in word foo, in unsigned short mask)
+		raises(Posix::Errno);
+
+	[Label(0xfad0)]
+	octet octet_operation(in word foo, in octet mask)
+		raises(Posix::Errno);
 };
 
 }; // module

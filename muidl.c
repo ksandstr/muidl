@@ -538,15 +538,17 @@ static char *return_type(IDL_ns ns, IDL_tree op, bool *real_p)
 
 	/* NegativeReturn restrictions. */
 	if(has_negs_exns(ns, op)) {
-		if(op_type == NULL || !is_value_type(op_type)
-			|| IS_USHORT_TYPE(op_type))
+		if(op_type == NULL
+			|| IS_USHORT_TYPE(op_type)
+			|| IDL_NODE_TYPE(op_type) == IDLN_TYPE_OCTET
+			|| !is_value_type(op_type))
 		{
 			*real_p = false;
 			return g_strdup("int");
 		} else {
 			fprintf(stderr,
 				"return type for a NegativeReturn raising operation must be\n"
-				"void, an unsigned short, or a non-value type.\n");
+				"void, an unsigned short, an octet, or a non-value type.\n");
 			exit(EXIT_FAILURE);
 		}
 	}
@@ -1024,8 +1026,12 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 	/* build the actual parameter list. */
 	GList *parm_list = NULL;	/* <char *>, g_free()'d at end */
 
-	/* the result out-parameter, if non-valuetype or hidden by error status */
-	if(rettyp != NULL && !ret_is_real) {
+	/* the result out-parameter, if non-valuetype or both hidden by error
+	 * status and not unsigned short or octet
+	 */
+	if(rettyp != NULL && !ret_is_real && !IS_USHORT_TYPE(rettyp)
+		&& IDL_NODE_TYPE(rettyp) != IDLN_TYPE_OCTET)
+	{
 		char *typ;
 		if(is_value_type(rettyp)) typ = value_type(pr->ns, rettyp);
 		else if(IS_MAPGRANT_TYPE(rettyp)) typ = g_strdup("L4_MapItem_t");
@@ -1090,7 +1096,30 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 	}
 
 	if(!IDL_OP_DCL(inf->node).f_oneway) {
-		code_f(pr, "/* blah */");
+		const bool has_neg = has_negs_exns(pr->ns, inf->node);
+		bool first_exn = true;
+		if(has_neg) {
+			assert(strcmp(rtstr, "int") == 0);
+			code_f(pr, "if(retval < 0) _MSG_SET_ERROR(&msg, -retval);");
+			first_exn = false;
+		}
+		/* TODO: handle other exceptions as an elseif-chain */
+		if(has_neg && IDL_OP_DCL(inf->node).op_type_spec != NULL) {
+			/* strictly positive integral return types that're 31 bits or
+			 * shorter: unsigned short and octet. (whee!)
+			 */
+			code_f(pr, "else {");
+			indent(pr, 1);
+			code_f(pr, "L4_MsgClear(&msg);");
+			/* FIXME: truncate retval to 16 or 8 bits unsigned */
+			code_f(pr, "L4_MsgAppendWord(&msg, retval);");
+			close_brace(pr);
+		} else {
+			/* TODO: encode return type outside the neg-exn case,
+			 * out-parameters
+			 */
+			code_f(pr, "/* blah */");
+		}
 	}
 
 	g_free(rtstr);
