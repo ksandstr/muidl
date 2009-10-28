@@ -878,20 +878,29 @@ static void indent(struct print_ctx *pr, int change)
 }
 
 
+static char *skipwhites(const char *s)
+{
+	while(isspace(*s)) s++;
+	return (char *)s;
+}
+
+
 /* NOTE: code_f() and code_vf() add a newline to the output. */
 static int code_vf(struct print_ctx *pr, const char *fmt, va_list args)
 {
 	char *text = g_strdup_vprintf(fmt, args),
-		**lines = g_strsplit(text, "\n", 0),
-		*prefix = g_strnfill(pr->indent_level, '\t');
-	g_free(text);
+		**lines = g_strsplit(skipwhites(text), "\n", 0),
+		prefix[pr->indent_level + 1];
+
+	for(int i=0; i<pr->indent_level; i++) prefix[i] = '\t';
+	prefix[pr->indent_level] = '\0';
 	int total = 0;
 	for(int i=0; lines[i] != NULL; i++) {
 		total += fprintf(pr->of, "%s%s\n", lines[i][0] != '\0' ? prefix : "",
 			lines[i]);
 	}
 	g_strfreev(lines);
-	g_free(prefix);
+	g_free(text);
 	return total;
 }
 
