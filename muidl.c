@@ -101,6 +101,13 @@ struct method_info
 static char *long_name(IDL_ns ns, IDL_tree node);
 static bool is_rigid_type(IDL_ns ns, IDL_tree type);
 
+static void add_str_f(GList **listptr, const char *fmt, ...)
+	__attribute__((format(printf, 2, 3)));
+
+static int code_f(struct print_ctx *pr, const char *fmt, ...)
+	__attribute__((format(printf, 2, 3)));
+
+
 
 static int msg_callback(
 	int level,
@@ -927,7 +934,7 @@ static void print_common_header(struct print_ctx *pr)
 	 * structs, unions, enums, or typedefs.
 	 */
 	IDL_tree_walk_in_order(pr->tree, &print_struct_decls, pr);
-	code_f(pr, "");
+	code_f(pr, " ");
 
 	/* interface vtables, but only for service implementations (so as to avoid
 	 * polluting the namespace).
@@ -1303,13 +1310,13 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 			struct method_info *inf = cur->data;
 			if(g_list_find(tagmask_list, inf) != NULL) continue; /* been done */
 
-			code_f(pr, "case 0x%lx: {", inf->label);
+			code_f(pr, "case 0x%lx: {", (unsigned long)inf->label);
 			indent(pr, 1);
 			print_op_decode(pr, inf);
 			if(IDL_OP_DCL(inf->node).f_oneway) code_f(pr, "reply = false;");
 			code_f(pr, "break;");
 			close_brace(pr);
-			code_f(pr, "");		/* aesthetics, man! */
+			code_f(pr, " ");		/* aesthetics, man! */
 		}
 
 		code_f(pr, "default: {");
