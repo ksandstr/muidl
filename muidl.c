@@ -436,8 +436,9 @@ static char *long_name(IDL_ns ns, IDL_tree node)
 	g_free(modname);
 	g_free(ifacename);
 
-	const char *name = IDL_IDENT(ident).str;
-	char *ret = g_strconcat(prefix, name, NULL);
+	char *name = decapsify(IDL_IDENT(ident).str),
+		*ret = g_strconcat(prefix, name, NULL);
+	g_free(name);
 	g_free(prefix);
 	if(is_reserved_word(ret)) {
 		char *r2 = g_strconcat("_", ret, NULL);
