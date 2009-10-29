@@ -885,7 +885,7 @@ static void indent(struct print_ctx *pr, int change)
 
 static char *skipwhites(const char *s)
 {
-	while(isspace(*s)) s++;
+	while(isblank(*s)) s++;
 	return (char *)s;
 }
 
@@ -900,6 +900,7 @@ static int code_vf(struct print_ctx *pr, const char *fmt, va_list args)
 	for(int i=0; i<pr->indent_level; i++) prefix[i] = '\t';
 	prefix[pr->indent_level] = '\0';
 	int total = 0;
+	if(lines[0] == NULL) total = fprintf(pr->of, "\n");
 	for(int i=0; lines[i] != NULL; i++) {
 		total += fprintf(pr->of, "%s%s\n", lines[i][0] != '\0' ? prefix : "",
 			lines[i]);
