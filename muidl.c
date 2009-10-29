@@ -227,7 +227,36 @@ static char *decapsify(const char *name)
 }
 
 
-/* does the operation given have a NegativeReturn exception? */
+/* is this IDLN_EXCEPT_DCL a NegativeReturn exception? */
+static bool is_negs_exn(IDL_tree exn)
+{
+	/* FIXME: once libIDL supports properties on exceptions, use
+	 * those to recognize this sort of thing.
+	 */
+	const char *rid = IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL(exn).ident);
+	return strcmp(rid, "IDL:Posix/Errno:1.0") == 0;
+}
+
+
+static IDL_tree find_neg_exn(IDL_tree op)
+{
+	for(IDL_tree cur = IDL_OP_DCL(op).raises_expr;
+		cur != NULL;
+		cur = IDL_LIST(cur).next)
+	{
+		IDL_tree e = IDL_get_parent_node(IDL_LIST(cur).data,
+			IDLN_EXCEPT_DCL, NULL);
+		if(is_negs_exn(e)) return e;
+	}
+	return NULL;
+}
+
+
+/* does the operation given have a NegativeReturn exception?
+ *
+ * FIXME: merge this with find_neg_exn(), and enforce single negativereturn
+ * in analyse_op_dcl() rather than here, and remove that stupid ns parameter
+ */
 static bool has_negs_exns(IDL_ns ns, IDL_tree op)
 {
 	bool has_negs = false;
@@ -236,10 +265,8 @@ static bool has_negs_exns(IDL_ns ns, IDL_tree op)
 		cur = IDL_LIST(cur).next)
 	{
 		IDL_tree r = IDL_NODE_UP(IDL_LIST(cur).data);
-		/* FIXME: check properties instead */
-		const char *exrid = IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL(r).ident);
 		bool add = false;
-		if(strcmp(exrid, "IDL:Posix/Errno:1.0") == 0) add = true;
+		if(is_negs_exn(r)) add = true;
 		if(add && has_negs) {
 			/* FIXME: blow up cleanly */
 			fprintf(stderr, "two exceptions specify NegativeReturn for `%s'\n",
@@ -412,6 +439,11 @@ static char *long_name(IDL_ns ns, IDL_tree node)
 			ident = IDL_OP_DCL(node).ident;
 			break;
 
+		case IDLN_EXCEPT_DCL:
+			/* FIXME: prefixes etc? */
+			ident = IDL_EXCEPT_DCL(node).ident;
+			break;
+
 		default:
 			NOTDEFINED(node);
 	}
@@ -565,8 +597,9 @@ static char *return_type(IDL_ns ns, IDL_tree op, bool *real_p)
 
 
 /* returns the type as the type of an in-parameter. these are the same for
- * server skeletons and caller stub prototypes. defined only for value and
- * rigid types; long types are handled differently in each case.
+ * server skeletons, caller stub prototypes, and exception encoder prototypes.
+ * defined only for value and rigid types; long types are handled differently
+ * in each case.
  */
 static char *in_param_type(IDL_ns ns, IDL_tree tree)
 {
@@ -1102,7 +1135,14 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 		bool first_exn = true;
 		if(has_neg) {
 			assert(strcmp(rtstr, "int") == 0);
-			code_f(pr, "if(retval < 0) _MSG_SET_ERROR(&msg, -retval);");
+			IDL_tree ex = find_neg_exn(inf->node);
+			assert(ex != NULL);
+			code_f(pr, "if(retval < 0) {");
+			indent(pr, 1);
+			char *ex_ln = long_name(pr->ns, ex);
+			code_f(pr, "%s_encode(&msg, -retval);", ex_ln);
+			g_free(ex_ln);
+			close_brace(pr);
 			first_exn = false;
 		}
 		/* TODO: handle other exceptions as an elseif-chain */
@@ -1256,16 +1296,118 @@ fail:
 }
 
 
+static void print_exception_encoder(struct print_ctx *pr, IDL_tree exn)
+{
+	code_f(pr, "/* encoder for exception `%s' */",
+		IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL(exn).ident));
+
+	char *exn_ln = long_name(pr->ns, exn);
+	code_f(pr, "static void %s_encode(", exn_ln);
+	indent(pr, 1);
+	code_f(pr, "L4_Msg_t *msgp,");
+
+	/* encoder parameters */
+	for(IDL_tree cur = IDL_EXCEPT_DCL(exn).members;
+		cur != NULL;
+		cur = IDL_LIST(cur).next)
+	{
+		IDL_tree member = IDL_LIST(cur).data,
+			type = get_type_spec(IDL_MEMBER(member).type_spec);
+		/* TODO: handle and/or forbid long types */
+		char *typestr = in_param_type(pr->ns, type);
+		const bool last = IDL_LIST(cur).next == NULL;
+		for(IDL_tree m_iter = IDL_MEMBER(member).dcls;
+			m_iter != NULL;
+			m_iter = IDL_LIST(m_iter).next)
+		{
+			IDL_tree ident = IDL_LIST(m_iter).data;
+			code_f(pr, "%s%s%s%s", typestr, type_space(typestr),
+				IDL_IDENT(ident).str, last ? ")" : ",");
+		}
+		g_free(typestr);
+	}
+	indent(pr, -1);
+
+	code_f(pr, "{");
+	indent(pr, 1);
+
+	code_f(pr, "/* insert encoder body here */");
+
+	close_brace(pr);
+	code_f(pr, " ");
+	g_free(exn_ln);
+}
+
+
+static gint exn_repoid_compare(gconstpointer a, gconstpointer b)
+{
+	IDL_tree n = (IDL_tree)a, m = (IDL_tree)b;
+	return strcmp(IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL(n).ident),
+		IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL(m).ident));
+}
+
+
+/* generate local (static) encoders for all exceptions referenced by this
+ * interface's operations.
+ */
+static void print_exceptions_for_iface(struct print_ctx *pr, IDL_tree iface)
+{
+	/* collect the exceptions. */
+	GHashTable *exn_hash = g_hash_table_new(&g_str_hash, &g_str_equal);
+	for(IDL_tree if_iter = IDL_INTERFACE(iface).body;
+		if_iter != NULL;
+		if_iter = IDL_LIST(if_iter).next)
+	{
+		IDL_tree elem = IDL_LIST(if_iter).data;
+		if(IDL_NODE_TYPE(elem) != IDLN_OP_DCL) continue;
+
+		for(IDL_tree r_iter = IDL_OP_DCL(elem).raises_expr;
+			r_iter != NULL;
+			r_iter = IDL_LIST(r_iter).next)
+		{
+			IDL_tree ident = IDL_LIST(r_iter).data;
+			IDL_tree ex = IDL_get_parent_node(ident, IDLN_EXCEPT_DCL, NULL);
+			if(ex == NULL) {
+				/* FIXME: gracefully plz */
+				fprintf(stderr, "%s: unknown exception `%s'\n",
+					__FUNCTION__, IDL_IDENT_REPO_ID(ident));
+				abort();
+			}
+
+			char *repoid = IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL(ex).ident);
+			/* pointers to long-lived objects == just overwrite where
+			 * necessary, it's all good
+			 */
+			g_hash_table_insert(exn_hash, repoid, ex);
+		}
+	}
+
+	GList *exn_list = g_hash_table_get_values(exn_hash);
+	/* sort them by repoid for consistency. */
+	exn_list = g_list_sort(exn_list, &exn_repoid_compare);
+
+	for(GList *cur = g_list_first(exn_list);
+		cur != NULL;
+		cur = g_list_next(cur))
+	{
+		IDL_tree exn = cur->data;
+		print_exception_encoder(pr, exn);
+	}
+
+	g_list_free(exn_list);
+	g_hash_table_destroy(exn_hash);
+}
+
+
 /* this outputs a very generic dispatcher. ones written in customized assembly
  * code are optimizations, which we won't touch until µidl is reasonably
  * feature-complete. (i.e. need-to basis, and optimizations don't usually need
  * to.)
  */
-static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
+static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 {
-	code_f(pr, "/* dispatcher for `%s' */\n",
+	code_f(pr, "/* dispatcher for interface `%s' */",
 		IDL_IDENT(IDL_INTERFACE(iface).ident).repo_id);
-
 	char *vtprefix = vtable_prefix(pr->ns, iface);
 	code_f(pr, "L4_Word_t _muidl_%s_dispatch(", vtprefix);
 	indent(pr, 1);
@@ -1389,6 +1531,7 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 	close_brace(pr);	/* inner for loop */
 	close_brace(pr);	/* outer for loop */
 	close_brace(pr);	/* function */
+	code_f(pr, " ");
 
 	g_list_foreach(methods, (GFunc)g_free, NULL);
 	g_list_free(methods);
@@ -1399,6 +1542,7 @@ static void print_dispatcher_for_iface(IDL_tree iface, struct print_ctx *pr)
 
 static gboolean iter_print_dispatchers(IDL_tree_func_data *tf, void *ud)
 {
+	struct print_ctx *pr = ud;
 	switch(IDL_NODE_TYPE(tf->tree)) {
 		case IDLN_LIST:
 		case IDLN_MODULE:
@@ -1408,7 +1552,12 @@ static gboolean iter_print_dispatchers(IDL_tree_func_data *tf, void *ud)
 		default: return FALSE;
 
 		case IDLN_INTERFACE:
-			print_dispatcher_for_iface(tf->tree, (struct print_ctx *)ud);
+			/* TODO: have an option to not emit inhibited exceptions, i.e.
+			 * those that weren't declared in the IDL file at hand. for now
+			 * we'll regard dispatcher source as self-contained.
+			 */
+			print_exceptions_for_iface(pr, tf->tree);
+			print_dispatcher_for_iface(pr, tf->tree);
 			return FALSE;
 	}
 }
@@ -1417,7 +1566,6 @@ static gboolean iter_print_dispatchers(IDL_tree_func_data *tf, void *ud)
 static void print_dispatcher(struct print_ctx *pr)
 {
 	fprintf(pr->of, "#include <kernel/types.h>\n"
-		"#include <kernel/message.h>\n"
 		"\n"
 		"#include <l4/types.h>\n"
 		"#include <l4/message.h>\n"
