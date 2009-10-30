@@ -93,7 +93,7 @@ struct method_info
 	IDL_tree node;
 	uint16_t label;
 	uint32_t tagmask;
-	int num_params;
+	int num_params, num_out_params;
 	struct param_info params[];
 };
 
@@ -1205,6 +1205,7 @@ static struct method_info *analyse_op_dcl(
 		+ sizeof(struct param_info) * num_params);
 	IDL_tree prop_node = IDL_OP_DCL(method).ident;
 	inf->node = method;
+	inf->num_out_params = 0;
 
 	unsigned long tagmask = NO_TAGMASK;
 	if(!get_ul_property(&tagmask, prop_node, "TagMask")) goto fail;
@@ -1226,6 +1227,8 @@ static struct method_info *analyse_op_dcl(
 		pinf->name = IDL_IDENT(ident).str;
 		pinf->type = type;
 		pinf->param_dcl = parm;
+
+		if(IDL_PARAM_DCL(parm).attr != IDL_PARAM_IN) inf->num_out_params++;
 
 		if(is_value_type(type)) num_regs++;
 		else {
