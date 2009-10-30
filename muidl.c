@@ -1023,33 +1023,63 @@ static void add_str_f(GList **listptr, const char *fmt, ...)
 }
 
 
+static unsigned short_mask(IDL_tree fldtype)
+{
+	if(IS_USHORT_TYPE(fldtype)) return 0xffff;
+	else if(IDL_NODE_TYPE(fldtype) == IDLN_TYPE_OCTET) return 0xff;
+	else NOTDEFINED(fldtype);
+}
+
+
 static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 {
 	code_f(pr, "/* decoding of `%s' */", METHOD_NAME(inf->node));
 
-	/* non-automatic valuetype parameter decode
-	 * (automatic valuetypes get implicit conversion at the function call site,
-	 * so we don't decode them explicitly.)
-	 */
+	/* helper variables. */
 	for(int i=0; i<inf->num_params; i++) {
 		const struct param_info *pinf = &inf->params[i];
-		if(IDL_PARAM_DCL(pinf->param_dcl).attr == IDL_PARAM_OUT) continue;
 
-		if(IS_MAPGRANT_TYPE(pinf->type)) {
-			assert(pinf->first_reg == pinf->last_reg - 1);
-			code_f(pr, "L4_MapItem_t p_%s = {\n"
-				"\t.raw = { L4_MsgWord(&msg, %d), L4_MsgWord(&msg, %d) }\n"
-				"};", pinf->name, (int)pinf->first_reg - 1,
-				(int)pinf->last_reg - 1);
-		} else if(IS_FPAGE_TYPE(pinf->type)) {
-			code_f(pr, "L4_Fpage_t p_%s = { .raw = L4_MsgWord(&msg, %d) };",
-				pinf->name, (int)pinf->first_reg - 1);
-		} else if(is_value_type(pinf->type)) {
-			/* see comment above */
+		if(is_value_type(pinf->type)
+			&& IDL_PARAM_DCL(pinf->param_dcl).attr == IDL_PARAM_IN)
+		{
+			/* automatic valuetype in-parameters get implicit conversion at
+			 * the function call site, so we don't decode them into
+			 * variables here.
+			 */
 			continue;
+		}
+
+		char *initializer = NULL;
+		if(IDL_PARAM_DCL(pinf->param_dcl).attr != IDL_PARAM_OUT) {
+			if(IS_MAPGRANT_TYPE(pinf->type)) {
+				assert(pinf->first_reg == pinf->last_reg - 1);
+				initializer = g_strdup_printf(" = {\n"
+					"\t.raw = { L4_MsgWord(&msg, %d), L4_MsgWord(&msg, %d) }\n"
+					"}", (int)pinf->first_reg - 1,
+					(int)pinf->last_reg - 1);
+			} else if(IS_FPAGE_TYPE(pinf->type)) {
+				initializer = g_strdup_printf(" = { .raw = L4_MsgWord(&msg, %d) }",
+					(int)pinf->first_reg - 1);
+			} else if(is_value_type(pinf->type)) {
+				initializer = g_strdup_printf(" = L4_MsgWord(&msg, %d)",
+					(int)pinf->first_reg - 1);
+			} else {
+				/* TODO: add rigid, long types */
+				NOTDEFINED(pinf->type);
+			}
+		}
+
+		char *tstr;
+		if(is_value_type(pinf->type)) tstr = value_type(pr->ns, pinf->type);
+		else if(is_rigid_type(pr->ns, pinf->type)) {
+			tstr = rigid_type(pr->ns, pinf->type);
 		} else {
 			NOTDEFINED(pinf->type);
 		}
+		code_f(pr, "%s p_%s%s;", tstr, pinf->name,
+			initializer != NULL ? initializer : "");
+		g_free(tstr);
+		g_free(initializer);
 	}
 
 	IDL_tree rettyp = get_type_spec(IDL_OP_DCL(inf->node).op_type_spec);
@@ -1093,7 +1123,8 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 
 			case IDL_PARAM_INOUT:
 			case IDL_PARAM_OUT:
-				assert("can't go there bob" == NULL);
+				add_str_f(&parm_list, "&p_%s", pinf->name);
+				break;
 		}
 	}
 
@@ -1131,36 +1162,53 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 	}
 
 	if(!IDL_OP_DCL(inf->node).f_oneway) {
-		const bool has_neg = has_negs_exns(pr->ns, inf->node);
-		bool first_exn = true;
-		if(has_neg) {
+		code_f(pr, "L4_MsgClear(&msg);");
+		IDL_tree n_ex = find_neg_exn(inf->node);
+		bool first_if = true;
+		if(n_ex != NULL) {
 			assert(strcmp(rtstr, "int") == 0);
-			IDL_tree ex = find_neg_exn(inf->node);
-			assert(ex != NULL);
 			code_f(pr, "if(retval < 0) {");
 			indent(pr, 1);
-			char *ex_ln = long_name(pr->ns, ex);
-			code_f(pr, "%s_encode(&msg, -retval);", ex_ln);
-			g_free(ex_ln);
+			/* FIXME: grab exception label from somewhere! */
+			code_f(pr, "L4_Set_MsgLabel(&msg, MSG_ERROR);");
+			IDL_tree memb = IDL_LIST(IDL_EXCEPT_DCL(n_ex).members).data,
+				fldtype = get_type_spec(IDL_MEMBER(memb).type_spec);
+			assert(IDL_list_length(IDL_MEMBER(memb).dcls) == 1);
+			code_f(pr, "L4_MsgAppendWord(&msg, %#x & ((L4_Word_t)-retval));",
+				short_mask(fldtype));
 			close_brace(pr);
-			first_exn = false;
+			first_if = false;
 		}
-		/* TODO: handle other exceptions as an elseif-chain */
-		if(has_neg && IDL_OP_DCL(inf->node).op_type_spec != NULL) {
-			/* strictly positive integral return types that're 31 bits or
-			 * shorter: unsigned short and octet. (whee!)
-			 */
-			code_f(pr, "else {");
-			indent(pr, 1);
-			code_f(pr, "L4_MsgClear(&msg);");
-			/* FIXME: truncate retval to 16 or 8 bits unsigned */
-			code_f(pr, "L4_MsgAppendWord(&msg, retval);");
-			close_brace(pr);
-		} else {
-			/* TODO: encode return type outside the neg-exn case,
-			 * out-parameters
-			 */
-			code_f(pr, "/* blah */");
+
+		/* TODO: if the operation has any exceptions, check whether ctx->exmsg
+		 * label is 0; if not, forward the exception.
+		 */
+
+		if(inf->num_out_params > 0
+			|| IDL_OP_DCL(inf->node).op_type_spec != NULL)
+		{
+			if(!first_if) {
+				code_f(pr, "else {");
+				indent(pr, 1);
+			}
+			if(n_ex != NULL && rettyp != NULL) {
+				/* strictly positive integral return types that're 31 bits or
+				 * shorter: unsigned short and octet. (whee!)
+				 */
+				code_f(pr, "L4_MsgAppendWord(&msg, retval & %#x);",
+					short_mask(rettyp));
+			} else if(rettyp != NULL) {
+				code_f(pr, "/* TODO: would encode non-n_ex return type here */");
+			}
+			for(int i=0; i<inf->num_params; i++) {
+				struct param_info *pi = &inf->params[i];
+				if(IDL_PARAM_DCL(pi->param_dcl).attr == IDL_PARAM_IN) {
+					continue;
+				}
+				code_f(pr, "/* TODO: would encode out-parameter `%s' here */",
+					pi->name);
+			}
+			if(!first_if) close_brace(pr);
 		}
 	}
 
@@ -1569,6 +1617,7 @@ static gboolean iter_print_dispatchers(IDL_tree_func_data *tf, void *ud)
 static void print_dispatcher(struct print_ctx *pr)
 {
 	fprintf(pr->of, "#include <kernel/types.h>\n"
+		"#include <kernel/message.h>\n"
 		"\n"
 		"#include <l4/types.h>\n"
 		"#include <l4/message.h>\n"

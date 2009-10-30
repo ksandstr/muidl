@@ -38,8 +38,11 @@ interface FaultHandler
 		raises(Posix::Errno);
 
 	[Label(0xfad0)]
-	octet octet_operation(in word foo, in octet mask)
+	octet octet_operation(in word foo, inout octet mask)
 		raises(Posix::Errno);
+
+	[Label(0xfad1)]
+	void outsy_operation(in word foo, out word bar);
 };
 
 }; // module
