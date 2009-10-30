@@ -1347,11 +1347,20 @@ fail:
 }
 
 
+/* FIXME: this is really a _skeleton_ utility function; i.e. the skeleton calls
+ * a mod_iface_exnname_raise(member1, member2, member3, etc) function and
+ * returns zero or void. the exception message is then picked up and propagated
+ * by the dispatcher.
+ *
+ * so rewrite how this stuff is emitted for real and declare the functions
+ * extern with prototypes in $idlfile-defs.h, conditional to a skelimpl #define
+ * or something.
+ */
 static void print_exception_encoder(struct print_ctx *pr, IDL_tree exn)
 {
-	code_f(pr, "/* encoder for exception `%s' */",
+	code_f(pr, "/* would emit encoder for exception `%s' */",
 		IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL(exn).ident));
-
+#if 0
 	char *exn_ln = long_name(pr->ns, exn);
 	code_f(pr, "static void %s_encode(", exn_ln);
 	indent(pr, 1);
@@ -1387,6 +1396,7 @@ static void print_exception_encoder(struct print_ctx *pr, IDL_tree exn)
 	close_brace(pr);
 	code_f(pr, " ");
 	g_free(exn_ln);
+#endif
 }
 
 
