@@ -1191,12 +1191,14 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 				code_f(pr, "else {");
 				indent(pr, 1);
 			}
+			int next_r = 1;
 			if(n_ex != NULL && rettyp != NULL) {
 				/* strictly positive integral return types that're 31 bits or
 				 * shorter: unsigned short and octet. (whee!)
 				 */
 				code_f(pr, "L4_MsgAppendWord(&msg, retval & %#x);",
 					short_mask(rettyp));
+				next_r++;
 			} else if(rettyp != NULL) {
 				code_f(pr, "/* TODO: would encode non-n_ex return type here */");
 			}
@@ -1205,8 +1207,25 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 				if(IDL_PARAM_DCL(pi->param_dcl).attr == IDL_PARAM_IN) {
 					continue;
 				}
-				code_f(pr, "/* TODO: would encode out-parameter `%s' here */",
-					pi->name);
+
+				for(int r = pi->first_reg; r <= pi->last_reg; r++) {
+					if(r != next_r) {
+						fprintf(stderr, "warning: next reg# is %d, but r is %d (opdcl `%s')\n",
+							next_r, r, pi->name);
+					}
+					if(IS_FPAGE_TYPE(pi->type)) {
+						code_f(pr, "L4_MsgAppendWord(&msg, p_%s.raw);", pi->name);
+						next_r++;
+					} else if(is_value_type(pi->type)) {
+						code_f(pr, "L4_MsgAppendWord(&msg, p_%s);", pi->name);
+						next_r++;
+					} else {
+						/* TODO: handle mapitems, rigid types, and long types
+						 * as out-values too
+						 */
+						NOTDEFINED(pi->type);
+					}
+				}
 			}
 			if(!first_if) close_brace(pr);
 		}
