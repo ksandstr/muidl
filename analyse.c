@@ -53,36 +53,38 @@ static bool get_ul_property(
 }
 
 
-/* TODO: get the number and max dimensions of the string buffers we'll
- * send/receive once long types are implemented.
- *
- * TODO: enforce zero-or-one NegativeReturn exception restriction
- */
-struct method_info *analyse_op_dcl(
-	struct print_ctx *pr,
-	IDL_tree method)
+static bool op_label(struct method_info *inf, IDL_tree op)
 {
-	IDL_tree param_list = IDL_OP_DCL(method).parameter_dcls;
-	const int num_params = IDL_list_length(param_list);
-	struct method_info *inf = g_malloc(sizeof(struct method_info)
-		+ sizeof(struct param_info) * num_params);
-	IDL_tree prop_node = IDL_OP_DCL(method).ident;
-	inf->node = method;
-	inf->num_out_params = 0;
+	IDL_tree prop_node = IDL_OP_DCL(op).ident;
 
 	unsigned long tagmask = NO_TAGMASK;
-	if(!get_ul_property(&tagmask, prop_node, "TagMask")) goto fail;
+	if(!get_ul_property(&tagmask, prop_node, "TagMask")) return false;
 	inf->tagmask = tagmask;
 
 	unsigned long labelval = 0;
-	if(!get_ul_property(&labelval, prop_node, "Label")) goto fail;
+	if(!get_ul_property(&labelval, prop_node, "Label")) return false;
 	inf->label = labelval;
 
-	/* first pass: get the highest assigned register number and fill in the
-	 * parameter info bits so we don't have to crawl the list again.
-	 */
+	return true;
+}
+
+
+/* first stage of op parameter analysis: decode static register assignments,
+ * fill in param_info structures and compute the highest fixed register number.
+ *
+ * returns false on failure.
+ */
+static bool op_params(
+	struct method_info *inf,
+	int *num_regs_p,
+	int *max_fixreg_p,
+	IDL_tree method)
+{
 	int num_regs = 0, max_fixreg = 0, ppos = 0;
-	for(IDL_tree cur = param_list; cur != NULL; cur = IDL_LIST(cur).next) {
+	for(IDL_tree cur = IDL_OP_DCL(method).parameter_dcls;
+		cur != NULL;
+		cur = IDL_LIST(cur).next)
+	{
 		IDL_tree parm = IDL_LIST(cur).data,
 			type = get_type_spec(IDL_PARAM_DCL(parm).param_type_spec),
 			ident = IDL_PARAM_DCL(parm).simple_declarator;
@@ -100,11 +102,12 @@ struct method_info *analyse_op_dcl(
 		}
 
 		unsigned long mr_n = 0;
-		if(!get_ul_property(&mr_n, ident, "MR")) goto fail;
-		else if(mr_n > 0) {
+		if(!get_ul_property(&mr_n, ident, "MR")) return false;
+		if(mr_n > 0) {
 			if(mr_n > 63) {
-				fprintf(stderr, "MR(%lu) too large\n", mr_n);
-				goto fail;
+				fprintf(stderr, "%s: MR(%lu) too large\n", __FUNCTION__,
+					mr_n);
+				return false;
 			}
 			pinf->first_reg = mr_n;
 			pinf->last_reg = mr_n;
@@ -115,6 +118,31 @@ struct method_info *analyse_op_dcl(
 		}
 	}
 	inf->num_params = ppos;
+	*num_regs_p = num_regs;
+	*max_fixreg_p = max_fixreg;
+	return true;
+}
+
+
+/* TODO: get the number and max dimensions of the string buffers we'll
+ * send/receive once long types are implemented.
+ *
+ * TODO: enforce zero-or-one NegativeReturn exception restriction
+ */
+struct method_info *analyse_op_dcl(
+	struct print_ctx *pr,
+	IDL_tree method)
+{
+	IDL_tree param_list = IDL_OP_DCL(method).parameter_dcls;
+	const int num_params = IDL_list_length(param_list);
+	struct method_info *inf = g_malloc(sizeof(struct method_info)
+		+ sizeof(struct param_info) * num_params);
+	inf->node = method;
+	inf->num_out_params = 0;
+
+	if(!op_label(inf, method)) goto fail;
+	int num_regs = 0, max_fixreg = 0;
+	if(!op_params(inf, &num_regs, &max_fixreg, method)) goto fail;
 
 	/* second pass: verify that fixed registers are referenced at most once,
 	 * and assign other registers around them.
@@ -160,7 +188,3 @@ fail:
 	g_free(inf);
 	return NULL;
 }
-
-
-
-
