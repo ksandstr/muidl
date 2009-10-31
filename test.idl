@@ -3,9 +3,7 @@
 #include "posix-base.idl"
 
 
-/* NOTE: this doesn't reflect any production interface in µiX. */
-
-module Muix
+module MuidlTest
 {
 
 struct unrelated_to_muix
@@ -17,69 +15,24 @@ struct unrelated_to_muix
 	octet something[23], whatever_else;
 };
 
-[StubPrefix(__memserv)]
-interface Memserv: L4X2::FaultHandler
+[StubPrefix(__explicitprefix)]
+interface Example
 {
-	typedef L4X2::word word;
-	typedef long pid_t;
-	typedef sequence<word> wordseq;
-
-	[NoValuePrefix]
-	enum mapping_type
-	{
-		MAP_TYPE_SHARED,
-		MAP_TYPE_ANONYMOUS,
-		MAP_TYPE_L4_SPECIAL,
-		MAP_TYPE_FILE,
-		MAP_TYPE_DMA
-	};
-
-	/* ordinary memserv calls. */
-
-	[Label(0xf210)]
-	void create_mapping(
-		in word start,
-		in word flags,
-		in mapping_type type,
-		in word length,
-		in string name,
-		in word file_fs,	/* only if type is a file mapping */
-		in word file_sfd,	/* -''- */
-		in word file_offset_last_addr,	/* -''- */
-		out word result)
+	/* these only exist for test's sake, move them out at some point */
+	[Label(0xface)]
+	void void_operation(in word foo, in word bar)
 		raises(Posix::Errno);
 
-	[Label(0xf211)]
-	void unmap_range(in word start, in word length)
+	[Label(0xfacf)]
+	unsigned short ushort_operation(in word foo, in unsigned short mask)
 		raises(Posix::Errno);
 
-	[Label(0xf212)]
-	void list_mappings(
-		in pid_t space_id,
-		in word first_addr,
-		out wordseq start_addrs)
+	[Label(0xfad0)]
+	octet octet_operation(in word foo, inout octet mask)
 		raises(Posix::Errno);
 
-
-	/* roottask-privileged calls. */
-
-	[Label(0xf205)]
-	void create_space(
-		in pid_t pid,
-		in word kip_addr,
-		in word utcb_addr,
-		out L4X2::Fpage kip_area,
-		out L4X2::Fpage utcb_area)
-		raises(Posix::Errno);
-
-	[Label(0xf206)]
-	void destroy_space(in pid_t pid)
-		raises(Posix::Errno);
-
-	[Label(0xf207)]
-	void fork_space(in pid_t from_space, in pid_t to_space)
-		raises(Posix::Errno);
+	[Label(0xfad1)]
+	void outsy_operation(in word foo, out word bar);
 };
-
 
 };

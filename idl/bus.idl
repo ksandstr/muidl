@@ -1,4 +1,7 @@
 
+#ifndef SEEN_MUIX_BUS_IDL
+#define SEEN_MUIX_BUS_IDL
+
 
 #include "posix-base.idl"
 
@@ -37,3 +40,5 @@ interface Bus
 
 
 };	// module
+
+#endif
