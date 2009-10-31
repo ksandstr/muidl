@@ -19,7 +19,7 @@ distclean: clean
 	@rm -f tags
 
 
-muidl: muidl.o gen-common.o
+muidl: muidl.o analyse.o gen-common.o
 	$(CC) -o $@ $^ $(CFLAGS) $(LIBS)
 
 
@@ -34,4 +34,5 @@ tags: $(wildcard *.[ch])
 # TODO: generate these automagically
 muidl.o: muidl.c muidl.h
 gen-common.o: gen-common.c muidl.h
+analyse.o: analyse.c muidl.h
 

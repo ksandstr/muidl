@@ -23,6 +23,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <stdbool.h>
 #include <stdarg.h>
 #include <assert.h>
@@ -83,6 +84,27 @@ struct print_ctx
 };
 
 
+struct param_info
+{
+	const char *name;
+	IDL_tree type, param_dcl;
+	uint8_t first_reg, last_reg;
+};
+
+
+/* TODO: add has_tagmask bool instead of special NO_TAGMASK value */
+struct method_info
+{
+	IDL_tree node;
+	uint16_t label;
+	uint32_t tagmask;		/* tag mask, or NO_TAGMASK if not set */
+	int num_params, num_out_params;
+	struct param_info params[];
+};
+
+#define NO_TAGMASK ((uint32_t)~0u)
+
+
 /* from muidl.c */
 
 /* NOTE: code_f() and code_vf() add a newline to the output. */
@@ -124,7 +146,12 @@ extern bool is_rigid_type(IDL_ns ns, IDL_tree type);
 extern IDL_tree get_type_spec(IDL_tree node);
 
 
-/* from gen_common.c */
+/* from analyse.c */
+
+extern struct method_info *analyse_op_dcl(struct print_ctx *pr, IDL_tree op);
+
+
+/* from gen-common.c */
 
 extern void print_common_header(struct print_ctx *pr);
 
