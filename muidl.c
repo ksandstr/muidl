@@ -74,13 +74,30 @@ static int msg_callback(
 
 bool is_reserved_word(const char *str)
 {
-	/* TODO: this list needs to be expanded quite a bit. */
+	/* TODO: this list is not confirmed complete. */
 	static const char *reserved[] = {
-		"register",
+		"asm", "auto",
+		"bool", "break",
+		"case", "char", "const", "continue",
+		"default", "do", "double",
+		"else", "enum", "extern",
+		"false", "float", "for",
+		"goto",
+		"if", "inline", "int",
+		"long",
+		"register", "return",
+		"short", "signed", "sizeof", "static", "struct", "switch",
+		"true", "typedef",
+		"union", "unsigned",
+		"void", "volatile",
+		"while",
 	};
 	if(str == NULL || str[0] == '\0') return false;
-	for(int i=0; i<G_N_ELEMENTS(reserved); i++) {
-		if(strcmp(str, reserved[i]) == 0) return true;
+	void *ptr = bsearch(str, reserved, G_N_ELEMENTS(reserved),
+		sizeof(const char *), (int (*)(const void *, const void *))&strcmp);
+	if(ptr != NULL) return true;
+	for(int i=1; i<G_N_ELEMENTS(reserved); i++) {
+		assert(strcmp(reserved[i-1], reserved[i]) < 0);
 	}
 	return false;
 }
