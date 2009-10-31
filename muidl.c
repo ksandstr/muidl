@@ -456,27 +456,12 @@ char *rigid_type(IDL_ns ns, IDL_tree type)
 }
 
 
-/* FIXME: fail gracefully */
 char *return_type(IDL_ns ns, IDL_tree op, bool *real_p)
 {
 	bool spare_bool;
 	if(real_p == NULL) real_p = &spare_bool;
+
 	IDL_tree op_type = get_type_spec(IDL_OP_DCL(op).op_type_spec);
-
-	/* oneway restrictions. */
-	if(IDL_OP_DCL(op).f_oneway) {
-		if(op_type != NULL) {
-			fprintf(stderr, "can't have non-void return type for oneway operation `%s'\n",
-				METHOD_NAME(op));
-			exit(EXIT_FAILURE);
-		}
-		if(IDL_OP_DCL(op).raises_expr != NULL) {
-			fprintf(stderr, "can't have exceptions for a oneway operation `%s'\n",
-				METHOD_NAME(op));
-			exit(EXIT_FAILURE);
-		}
-	}
-
 	if(find_neg_exn(op) != NULL) {
 		*real_p = false;
 		return g_strdup("int");

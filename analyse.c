@@ -184,11 +184,8 @@ struct method_info *analyse_op_dcl(
 	/* check that there is at most one NegativeReturn exception per
 	 * operation.
 	 */
-	IDL_tree nr_ex = NULL;
-	for(IDL_tree cur = IDL_OP_DCL(method).raises_expr;
-		cur != NULL;
-		cur = IDL_LIST(cur).next)
-	{
+	IDL_tree nr_ex = NULL, raises_expr = IDL_OP_DCL(method).raises_expr;
+	for(IDL_tree cur = raises_expr; cur != NULL; cur = IDL_LIST(cur).next) {
 		IDL_tree ex = IDL_get_parent_node(IDL_LIST(cur).data,
 			IDLN_EXCEPT_DCL, NULL);
 		if(is_negs_exn(ex)) {
@@ -203,7 +200,23 @@ struct method_info *analyse_op_dcl(
 		}
 	}
 
-	/* if there is one, check that the return type is appropriate. */
+	/* oneway restrictions. */
+	if(IDL_OP_DCL(method).f_oneway) {
+		if(op_type != NULL) {
+			fprintf(stderr, "can't have non-void return type for oneway operation `%s'\n",
+				METHOD_NAME(method));
+			return false;
+		}
+		if(raises_expr != NULL) {
+			fprintf(stderr, "can't have exceptions for a oneway operation `%s'\n",
+				METHOD_NAME(method));
+			return false;
+		}
+	}
+
+	/* if a NegativeReturn exception is declared, check that the return type is
+	 * appropriate.
+	 */
 	if(nr_ex != NULL) {
 		bool valid_neg = (op_type == NULL	/* void is OK */
 			|| IS_USHORT_TYPE(op_type)		/* unsigned short, too */
