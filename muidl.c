@@ -456,11 +456,6 @@ char *rigid_type(IDL_ns ns, IDL_tree type)
 }
 
 
-#define IS_USHORT_TYPE(op_type) \
-	(IDL_NODE_TYPE((op_type)) == IDLN_TYPE_INTEGER \
-	&& !IDL_TYPE_INTEGER((op_type)).f_signed \
-	&& IDL_TYPE_INTEGER((op_type)).f_type == IDL_INTEGER_TYPE_SHORT)
-
 /* FIXME: fail gracefully */
 char *return_type(IDL_ns ns, IDL_tree op, bool *real_p)
 {
@@ -482,27 +477,10 @@ char *return_type(IDL_ns ns, IDL_tree op, bool *real_p)
 		}
 	}
 
-	/* NegativeReturn restrictions.
-	 *
-	 * TODO: move these into analyse.c!
-	 */
 	if(find_neg_exn(op) != NULL) {
-		if(op_type == NULL
-			|| IS_USHORT_TYPE(op_type)
-			|| IDL_NODE_TYPE(op_type) == IDLN_TYPE_OCTET
-			|| !is_value_type(op_type))
-		{
-			*real_p = false;
-			return g_strdup("int");
-		} else {
-			fprintf(stderr,
-				"return type for a NegativeReturn raising operation must be\n"
-				"void, an unsigned short, an octet, or a non-value type.\n");
-			exit(EXIT_FAILURE);
-		}
-	}
-
-	if(op_type == NULL || !is_value_type(op_type)) {
+		*real_p = false;
+		return g_strdup("int");
+	} else if(op_type == NULL || !is_value_type(op_type)) {
 		*real_p = false;
 		return g_strdup("void");
 	} else {

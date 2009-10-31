@@ -131,7 +131,8 @@ struct method_info *analyse_op_dcl(
 	struct print_ctx *pr,
 	IDL_tree method)
 {
-	IDL_tree param_list = IDL_OP_DCL(method).parameter_dcls;
+	IDL_tree param_list = IDL_OP_DCL(method).parameter_dcls,
+		op_type = get_type_spec(IDL_OP_DCL(method).op_type_spec);
 	const int num_params = IDL_list_length(param_list);
 	struct method_info *inf = g_malloc(sizeof(struct method_info)
 		+ sizeof(struct param_info) * num_params);
@@ -199,6 +200,19 @@ struct method_info *analyse_op_dcl(
 					METHOD_NAME(method), EXN_REPO_ID(nr_ex), EXN_REPO_ID(ex));
 				goto fail;
 			}
+		}
+	}
+
+	/* if there is one, check that the return type is appropriate. */
+	if(nr_ex != NULL) {
+		bool valid_neg = (op_type == NULL || IS_USHORT_TYPE(op_type)
+			|| IDL_NODE_TYPE(op_type) == IDLN_TYPE_OCTET
+			|| !is_value_type(op_type));
+		if(!valid_neg) {
+			fprintf(stderr,
+				"return type for a NegativeReturn raising operation must be\n"
+				"void, an unsigned short, an octet, or a non-value type.\n");
+			goto fail;
 		}
 	}
 
