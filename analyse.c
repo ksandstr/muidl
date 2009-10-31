@@ -205,9 +205,10 @@ struct method_info *analyse_op_dcl(
 
 	/* if there is one, check that the return type is appropriate. */
 	if(nr_ex != NULL) {
-		bool valid_neg = (op_type == NULL || IS_USHORT_TYPE(op_type)
-			|| IDL_NODE_TYPE(op_type) == IDLN_TYPE_OCTET
-			|| !is_value_type(op_type));
+		bool valid_neg = (op_type == NULL	/* void is OK */
+			|| IS_USHORT_TYPE(op_type)		/* unsigned short, too */
+			|| IDL_NODE_TYPE(op_type) == IDLN_TYPE_OCTET	/* octet also */
+			|| !is_value_type(op_type));	/* types we'd outparm anyway */
 		if(!valid_neg) {
 			fprintf(stderr,
 				"return type for a NegativeReturn raising operation must be\n"
