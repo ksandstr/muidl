@@ -173,8 +173,7 @@ char *decapsify(const char *name)
 }
 
 
-/* is this IDLN_EXCEPT_DCL a NegativeReturn exception? */
-static bool is_negs_exn(IDL_tree exn)
+bool is_negs_exn(IDL_tree exn)
 {
 	/* FIXME: once libIDL supports properties on exceptions, use
 	 * those to recognize this sort of thing.
@@ -195,29 +194,6 @@ static IDL_tree find_neg_exn(IDL_tree op)
 		if(is_negs_exn(e)) return e;
 	}
 	return NULL;
-}
-
-
-/* does the operation given have a NegativeReturn exception? */
-static bool has_negs_exns(IDL_ns ns, IDL_tree op)
-{
-	bool has_negs = false;
-	for(IDL_tree cur = IDL_OP_DCL(op).raises_expr;
-		cur != NULL;
-		cur = IDL_LIST(cur).next)
-	{
-		IDL_tree r = IDL_NODE_UP(IDL_LIST(cur).data);
-		bool add = false;
-		if(is_negs_exn(r)) add = true;
-		if(add && has_negs) {
-			/* FIXME: blow up cleanly */
-			fprintf(stderr, "two exceptions specify NegativeReturn for `%s'\n",
-				IDL_IDENT(IDL_OP_DCL(op).ident).str);
-			exit(EXIT_FAILURE);
-		}
-		has_negs = has_negs || add;
-	}
-	return has_negs;
 }
 
 
@@ -506,8 +482,11 @@ char *return_type(IDL_ns ns, IDL_tree op, bool *real_p)
 		}
 	}
 
-	/* NegativeReturn restrictions. */
-	if(has_negs_exns(ns, op)) {
+	/* NegativeReturn restrictions.
+	 *
+	 * TODO: move these into analyse.c!
+	 */
+	if(find_neg_exn(op) != NULL) {
 		if(op_type == NULL
 			|| IS_USHORT_TYPE(op_type)
 			|| IDL_NODE_TYPE(op_type) == IDLN_TYPE_OCTET

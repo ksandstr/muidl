@@ -126,8 +126,6 @@ static bool op_params(
 
 /* TODO: get the number and max dimensions of the string buffers we'll
  * send/receive once long types are implemented.
- *
- * TODO: enforce zero-or-one NegativeReturn exception restriction
  */
 struct method_info *analyse_op_dcl(
 	struct print_ctx *pr,
@@ -144,8 +142,8 @@ struct method_info *analyse_op_dcl(
 	int num_regs = 0, max_fixreg = 0;
 	if(!op_params(inf, &num_regs, &max_fixreg, method)) goto fail;
 
-	/* second pass: verify that fixed registers are referenced at most once,
-	 * and assign other registers around them.
+	/* second param pass: verify that fixed registers are referenced at most
+	 * once, and assign other registers around them.
 	 */
 	int taken_len = MAX(num_regs, max_fixreg);
 	/* (one more to permit one-origin addressing.) */
@@ -179,6 +177,28 @@ struct method_info *analyse_op_dcl(
 			pinf->last_reg = r;
 		} else {
 			NOTDEFINED(pinf->type);
+		}
+	}
+
+	/* check that there is at most one NegativeReturn exception per
+	 * operation.
+	 */
+	IDL_tree nr_ex = NULL;
+	for(IDL_tree cur = IDL_OP_DCL(method).raises_expr;
+		cur != NULL;
+		cur = IDL_LIST(cur).next)
+	{
+		IDL_tree ex = IDL_get_parent_node(IDL_LIST(cur).data,
+			IDLN_EXCEPT_DCL, NULL);
+		if(is_negs_exn(ex)) {
+			if(nr_ex == NULL) nr_ex = ex;
+			else {
+				fprintf(stderr,
+					"operation `%s' raises two NegativeReturn exceptions:\n"
+					"`%s' and `%s'. at most one is permitted for each operation.\n",
+					METHOD_NAME(method), EXN_REPO_ID(nr_ex), EXN_REPO_ID(ex));
+				goto fail;
+			}
 		}
 	}
 

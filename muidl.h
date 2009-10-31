@@ -36,6 +36,7 @@
 #define IFACE_REPO_ID(t) IDL_IDENT_REPO_ID(IDL_INTERFACE((t)).ident)
 #define IFACE_NAME(t) (IDL_IDENT(IDL_INTERFACE((t)).ident).str)
 #define METHOD_NAME(t) (IDL_IDENT(IDL_OP_DCL((t)).ident).str)
+#define EXN_REPO_ID(t) (IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL((t)).ident))
 #define NATIVE_NAME(t) (IDL_IDENT(IDL_NATIVE((t)).ident).str)
 
 #define NODETYPESTR(n) ({ \
@@ -144,6 +145,9 @@ extern bool is_rigid_type(IDL_ns ns, IDL_tree type);
 
 /* chase typedefs down to the final (non-typedef) type. */
 extern IDL_tree get_type_spec(IDL_tree node);
+
+/* is this IDLN_EXCEPT_DCL a NegativeReturn exception? */
+extern bool is_negs_exn(IDL_tree except_dcl);
 
 
 /* from analyse.c */
