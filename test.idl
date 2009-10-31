@@ -6,6 +6,8 @@
 module MuidlTest
 {
 
+typedef L4X2::word word;
+
 struct unrelated_to_muix
 {
 	long foo;
