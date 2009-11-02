@@ -65,14 +65,34 @@ static gboolean no_reserved_idents(IDL_tree_func_data *tf, gpointer udptr)
 {
 	struct ver_ctx *v = udptr;
 
-	if(IDL_NODE_TYPE(tf->tree) != IDLN_IDENT) return TRUE;
+	/* a huge green fierce snake bars your way! */
+	switch(IDL_NODE_TYPE(tf->tree)) {
 
-	if(is_reserved_word(IDL_IDENT(tf->tree).str)) {
-		fail(v, "`%s' (repoid `%s') is a reserved word in C",
-			IDL_IDENT(tf->tree).str, IDL_IDENT_REPO_ID(tf->tree));
+		case IDLN_IDENT: break;
+
+		default: return TRUE;	/* leculsion prease. */
 	}
 
-	/* no point in recursing down an _ident_ anyhow. */
+	if(is_reserved_word(IDL_IDENT(tf->tree).str)) {
+		IDL_tree up = IDL_NODE_UP(tf->tree);
+		switch(IDL_NODE_TYPE(up)) {
+			case IDLN_TYPE_STRUCT:
+			case IDLN_TYPE_UNION:
+			case IDLN_TYPE_ENUM:
+			case IDLN_MODULE:
+			case IDLN_INTERFACE:
+				/* reserved words in these structures' names are handled and
+				 * prefixed by long_name().
+				 */
+				break;
+
+			default:
+				fail(v, "`%s' (repoid `%s') is a reserved word in C",
+					IDL_IDENT(tf->tree).str, IDL_IDENT_REPO_ID(tf->tree));
+		}
+	}
+
+	/* you may pass. */
 	return FALSE;
 }
 

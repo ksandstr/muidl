@@ -3,7 +3,7 @@
 #include "posix-base.idl"
 
 
-module MuidlTest
+module register
 {
 
 typedef L4X2::word word;
