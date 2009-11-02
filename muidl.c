@@ -52,6 +52,13 @@ static int msg_callback(
 }
 
 
+static int compare_str_ptr(const void *a, const void *b)
+{
+	const char *aa = *(char **)a, *bb = *(char **)b;
+	return strcmp(aa, bb);
+}
+
+
 bool is_reserved_word(const char *str)
 {
 	/* TODO: this list is not confirmed complete. */
@@ -73,8 +80,8 @@ bool is_reserved_word(const char *str)
 		"while",
 	};
 	if(str == NULL || str[0] == '\0') return false;
-	void *ptr = bsearch(str, reserved, G_N_ELEMENTS(reserved),
-		sizeof(const char *), (int (*)(const void *, const void *))&strcmp);
+	void *ptr = bsearch(&str, reserved, G_N_ELEMENTS(reserved),
+		sizeof(const char *), compare_str_ptr);
 	if(ptr != NULL) return true;
 	for(int i=1; i<G_N_ELEMENTS(reserved); i++) {
 		assert(strcmp(reserved[i-1], reserved[i]) < 0);
