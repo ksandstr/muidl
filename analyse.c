@@ -1,5 +1,5 @@
 /*
- * analyse.c -- verification and analysis of IDL tree inputs
+ * analyse.c -- analysis of IDL elements
  * Copyright 2009  Kalle A. Sandström <ksandstr@iki.fi>
  *
  * This file is part of µiX.

@@ -1182,6 +1182,13 @@ bool do_idl_file(const char *filename)
 		return false;
 	}
 
+	if(!verify_idl_input(ns, tree)) {
+		fprintf(stderr, "verification of `%s' failed.\n", filename);
+		IDL_ns_free(ns);
+		IDL_tree_free(tree);
+		return false;
+	}
+
 	GHashTable *ifaces = collect_ifaces(tree, ns);
 
 	const char *filepart = strrchr(filename, '/');

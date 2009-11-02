@@ -160,6 +160,12 @@ extern bool is_negs_exn(IDL_tree except_dcl);
 extern struct method_info *analyse_op_dcl(struct print_ctx *pr, IDL_tree op);
 
 
+/* from verify.c */
+
+/* true on success, false on failure */
+extern bool verify_idl_input(IDL_ns ns, IDL_tree tree);
+
+
 /* from gen-common.c */
 
 extern void print_common_header(struct print_ctx *pr);
