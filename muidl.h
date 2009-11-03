@@ -113,6 +113,8 @@ struct method_info
 
 /* from muidl.c */
 
+extern gboolean arg_verbose;
+
 /* NOTE: code_f() and code_vf() add a newline to the output. */
 extern int code_vf(struct print_ctx *pr, const char *fmt, va_list args);
 extern int code_f(struct print_ctx *pr, const char *fmt, ...)

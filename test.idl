@@ -35,6 +35,24 @@ interface Example
 
 	[Label(0xfad1)]
 	void outsy_operation(in word foo, out word bar);
+
+/* TEST 1: oneway operation with non-void return type
+ * expected: failure
+ */
+#if __TEST__ == 1
+	[Label(0xdead)]
+	oneway short oneway_short_operation();
+#endif
+
+/* TEST 2: oneway operation that raises an exception
+ * expected: failure
+ */
+#if __TEST__ == 2
+	[Label(0xdead)]
+	oneway void oneway_void_operation_that_raises()
+		raises(Posix::Errno);
+#endif
+
 };
 
 };

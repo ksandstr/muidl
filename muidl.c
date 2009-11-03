@@ -28,12 +28,20 @@
 #include <setjmp.h>
 #include <assert.h>
 #include <alloca.h>
+#include <locale.h>
 #include <errno.h>
 #include <ctype.h>
 #include <glib.h>
 #include <libIDL/IDL.h>
 
 #include "muidl.h"
+
+
+/* command-line arguments */
+gboolean arg_verbose = FALSE;
+static gboolean arg_version = FALSE;
+static gchar **arg_defines = NULL;
+static gchar **arg_idl_files = NULL;
 
 
 static void add_str_f(GList **listptr, const char *fmt, ...)
@@ -1166,11 +1174,11 @@ static void print_into(
 }
 
 
-bool do_idl_file(const char *filename)
+bool do_idl_file(const char *cppopts, const char *filename)
 {
 	IDL_tree tree = NULL;
 	IDL_ns ns = NULL;
-	int n = IDL_parse_filename(filename, "-I idl", &msg_callback,
+	int n = IDL_parse_filename(filename, cppopts, &msg_callback,
 		&tree, &ns, IDLF_PROPERTIES | IDLF_XPIDL | IDLF_SHOW_CPP_ERRORS
 			| IDLF_COMBINE_REOPENED_MODULES | IDLF_INHIBIT_INCLUDES,
 		IDL_WARNING1);
@@ -1220,18 +1228,72 @@ bool do_idl_file(const char *filename)
 }
 
 
+static void parse_cmdline(int argc, char *argv[])
+{
+	static const GOptionEntry entries[] = {
+		{ "cpp-define", 'D', 0, G_OPTION_ARG_STRING_ARRAY, &arg_defines,
+		  "command-line definitions for cpp(1)", "NAME[=VALUE]" },
+		{ "verbose", 'v', 0, G_OPTION_ARG_NONE, &arg_verbose,
+		  "enable verbose output", NULL },
+		{ "version", 'V', 0, G_OPTION_ARG_NONE, &arg_version,
+		  "print muidl version and exit", NULL },
+		{ G_OPTION_REMAINING, 0, 0, G_OPTION_ARG_STRING_ARRAY, &arg_idl_files,
+		  "IDL files", "[IDLFILE...]" },
+		{ NULL }
+	};
+	GError *error = NULL;
+	GOptionContext *oc = g_option_context_new("- µiX IDL compiler");
+	g_option_context_add_main_entries(oc, entries, NULL);
+	if(!g_option_context_parse(oc, &argc, &argv, &error)) {
+		fprintf(stderr, "option parsing error: %s\n", error->message);
+		g_error_free(error);
+		exit(EXIT_FAILURE);
+	}
+	g_option_context_free(oc);
+}
+
+
+static char *join_cpp_opts(const char *parm, char **strv)
+{
+	if(strv == NULL || strv[0] == NULL) {
+		/* fuck you then. */
+		return g_strdup("");
+	}
+
+	int num = g_strv_length(strv);
+	GString *buf = g_string_sized_new(num * (16 + strlen(parm)));
+	for(int i=0; i<num; i++) {
+		g_string_append_printf(buf, "%s '%s'", parm, strv[i]);
+	}
+	return g_string_free(buf, FALSE);
+}
+
+
 int main(int argc, char *argv[])
 {
-	if(argc < 2) {
-		fprintf(stderr, "Usage: %s [IDLFILE]\n", argv[0]);
-		return EXIT_FAILURE;
+	setlocale(LC_CTYPE, "");
+	parse_cmdline(argc, argv);
+
+	if(arg_version) {
+		printf("muidl (µidl) version 0.1\n");
+		return EXIT_SUCCESS;
 	}
 
 	IDL_check_cast_enable(TRUE);
+
+	char *defs = join_cpp_opts("-D", arg_defines),
+		*opts = g_strdup_printf("-I idl %s", defs);
+	g_free(defs);
+
 	bool ok = true;
-	for(int i=1; i<argc; i++) {
-		bool status = do_idl_file(argv[i]);
+	for(int i=0; arg_idl_files[i] != NULL; i++) {
+		bool status = do_idl_file(opts, arg_idl_files[i]);
 		ok = ok && status;
 	}
+
+	g_free(opts);
+	g_strfreev(arg_defines);
+	g_strfreev(arg_idl_files);
+
 	return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }
