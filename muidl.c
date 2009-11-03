@@ -40,12 +40,14 @@
 /* command-line arguments */
 gboolean arg_verbose = FALSE;
 static gboolean arg_version = FALSE;
-static gchar **arg_defines = NULL;
-static gchar **arg_idl_files = NULL;
+static gchar **arg_defines = NULL, **arg_idl_files = NULL,
+	**arg_include_paths = NULL;
 
 
 static void add_str_f(GList **listptr, const char *fmt, ...)
 	__attribute__((format(printf, 2, 3)));
+
+static int strvlen(char **strv) __attribute__((pure));
 
 
 static int msg_callback(
@@ -64,6 +66,11 @@ static int compare_str_ptr(const void *a, const void *b)
 {
 	const char *aa = *(char **)a, *bb = *(char **)b;
 	return strcmp(aa, bb);
+}
+
+
+static int strvlen(char **strv) {
+	return strv == NULL ? 0 : g_strv_length(strv);
 }
 
 
@@ -1233,6 +1240,8 @@ static void parse_cmdline(int argc, char *argv[])
 	static const GOptionEntry entries[] = {
 		{ "cpp-define", 'D', 0, G_OPTION_ARG_STRING_ARRAY, &arg_defines,
 		  "command-line definitions for cpp(1)", "NAME[=VALUE]" },
+		{ "include-path", 'I', 0, G_OPTION_ARG_STRING_ARRAY,
+		  &arg_include_paths, "add PATH to preprocessor search list", "PATH" },
 		{ "verbose", 'v', 0, G_OPTION_ARG_NONE, &arg_verbose,
 		  "enable verbose output", NULL },
 		{ "version", 'V', 0, G_OPTION_ARG_NONE, &arg_version,
@@ -1255,12 +1264,11 @@ static void parse_cmdline(int argc, char *argv[])
 
 static char *join_cpp_opts(const char *parm, char **strv)
 {
-	if(strv == NULL || strv[0] == NULL) {
+	int num = strvlen(strv);
+	if(num == 0) {
 		/* fuck you then. */
 		return g_strdup("");
 	}
-
-	int num = g_strv_length(strv);
 	GString *buf = g_string_sized_new(num * (16 + strlen(parm)));
 	for(int i=0; i<num; i++) {
 		g_string_append_printf(buf, "%s '%s'", parm, strv[i]);
@@ -1279,14 +1287,22 @@ int main(int argc, char *argv[])
 		return EXIT_SUCCESS;
 	}
 
+	if(strvlen(arg_idl_files) == 0) {
+		printf("no input files\n");
+		return EXIT_SUCCESS;
+	}
+
 	IDL_check_cast_enable(TRUE);
 
+	/* prepare options for cpp. */
 	char *defs = join_cpp_opts("-D", arg_defines),
-		*opts = g_strdup_printf("-I idl %s", defs);
+		*incs = join_cpp_opts("-I", arg_include_paths),
+		*opts = g_strdup_printf("%s %s", defs, incs);
 	g_free(defs);
+	g_free(incs);
 
 	bool ok = true;
-	for(int i=0; arg_idl_files[i] != NULL; i++) {
+	for(int i=0; i < strvlen(arg_idl_files); i++) {
 		bool status = do_idl_file(opts, arg_idl_files[i]);
 		ok = ok && status;
 	}
