@@ -302,7 +302,7 @@ char *value_type(IDL_ns ns, IDL_tree type)
 	else if(!is_value_type(type)) {
 		fprintf(stderr, "%s: <%s> is not a value type\n", __FUNCTION__,
 			NODETYPESTR(type));
-		abort();
+		exit(EXIT_FAILURE);
 	} else {
 		switch(IDL_NODE_TYPE(type)) {
 			case IDLN_TYPE_INTEGER: {
@@ -947,7 +947,7 @@ static void print_exceptions_for_iface(struct print_ctx *pr, IDL_tree iface)
 				/* FIXME: gracefully plz */
 				fprintf(stderr, "%s: unknown exception `%s'\n",
 					__FUNCTION__, IDL_IDENT_REPO_ID(ident));
-				abort();
+				exit(EXIT_FAILURE);
 			}
 
 			char *repoid = IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL(ex).ident);
@@ -1003,14 +1003,15 @@ static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 		struct method_info *inf = analyse_op_dcl(pr, method);
 		if(inf == NULL) {
 			/* FIXME: fail properly */
-			abort();
+			fprintf(stderr, "error: analyse_op_dcl() failed\n");
+			exit(EXIT_FAILURE);
 		}
 
 		if(inf->label == 0) {
 			/* FIXME: assign method labels at some point */
 			fprintf(stderr, "error: can't assign automatic label to `%s'\n",
 				METHOD_NAME(method));
-			abort();
+			exit(EXIT_FAILURE);
 		}
 
 		cur->data = inf;
@@ -1172,7 +1173,7 @@ static void print_into(
 	if(setjmp(((struct print_ctx *)pr)->fail_to)) {
 		fprintf(stderr, "%s: fail handler invoked\n", __FUNCTION__);
 		fclose(f);
-		abort();
+		exit(EXIT_FAILURE);
 	}
 
 	(*prtfn)((struct print_ctx *)pr);
