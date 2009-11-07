@@ -3,6 +3,8 @@ PKG=libIDL-2.0 glib-2.0
 CFLAGS:=-std=gnu99 -Wall -g $(shell pkg-config --cflags $(PKG)) -O2 -march=native
 LIBS:=-lm $(shell pkg-config --libs $(PKG))
 
+AUTOTEST_FILES := $(wildcard test*.idl)
+
 .PHONY: all clean distclean
 
 
@@ -17,6 +19,10 @@ clean:
 distclean: clean
 	rm -f muidl
 	@rm -f tags
+
+
+check:
+	./autotest.pl $(AUTOTEST_FILES)
 
 
 muidl: muidl.o analyse.o verify.o gen-common.o

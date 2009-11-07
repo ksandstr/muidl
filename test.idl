@@ -1,4 +1,6 @@
 
+/* AUTOTEST: ./muidl -D __TEST__=%t -I idl %n */
+
 #include "l4x2.idl"
 #include "posix-base.idl"
 
