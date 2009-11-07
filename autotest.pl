@@ -2,6 +2,9 @@
 use strict;
 use feature "switch";	# from 5.10 on
 
+use File::Temp qw/tempfile tempdir/;
+use Fcntl qw/SEEK_SET/;
+
 
 sub get_comment_sections {
 	my $lines = shift;
@@ -81,6 +84,44 @@ sub parse_tests {
 }
 
 
+sub read_fh {
+	my $fh = shift;
+	my $filename = shift;
+	seek($fh, 0, SEEK_SET) or die "can't seek $filename: $!";
+	my $data = do { local $/; <$fh>; };
+	return $data;
+}
+
+
+# like system(), but captures stdout and stderr.
+sub fancy_system {
+	my $cmdline = shift;
+	my ($outfh, $outfilename, $errfh, $errfilename);
+	my %result = ();
+	eval {
+		($outfh, $outfilename) = tempfile();
+		($errfh, $errfilename) = tempfile();
+		$result{status} = system("$cmdline >$outfilename 2>$errfilename");
+		$result{stdout} = read_fh($outfh, $outfilename);
+		$result{stderr} = read_fh($errfh, $errfilename);
+	};
+	my $evalstatus = $@;
+	if($outfh) {
+		close $outfh;
+		unlink $outfilename;
+	}
+	if($errfh) {
+		close $errfh;
+		unlink $errfilename;
+	}
+	if($evalstatus) {
+		die "$evalstatus";
+	} else {
+		return \%result;
+	}
+}
+
+
 sub autotest {
 	my $filename = shift;
 	open(FILE, "< $filename")
@@ -106,7 +147,8 @@ sub autotest {
 		my $cmd = $hdr;
 		$cmd =~ s/%t/$t->{id}/eg;
 		print STDERR "running `$cmd' for lineno $t->{lineno}\n";
-		my $status = system($cmd);
+		my $res = fancy_system($cmd);
+		my $status = $res->{status};
 		my $retcode = $status >> 8;
 		die "Can't execute `$cmd': $!" if $status == -1;
 		if($t->{expect} =~ /^fail/) {
@@ -115,6 +157,12 @@ sub autotest {
 				# TODO: report somewhere more proper
 				print STDERR "Test ID $t->{id} failed: return code $retcode"
 					. " (wanted != 0)\n";
+				if($res->{stdout}) {
+					print STDERR "stdout follows:\n$res->{stdout}\n";
+				}
+				if($res->{stderr}) {
+					print STDERR "stderr follows:\n$res->{stderr}\n";
+				}
 			}
 		} else {
 			die "$filename:$t->{lineno}: inexplicable expect spec `$t->{expect}'";
@@ -132,7 +180,7 @@ foreach(@ARGV) {
 		autotest $_;
 	};
 	if($@) {
-		print STDERR "error: $@\n";
+		print STDERR "error: $@";
 		$status = 1;
 	}
 }
