@@ -5,6 +5,18 @@ use feature "switch";	# from 5.10 on
 use File::Temp qw/tempfile tempdir/;
 use Fcntl qw/SEEK_SET/;
 
+# get signal names for ease of programming.
+use Config;
+defined $Config{sig_name} || die "No sigs?";
+my $signth = 0;
+my %signo;
+my @signame;
+foreach my $name (split(' ', $Config{sig_name})) {
+    $signo{$name} = $signth;
+    $signame[$signth] = $name;
+    $signth++;
+}
+
 
 sub get_comment_sections {
 	my $lines = shift;
@@ -75,6 +87,10 @@ sub parse_tests {
 			if(exists $ids{$id}) {
 				die "Test ID `$id' redefined in stanza at line $lineno.";
 			}
+			# TODO: check for valid expect clause
+			#	} else {
+			#		die "$filename:$t->{lineno}: inexplicable expect spec `$t->{expect}'";
+			#	}
 			$ids{$id} = 1;
 			$t{lineno} = $lineno;
 			push @tests, \%t;
@@ -149,23 +165,37 @@ sub autotest {
 		print STDERR "running `$cmd' for lineno $t->{lineno}\n";
 		my $res = fancy_system($cmd);
 		my $status = $res->{status};
-		my $retcode = $status >> 8;
 		die "Can't execute `$cmd': $!" if $status == -1;
-		if($t->{expect} =~ /^fail/) {
-			# low 7 bits are signal number. I have no idea what bit #7 is.
-			if(($status & 0x7f) == 0 && $retcode == 0) {
-				# TODO: report somewhere more proper
-				print STDERR "Test ID $t->{id} failed: return code $retcode"
-					. " (wanted != 0)\n";
-				if($res->{stdout}) {
-					print STDERR "stdout follows:\n$res->{stdout}\n";
-				}
-				if($res->{stderr}) {
-					print STDERR "stderr follows:\n$res->{stderr}\n";
-				}
-			}
+		my ($signum, $core_dumped, $retcode);
+		# some shells embed the inner status by returning it whole,
+		# so translate again until retcode is no longer > 127.
+		do {
+			$signum = $status & 0x7f;
+			$core_dumped = $status & 0x80;
+			$retcode = $status >> 8;
+			$status = $retcode;
+		} while($retcode > 127);
+
+		# analyse the result value.
+		if($t->{expect} =~ /^fail/ && $signum == 0 && $retcode != 0) {
+			# "failure", "failed" etc -- ordinary exit with non-zero return code
+			# indicating test failure. so the expect clause succeeds.
+		} elsif($t->{expect} =~ /^abort/ && $signum == $signo{ABRT}) {
+			# abort case, i.e. exited with SIGABRT
 		} else {
-			die "$filename:$t->{lineno}: inexplicable expect spec `$t->{expect}'";
+			# TODO: report somewhere more proper
+			print STDERR "Test ID $t->{id} failed: expected `$t->{expect}',"
+				. " but return code is $retcode";
+			if($signum > 0) {
+				print STDERR ", exit signal $signum ($signame[$signum])";
+			}
+			print "\n";
+			if($res->{stdout}) {
+				print STDERR "stdout follows:\n$res->{stdout}\n";
+			}
+			if($res->{stderr}) {
+				print STDERR "stderr follows:\n$res->{stderr}\n";
+			}
 		}
 	}
 

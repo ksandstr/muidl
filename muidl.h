@@ -62,16 +62,14 @@
  * should be caught in analysis functions, however.
  */
 #define NOTDEFINED(t) do { \
-		fprintf(stderr, "%s: not defined for <%s>\n", __FUNCTION__, \
-			NODETYPESTR((t))); \
-		assert(0); \
+		fprintf(stderr, "%s:%d: %s not defined for <%s>\n", __FILE__, \
+			(int)__LINE__, __FUNCTION__, NODETYPESTR((t))); \
 		abort(); \
 	} while(0)
 
 #define NOTSUPPORTED(what) do { \
-		fprintf(stderr, "%s: µidl does not support %s\n", \
-			__FUNCTION__, (what)); \
-		assert(0); \
+		fprintf(stderr, "%s:%d: µidl does not support %s\n", __FILE__, \
+			(int)__LINE__, (what)); \
 		abort(); \
 	} while(0)
 
