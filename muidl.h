@@ -71,7 +71,8 @@
 #define NOTSUPPORTED(what) do { \
 		fprintf(stderr, "%s: µidl does not support %s\n", \
 			__FUNCTION__, (what)); \
-		exit(EXIT_FAILURE); \
+		assert(0); \
+		abort(); \
 	} while(0)
 
 
