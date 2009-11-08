@@ -55,13 +55,50 @@ interface Example
 		raises(Posix::Errno);
 #endif
 
-/* TEST 3: multi-dimension arrays aren't defined in µidl
- * expected: abort
+
+/* test cases for supported_types_only(), IDLN_INTERFACE check */
+
+/* TEST 3: interface type in parameter declaration
+ * expected: fail
  */
 #if __TEST__ == 3
+	[Label(0xdead)]
+	void forbidden_type_in_param_dcl(in Example parameter);
+#endif
+
+/* TEST 4: interface type in struct declaration
+ * expected: fail
+ */
+#if __TEST__ == 4
 	struct multidim_array_garbage {
-		octet i_am_sure_dim_hyuck_hyuck[2][3];
+		Example i_sure_am_dim_hyuck_hyuck[2];
 	};
+#endif
+
+/* TEST 5: interface type in op_dcl return value
+ * expected: failure
+ */
+#if __TEST__ == 5
+	[Label(0xdead)]
+	Example iface_returning_operation(in long foo, in word bar);
+#endif
+
+/* TEST 6: interface type in sequence type
+ * expected: failure
+ */
+#if __TEST__ == 6
+	typedef sequence<Example, 20> exseq;
+	struct blah {
+		exseq z;
+		long foo;
+	};
+#endif
+
+/* TEST 7: interface type in typedef
+ * expected: failure
+ */
+#if __TEST__ == 7
+	typedef Example exarray[20];
 #endif
 
 };

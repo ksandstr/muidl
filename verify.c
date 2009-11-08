@@ -97,6 +97,82 @@ static gboolean no_reserved_idents(IDL_tree_func_data *tf, gpointer udptr)
 }
 
 
+static gboolean supported_types_only(IDL_tree_func_data *tf, gpointer udptr)
+{
+	struct ver_ctx *v = udptr;
+
+	IDL_tree node = tf->tree;
+	while(node != NULL && IDL_NODE_TYPE(node) == IDLN_IDENT) {
+		node = IDL_get_parent_node(node, IDLN_ANY, NULL);
+	}
+
+	switch(IDL_NODE_TYPE(node)) {
+		case IDLN_INTERFACE: {
+			/* what do badgers eat?
+			 * where cannot interface types appear?
+			 */
+			static const IDL_tree_type nogo[] = {
+				IDLN_PARAM_DCL,		/* not in parameters. */
+				IDLN_TYPE_STRUCT,	/* and not in structs. */
+				IDLN_OP_DCL,		/* not in return types... */
+				IDLN_TYPE_SEQUENCE,	/* or sequences */
+				IDLN_TYPE_ARRAY,	/* let alone arrays */
+				IDLN_TYPE_DCL,		/* or even typedefs. */
+				/* so sad. */
+			};
+			if(tf->up == NULL) break;
+			for(int i=0; i<G_N_ELEMENTS(nogo); i++) {
+				IDL_tree parent = IDL_get_parent_node(tf->up->tree, nogo[i], NULL);
+				if(parent != NULL) {
+					fail(v, "interface types are not supported inside <%s>",
+						IDL_NODE_TYPE_NAME(parent));
+					return FALSE;
+				}
+			}
+			break;
+		}
+
+		case IDLN_TYPE_OBJECT:
+		case IDLN_TYPE_ANY:
+		case IDLN_TYPE_TYPECODE:
+		case IDLN_TYPE_FLOAT:
+		case IDLN_TYPE_UNION:
+			fail(v, "type <%s> not supported", IDL_NODE_TYPE_NAME(node));
+			return FALSE;
+
+		case IDLN_TYPE_SEQUENCE:
+			if(IDL_TYPE_SEQUENCE(node).positive_int_const == NULL) {
+				fail(v, "sequences must be bounded");
+			}
+			break;
+
+		case IDLN_TYPE_STRING:
+			if(IDL_TYPE_STRING(node).positive_int_const == NULL) {
+				fail(v, "strings must be bounded");
+			}
+			return FALSE;	/* no point */
+
+		case IDLN_TYPE_WIDE_STRING:
+			if(IDL_TYPE_STRING(node).positive_int_const == NULL) {
+				fail(v, "wide strings must be bounded");
+			}
+			return FALSE;
+
+		case IDLN_TYPE_ARRAY:
+			if(IDL_list_length(IDL_TYPE_ARRAY(node).size_list) > 1) {
+				fail(v, "arrays must have a single dimension");
+			}
+			break;
+
+		default:
+			break;
+	}
+
+	/* everything else, and sequence & array component types */
+	return TRUE;
+}
+
+
 /* true when everything's OK */
 bool verify_idl_input(IDL_ns ns, IDL_tree tree)
 {
@@ -106,6 +182,12 @@ bool verify_idl_input(IDL_ns ns, IDL_tree tree)
 	 * words in C.
 	 */
 	IDL_tree_walk_in_order(tree, &no_reserved_idents, &v);
+	if(v.failed) return false;
+
+	/* fail on invalid types (unbounded sequences, unbounded strings,
+	 * multidimensional arrays, unions, any types, and references)
+	 */
+	IDL_tree_walk_in_order(tree, &supported_types_only, &v);
 	if(v.failed) return false;
 
 	/* succeed */
