@@ -290,8 +290,8 @@ bool is_value_type(IDL_tree type)
 
 		default:
 			fprintf(stderr, "%s: unsupported type <%s>\n",
-				__FUNCTION__, NODETYPESTR(type));
-			exit(EXIT_FAILURE);
+				__FUNCTION__, IDL_NODE_TYPE_NAME(type));
+			abort();
 	}
 }
 
