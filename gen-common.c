@@ -72,8 +72,7 @@ static void print_vtable(
 
 		char *rettypstr = return_type(ns, op, NULL),
 			*name = decapsify(METHOD_NAME(op));
-		fprintf(of, "\t%s%s(*%s%s)(", rettypstr, type_space(rettypstr),
-			is_reserved_word(name) ? "_" : "", name);
+		fprintf(of, "\t%s%s(*%s)(", rettypstr, type_space(rettypstr), name);
 		g_free(rettypstr);
 		g_free(name);
 

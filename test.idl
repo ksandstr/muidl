@@ -101,6 +101,13 @@ interface Example
 	typedef Example exarray[20];
 #endif
 
+/* TEST 8: reserved word in operation name
+ * expected: failure
+ */
+#if __TEST__ == 8
+	void register(in long something);
+#endif
+
 };
 
 };
