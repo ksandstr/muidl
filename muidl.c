@@ -573,7 +573,7 @@ static GHashTable *collect_ifaces(IDL_tree tree, IDL_ns ns)
 }
 
 
-static void indent(struct print_ctx *pr, int change)
+void indent(struct print_ctx *pr, int change)
 {
 	if(pr->indent_level + change < 0) {
 		fprintf(stderr, "warning: %s: changing %d by %d results in %d; clamped\n",
@@ -975,6 +975,15 @@ static void print_exceptions_for_iface(struct print_ctx *pr, IDL_tree iface)
 }
 
 
+char *dispatcher_name(IDL_ns ns, IDL_tree iface, char **vtprefix_p)
+{
+	char *vtprefix = vtable_prefix(ns, iface),
+		*ret = g_strdup_printf("_muidl_%s_dispatch", vtprefix);
+	if(vtprefix_p != NULL) *vtprefix_p = vtprefix; else g_free(vtprefix);
+	return ret;
+}
+
+
 /* this outputs a very generic dispatcher. ones written in customized assembly
  * code are optimizations, which we won't touch until µidl is reasonably
  * feature-complete. (i.e. need-to basis, and optimizations don't usually need
@@ -984,8 +993,9 @@ static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 {
 	code_f(pr, "/* dispatcher for interface `%s' */",
 		IDL_IDENT(IDL_INTERFACE(iface).ident).repo_id);
-	char *vtprefix = vtable_prefix(pr->ns, iface);
-	code_f(pr, "L4_Word_t _muidl_%s_dispatch(", vtprefix);
+	char *vtprefix = NULL,
+		*dispname = dispatcher_name(pr->ns, iface, &vtprefix);
+	code_f(pr, "L4_Word_t %s(", dispname);
 	indent(pr, 1);
 	code_f(pr, "struct %s_vtable *vtable)", vtprefix);
 	indent(pr, -1);
@@ -1114,6 +1124,7 @@ static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 	g_list_free(methods);
 	g_list_free(tagmask_list);
 	g_free(vtprefix);
+	g_free(dispname);
 }
 
 

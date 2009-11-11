@@ -119,7 +119,14 @@ extern int code_vf(struct print_ctx *pr, const char *fmt, va_list args);
 extern int code_f(struct print_ctx *pr, const char *fmt, ...)
 	__attribute__((format(printf, 2, 3)));
 
+extern void indent(struct print_ctx *pr, int change);
+
+
 extern char *vtable_prefix(IDL_ns ns, IDL_tree iface);
+/* if vtprefix_p != NULL, *vtprefix_p will be filled in with a string that
+ * the caller must g_free().
+ */
+extern char *dispatcher_name(IDL_ns ns, IDL_tree iface, char **vtprefix_p);
 extern GList *all_methods_of_iface(IDL_ns ns, IDL_tree iface);
 extern char *decapsify(const char *name);
 extern char *return_type(IDL_ns ns, IDL_tree opdcl, bool *real_p);

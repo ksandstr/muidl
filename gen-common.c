@@ -287,19 +287,33 @@ void print_common_header(struct print_ctx *pr)
 	IDL_tree_walk_in_order(pr->tree, &print_struct_decls, pr);
 	code_f(pr, " ");
 
-	/* interface vtables, but only for service implementations (so as to avoid
-	 * polluting the namespace).
+	/* interface vtables and dispatcher prototypes, but only for service
+	 * implementations (so as to avoid polluting the namespace).
 	 */
 	if(g_hash_table_size(pr->ifaces) > 0) {
-		code_f(pr, "#ifdef MUIDL_IMPL_SOURCE");
+		code_f(pr, "\n#ifdef MUIDL_IMPL_SOURCE\n");
 		GHashTableIter iter;
 		g_hash_table_iter_init(&iter, pr->ifaces);
 		gpointer key, value;
 		while(g_hash_table_iter_next(&iter, &key, &value)) {
+			IDL_tree iface = (IDL_tree)value;
+
+			/* vtable declaration */
 			code_f(pr, "/* vtable for `%s': */", (const char *)key);
-			print_vtable(pr->of, pr->tree, pr->ns, (IDL_tree)value);
+			print_vtable(pr->of, pr->tree, pr->ns, iface);
+
+			/* dispatcher prototype */
+			code_f(pr, " ");
+			char *vtprefix = NULL,
+				*dispname = dispatcher_name(pr->ns, iface, &vtprefix);
+			code_f(pr, "extern L4_Word_t %s(", dispname);
+			g_free(dispname);
+			indent(pr, 1);
+			code_f(pr, "const struct %s_vtable *vtable);", vtprefix);
+			indent(pr, -1);
+			g_free(vtprefix);
 		}
-		code_f(pr, "#endif\n");
+		code_f(pr, "\n#endif\n");
 	}
 
 	code_f(pr, "#endif");
