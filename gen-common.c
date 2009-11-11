@@ -268,6 +268,18 @@ void print_common_header(struct print_ctx *pr)
 	}
 	code_f(pr, "#ifndef _MUIDL_%s\n#define _MUIDL_%s\n", upper, upper);
 
+	/* headers */
+	static const char *hdrfiles[] = {
+		"stdint.h",
+		"stdbool.h",
+		"kernel/types.h",
+		"l4/types.h",
+	};
+	for(int i=0; i<G_N_ELEMENTS(hdrfiles); i++) {
+		code_f(pr, "#include <%s>", hdrfiles[i]);
+	}
+	code_f(pr, "\n");
+
 	/* struct, union & enum declarations as they appear in the IDL source. this
 	 * is appropriate because IDL doesn't permit forward declaration of
 	 * structs, unions, enums, or typedefs.
