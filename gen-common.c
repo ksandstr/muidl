@@ -110,12 +110,12 @@ static void print_vtable(
 					break;
 				}
 
+				/* in-out parameters are passed exactly as out-parameters,
+				 * but with a value already present.
+				 */
 				case IDL_PARAM_OUT:
-					print_out_param(of, ns, type, name);
-					break;
-
 				case IDL_PARAM_INOUT:
-					fprintf(of, "in-out parameters not done\n");
+					print_out_param(of, ns, type, name);
 					break;
 			}
 		}
