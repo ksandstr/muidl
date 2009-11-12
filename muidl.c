@@ -1199,8 +1199,9 @@ bool do_idl_file(const char *cppopts, const char *filename)
 	IDL_ns ns = NULL;
 	int n = IDL_parse_filename(filename, cppopts, &msg_callback,
 		&tree, &ns, IDLF_PROPERTIES | IDLF_XPIDL | IDLF_SHOW_CPP_ERRORS
-			| IDLF_COMBINE_REOPENED_MODULES | IDLF_INHIBIT_INCLUDES
-			| (arg_verbose_idl ? IDLF_VERBOSE : 0),
+			| IDLF_COMBINE_REOPENED_MODULES
+			| (arg_verbose_idl ? IDLF_VERBOSE : 0
+			| IDLF_INHIBIT_INCLUDES | IDLF_INHIBIT_TAG_ONLY),
 		IDL_WARNING1);
 	if(n == IDL_ERROR) {
 		fprintf(stderr, "IDL_parse_filename() failed.\n");
