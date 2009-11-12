@@ -39,7 +39,7 @@
 
 /* command-line arguments */
 gboolean arg_verbose = FALSE;
-static gboolean arg_version = FALSE;
+static gboolean arg_version = FALSE, arg_verbose_idl = FALSE;
 static gchar **arg_defines = NULL, **arg_idl_files = NULL,
 	**arg_include_paths = NULL;
 
@@ -1199,7 +1199,8 @@ bool do_idl_file(const char *cppopts, const char *filename)
 	IDL_ns ns = NULL;
 	int n = IDL_parse_filename(filename, cppopts, &msg_callback,
 		&tree, &ns, IDLF_PROPERTIES | IDLF_XPIDL | IDLF_SHOW_CPP_ERRORS
-			| IDLF_COMBINE_REOPENED_MODULES | IDLF_INHIBIT_INCLUDES,
+			| IDLF_COMBINE_REOPENED_MODULES | IDLF_INHIBIT_INCLUDES
+			| (arg_verbose_idl ? IDLF_VERBOSE : 0),
 		IDL_WARNING1);
 	if(n == IDL_ERROR) {
 		fprintf(stderr, "IDL_parse_filename() failed.\n");
@@ -1256,6 +1257,8 @@ static void parse_cmdline(int argc, char *argv[])
 		  &arg_include_paths, "add PATH to preprocessor search list", "PATH" },
 		{ "verbose", 'v', 0, G_OPTION_ARG_NONE, &arg_verbose,
 		  "enable verbose output", NULL },
+		{ "verbose-idl", 0, 0, G_OPTION_ARG_NONE, &arg_verbose_idl,
+		  "enable verbose output from libIDL", NULL },
 		{ "version", 'V', 0, G_OPTION_ARG_NONE, &arg_version,
 		  "print muidl version and exit", NULL },
 		{ G_OPTION_REMAINING, 0, 0, G_OPTION_ARG_STRING_ARRAY, &arg_idl_files,
