@@ -1,0 +1,52 @@
+
+/* real-ish IDL spec for the devserv component of µiX. */
+
+#ifndef _MUIX_DEVSERV_IDL
+#define _MUIX_DEVSERV_IDL
+
+#include "l4x2.idl"
+#include "muix/muix.idl"
+#include "posix-base.idl"
+
+
+module muix
+{
+
+/* IPC label range 0xf100 - 0xf10f inclusive */
+[StubPrefix(__devserv)]
+interface Devserv
+{
+	/* pairs of [first, last] */
+	typedef sequence<unsigned short, 32> ranges;
+
+	/* 'c' for character device, 'b' for block device, '\0' for a
+	 * context-dependent special value.
+	 */
+	typedef char device_type;
+
+
+	[Label(0xf100)]
+	void register_device_range(
+		in word major,
+		in ranges minors,
+		in device_type type,
+		in thread_id dispatch_tid)
+			raises(Posix::Errno);
+
+	[Label(0xf101)]
+	thread_id lookup(in word major, in word minor, in device_type type)
+		raises(Posix::Errno);
+
+	[Label(0xf102)]
+	void unregister(
+		in word major,			/* 0 for all of them */
+		in ranges minors,		/* empty for all of them */
+		in device_type type)	/* '\0' for either */
+			raises(Posix::Errno);
+};
+
+
+};
+
+#endif
+

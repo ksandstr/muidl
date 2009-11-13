@@ -1,0 +1,23 @@
+
+/* basics of the "muix" module */
+
+#ifndef _MUIX_BASE_IDL
+#define _MUIX_BASE_IDL
+
+#include "l4x2.idl"
+
+
+module muix
+{
+
+typedef L4X2::word word;
+typedef L4X2::word thread_id;
+
+/* the distinction is not useful from a type system point of view. */
+typedef L4X2::MapGrantItem map_item;
+
+};
+
+
+#endif
+
