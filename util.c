@@ -21,6 +21,10 @@
 #define _GNU_SOURCE
 
 #include <glib.h>
+#include <stdlib.h>
+#include <stdarg.h>
+#include <stdint.h>
+#include <string.h>
 
 #include "muidl.h"
 
@@ -45,3 +49,37 @@ void free_message_info(struct message_info *inf)
 	g_free(inf);
 }
 
+
+char *tmp_vf(struct print_ctx *pr, const char *fmt, va_list al)
+{
+	/* leave the heap out of this, if reasonably possible */
+	char buf[256];
+	va_list copy;
+	va_copy(copy, al);
+	int n = vsnprintf(buf, sizeof(buf), fmt, copy);
+	va_end(copy);
+	char *result;
+	if(n+1 > sizeof(buf)) {
+		/* ok, have to involve the heap. */
+#ifndef NDEBUG
+		fprintf(stderr, "%s: output would be %d bytes long\n",
+			__FUNCTION__, n);
+#endif
+		char *feh = g_strdup_vprintf(fmt, al);
+		result = g_string_chunk_insert_len(pr->tmpstrchunk, feh, n);
+		g_free(feh);
+	} else {
+		result = g_string_chunk_insert_len(pr->tmpstrchunk, buf, n);
+	}
+	return result;
+}
+
+
+char *tmp_f(struct print_ctx *pr, const char *fmt, ...)
+{
+	va_list al;
+	va_start(al, fmt);
+	char *result = tmp_vf(pr, fmt, al);
+	va_end(al);
+	return result;
+}

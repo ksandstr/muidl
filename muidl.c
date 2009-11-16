@@ -934,15 +934,14 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 				/* strictly positive integral return types that're 31 bits or
 				 * shorter: unsigned short and octet. (whee!)
 				 */
-				retval_str = g_strdup_printf("retval & %#x",
+				retval_str = tmp_f(pr, "retval & %#x",
 					short_mask(inf->return_type));
 			} else if(inf->return_type != NULL) {
 				/* FIXME */
-				retval_str = g_strdup(
+				retval_str = tmp_f(pr, "%s",
 					"/* FIXME: would encode non-n_ex return value here */");
 			}
 			print_msg_encoder(pr, inf->replies[0], retval_str, "&msg", "p_");
-			g_free(retval_str);
 			if(!first_if) close_brace(pr);
 		}
 	}
@@ -1275,6 +1274,7 @@ static void print_into(
 	(*prtfn)((struct print_ctx *)pr);
 	pr->of = oldof;
 	fclose(f);
+	g_string_chunk_clear(pr->tmpstrchunk);
 }
 
 
@@ -1318,11 +1318,13 @@ bool do_idl_file(const char *cppopts, const char *filename)
 		.ns = ns, .tree = tree, .ifaces = ifaces,
 		.idlfilename = filename,
 		.common_header_name = commonname,
+		.tmpstrchunk = g_string_chunk_new(1024),
 	};
 	print_into(commonname, &print_common_header, &print_ctx);
 	char *dispname = g_strdup_printf("%s-dispatch.c", basename);
 	print_into(dispname, &print_dispatcher, &print_ctx);
 
+	g_string_chunk_free(print_ctx.tmpstrchunk);
 	g_hash_table_destroy(ifaces);
 	g_free(commonname);
 	g_free(dispname);

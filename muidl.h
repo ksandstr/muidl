@@ -88,6 +88,9 @@ struct print_ctx
 	GHashTable *ifaces;
 	int indent_level;
 
+	/* cleared at end of print_into() */
+	GStringChunk *tmpstrchunk;
+
 	/* error handling bits */
 	jmp_buf fail_to;
 };
@@ -211,6 +214,13 @@ extern bool is_negs_exn(IDL_tree except_dcl);
 /* g_free()s every element, then g_list_free()s the list */
 extern void list_dispose(GList *list);
 extern void free_message_info(struct message_info *inf);
+
+/* these allocate from pr->tmpstrchunk. strings are valid until the next outer
+ * print_into() returns.
+ */
+extern char *tmp_f(struct print_ctx *pr, const char *fmt, ...)
+	__attribute__((format(printf, 2, 3)));
+extern char *tmp_vf(struct print_ctx *pr, const char *fmt, va_list args);
 
 
 /* from analyse.c */
