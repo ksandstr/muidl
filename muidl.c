@@ -759,6 +759,49 @@ static void build_dispatch_parms(
 }
 
 
+static void print_msg_encoder(
+	struct print_ctx *pr,
+	const struct message_info *msg,
+	const char *retval_str,
+	const char *msg_str,
+	const char *var_prefix)
+{
+	int next_r = 1;
+	if(retval_str != NULL) {
+		code_f(pr, "L4_MsgAppendWord(%s, %s);", msg_str, retval_str);
+		next_r++;
+	}
+
+	for(int i=0; i<msg->num_untyped; i++) {
+		struct untyped_param *u = msg->untyped[i];
+		if(IDL_PARAM_DCL(u->param_dcl).attr == IDL_PARAM_IN) {
+			continue;
+		}
+
+		for(int r = u->first_reg; r <= u->last_reg; r++) {
+			if(r != next_r) {
+				fprintf(stderr, "warning: next reg# is %d, but r is %d (opdcl `%s')\n",
+					next_r, r, u->name);
+			}
+			if(IS_FPAGE_TYPE(u->type)) {
+				code_f(pr, "L4_MsgAppendWord(&msg, p_%s.raw);", u->name);
+				next_r++;
+			} else if(is_value_type(u->type)) {
+				code_f(pr, "L4_MsgAppendWord(&msg, p_%s);", u->name);
+				next_r++;
+			} else {
+				/* TODO: handle mapitems, rigid types, and long types
+				 * as out-values too
+				 */
+				NOTDEFINED(u->type);
+			}
+		}
+	}
+	/* TODO: inline sequences */
+	/* TODO: string buffers */
+}
+
+
 static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 {
 	code_f(pr, "/* decoding of `%s' */", METHOD_NAME(inf->node));
@@ -831,18 +874,20 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 		indent(pr, -1);
 	}
 
-	/* FIXME: reply decoding */
-#if 0
 	if(!IDL_OP_DCL(inf->node).f_oneway) {
-		code_f(pr, "L4_MsgClear(&msg);");
+		/* reply encoding */
 
+		/* the NegativeReturn exception, where applicable */
 		IDL_tree n_ex = find_neg_exn(inf->node);
 		bool first_if = true;
 		if(n_ex != NULL) {
 			assert(strcmp(rtstr, "int") == 0);
 			code_f(pr, "if(retval < 0) {");
 			indent(pr, 1);
-			/* FIXME: grab exception label from somewhere! */
+			/* FIXME: grab exception label from somewhere!
+			 * (linear search for n_ex in message_info->node.)
+			 */
+			code_f(pr, "L4_MsgClear(&msg);");
 			code_f(pr, "L4_Set_MsgLabel(&msg, MSG_ERROR);");
 			IDL_tree memb = IDL_LIST(IDL_EXCEPT_DCL(n_ex).members).data,
 				fldtype = get_type_spec(IDL_MEMBER(memb).type_spec);
@@ -853,57 +898,54 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 			first_if = false;
 		}
 
-		/* TODO: if the operation has any exceptions, check whether ctx->exmsg
-		 * label is 0; if not, forward the exception.
-		 */
+		/* other exceptions */
+		bool has_other_exns = false;
+		for(int i=0; i<inf->num_reply_msgs; i++) {
+			if(inf->replies[i]->node != n_ex
+				&& IDL_NODE_TYPE(inf->replies[i]->node) == IDLN_EXCEPT_DCL)
+			{
+				/* found an exception besides n_ex. whee! */
+				has_other_exns = true;
+				break;
+			}
+		}
+		if(has_other_exns) {
+			fprintf(pr->of, "#if 0\n");
+			code_f(pr, "%sif(ctx->exception_indicating_thingy != 0) {",
+				first_if ? "" : "} else ");
+			indent(pr, 1);
+			code_f(pr, "L4_MsgClear(&msg);");
+			code_f(pr, "/* FIXME: code that forwards ctx->exception in &msg */");
+			close_brace(pr);
+			fprintf(pr->of, "#endif\n");
+		}
 
-		if(inf->num_out_params > 0
-			|| IDL_OP_DCL(inf->node).op_type_spec != NULL)
+		/* this identifies the non-exception outcome. */
+		if(inf->num_reply_msgs > 0
+			&& IDL_NODE_TYPE(inf->replies[0]->node) == IDLN_OP_DCL)
 		{
 			if(!first_if) {
 				code_f(pr, "else {");
 				indent(pr, 1);
 			}
-			int next_r = 1;
-			if(n_ex != NULL && rettyp != NULL) {
+			code_f(pr, "L4_MsgClear(&msg);");
+			char *retval_str = NULL;
+			if(n_ex != NULL && inf->return_type != NULL) {
 				/* strictly positive integral return types that're 31 bits or
 				 * shorter: unsigned short and octet. (whee!)
 				 */
-				code_f(pr, "L4_MsgAppendWord(&msg, retval & %#x);",
-					short_mask(rettyp));
-				next_r++;
-			} else if(rettyp != NULL) {
-				code_f(pr, "/* TODO: would encode non-n_ex return type here */");
+				retval_str = g_strdup_printf("retval & %#x",
+					short_mask(inf->return_type));
+			} else if(inf->return_type != NULL) {
+				/* FIXME */
+				retval_str = g_strdup(
+					"/* FIXME: would encode non-n_ex return value here */");
 			}
-			for(int i=0; i<inf->num_params; i++) {
-				struct param_info *pi = &inf->params[i];
-				if(IDL_PARAM_DCL(pi->param_dcl).attr == IDL_PARAM_IN) {
-					continue;
-				}
-
-				for(int r = pi->first_reg; r <= pi->last_reg; r++) {
-					if(r != next_r) {
-						fprintf(stderr, "warning: next reg# is %d, but r is %d (opdcl `%s')\n",
-							next_r, r, pi->name);
-					}
-					if(IS_FPAGE_TYPE(pi->type)) {
-						code_f(pr, "L4_MsgAppendWord(&msg, p_%s.raw);", pi->name);
-						next_r++;
-					} else if(is_value_type(pi->type)) {
-						code_f(pr, "L4_MsgAppendWord(&msg, p_%s);", pi->name);
-						next_r++;
-					} else {
-						/* TODO: handle mapitems, rigid types, and long types
-						 * as out-values too
-						 */
-						NOTDEFINED(pi->type);
-					}
-				}
-			}
+			print_msg_encoder(pr, inf->replies[0], retval_str, "&msg", "p_");
+			g_free(retval_str);
 			if(!first_if) close_brace(pr);
 		}
 	}
-#endif
 
 	g_free(rtstr);
 	g_free(name);

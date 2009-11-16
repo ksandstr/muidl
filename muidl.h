@@ -116,6 +116,8 @@ struct message_info
 	uint16_t label;
 	uint32_t tagmask;		/* tag mask, or NO_TAGMASK if not set */
 
+	IDL_tree node;			/* IDL_{EXCEPT,OP}_DCL */
+
 	/* parameters that are passed in untyped words. may contain multi-word
 	 * types such as constant-length structs that are encoded as words, or
 	 * arrays of word-packable types.

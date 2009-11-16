@@ -277,6 +277,8 @@ static struct message_info *build_exception_message(IDL_tree exn)
 	struct message_info *msg = g_malloc0(sizeof(struct message_info)
 		+ 0 * sizeof(IDL_tree));
 	msg->tagmask = NO_TAGMASK;
+	msg->node = exn;
+
 	return msg;
 }
 
@@ -314,6 +316,7 @@ struct method_info *analyse_op_dcl(
 		}
 	}
 	inf->request = build_message(NULL, pbuf, nparms);
+	inf->node = method;
 	if(!get_msg_label(inf->request, IDL_OP_DCL(method).ident)) {
 		/* FIXME: assign a label somehow, blow up only if that fails */
 		fprintf(stderr, "error: can't assign automatic label to `%s'\n",
@@ -331,6 +334,7 @@ struct method_info *analyse_op_dcl(
 			}
 		}
 		inf->replies[0] = build_message(return_type, pbuf, nparms);
+		inf->replies[0]->node = method;
 		inf->replies[0]->label = 0;
 		inf->replies[0]->tagmask = NO_TAGMASK;
 	}
