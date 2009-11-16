@@ -50,6 +50,16 @@ void free_message_info(struct message_info *inf)
 }
 
 
+void free_method_info(struct method_info *inf)
+{
+	free_message_info(inf->request);
+	for(int i=0; i<inf->num_reply_msgs; i++) {
+		free_message_info(inf->replies[i]);
+	}
+	g_free(inf);
+}
+
+
 char *tmp_vf(struct print_ctx *pr, const char *fmt, va_list al)
 {
 	/* leave the heap out of this, if reasonably possible */

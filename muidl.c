@@ -1204,7 +1204,7 @@ static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 	close_brace(pr);	/* function */
 	code_f(pr, " ");
 
-	g_list_foreach(methods, (GFunc)g_free, NULL);
+	g_list_foreach(methods, (GFunc)free_method_info, NULL);
 	g_list_free(methods);
 	g_list_free(tagmask_list);
 	g_free(vtprefix);
