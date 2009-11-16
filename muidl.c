@@ -661,20 +661,18 @@ static void print_helper_vars(
 	const struct message_info *msg,
 	bool inout)
 {
+	/* fixed-length untyped */
 	for(int i=0; i<msg->num_untyped; i++) {
 		const struct untyped_param *u = msg->untyped[i];
 
 		const enum IDL_param_attr attr = IDL_PARAM_DCL(u->param_dcl).attr;
 		const bool decode = attr != IDL_PARAM_OUT;
 
+		if(!inout && attr == IDL_PARAM_INOUT) continue;
 		if(attr == IDL_PARAM_IN && is_value_type(u->type)) {
 			/* an in-only valuetype parameter is passed as a call to
 			 * "L4_MsgWord()" at the vtable call site.
 			 */
-			continue;
-		}
-
-		if(!inout && attr == IDL_PARAM_INOUT) {
 			continue;
 		}
 
@@ -712,12 +710,23 @@ static void print_helper_vars(
 		g_free(tstr);
 		g_free(initializer);
 	}
-	/* TODO: inline sequences! */
+
+	/* inline sequences */
+	for(int i=0; i<msg->num_inline_seq; i++) {
+		const struct seq_param *s = msg->seq[i];
+
+		char *tstr = value_type(pr->ns, s->elem_type);
+		code_f(pr, "%s p_%s[%d];", tstr, s->name, s->max_elems);
+		code_f(pr, "unsigned p_%s_len = 0u;", s->name);
+		g_free(tstr);
+	}
+
 	/* TODO: stringitem things! */
 }
 
 
 static void build_dispatch_parms(
+	IDL_ns ns,
 	GList **parm_list,
 	const struct method_info *inf)
 {
@@ -726,34 +735,34 @@ static void build_dispatch_parms(
 		cur != NULL;
 		cur = IDL_LIST(cur).next)
 	{
-		IDL_tree p = IDL_LIST(cur).data;
+		IDL_tree p = IDL_LIST(cur).data,
+			type = get_type_spec(IDL_PARAM_DCL(p).param_type_spec);
 		const char *name = IDL_IDENT(IDL_PARAM_DCL(p).simple_declarator).str;
-		if(IDL_PARAM_DCL(p).attr != IDL_PARAM_IN) {
-			/* out & inout parameters */
+		if(IDL_PARAM_DCL(p).attr != IDL_PARAM_IN && is_rigid_type(ns, type)) {
+			/* rigid out & inout parameters */
 			add_str_f(parm_list, "&p_%s", name);
-		} else {
-			IDL_tree type = get_type_spec(IDL_PARAM_DCL(p).param_type_spec);
-			if(IS_FPAGE_TYPE(type)) {
-				add_str_f(parm_list, "p_%s", name);
-			} else if(is_value_type(type)) {
-				struct untyped_param *u = NULL;
-				for(int i=0; i<req->num_untyped; i++) {
-					if(strcmp(req->untyped[i]->name, name) == 0) {
-						u = req->untyped[i];
-						break;
-					}
+		} else if(IS_FPAGE_TYPE(type)) {
+			add_str_f(parm_list, "p_%s", name);
+		} else if(is_value_type(type)) {
+			struct untyped_param *u = NULL;
+			for(int i=0; i<req->num_untyped; i++) {
+				if(strcmp(req->untyped[i]->name, name) == 0) {
+					u = req->untyped[i];
+					break;
 				}
-				if(u == NULL) {
-					fprintf(stderr, "%s: brain damage!\n", __FUNCTION__);
-					abort();
-				}
-				for(int r=u->first_reg; r <= u->last_reg; r++) {
-					add_str_f(parm_list, "L4_MsgWord(&msg, %d)", r - 1);
-				}
-			} else {
-				/* TODO: sequence, string, array, struct types */
-				NOTDEFINED(type);
 			}
+			if(u == NULL) {
+				fprintf(stderr, "%s: brain damage!\n", __FUNCTION__);
+				abort();
+			}
+			for(int r=u->first_reg; r <= u->last_reg; r++) {
+				add_str_f(parm_list, "L4_MsgWord(&msg, %d)", r - 1);
+			}
+		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
+			add_str_f(parm_list, "p_%s, p_%s_len", name, name);
+		} else {
+			/* TODO: string, array, struct types */
+			NOTDEFINED(type);
 		}
 	}
 }
@@ -806,6 +815,7 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 {
 	code_f(pr, "/* decoding of `%s' */", METHOD_NAME(inf->node));
 
+	const struct message_info *req = inf->request;
 	print_helper_vars(pr, inf->request, true);
 	if(inf->num_reply_msgs > 0) {
 		print_helper_vars(pr, inf->replies[0], false);
@@ -839,7 +849,44 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 		g_free(typ);
 	}
 
-	build_dispatch_parms(&parm_list, inf);
+	if(req->num_inline_seq > 0) {
+		/* decode inline sequences */
+		code_f(pr, "int seq_base = %d;", req->untyped_words);
+		for(int i=0; i<req->num_inline_seq; i++) {
+			struct seq_param *s = req->seq[i];
+			if(i + 1 < req->num_inline_seq) {
+				/* not the last, therefore take a length word. */
+				code_f(pr, "p_%s_len = L4_MsgWord(&msg, seq_base++);",
+					s->name);
+			} else {
+				/* compute length from untyped words counter. */
+				code_f(pr, "p_%s_len = L4_UntypedWords(msg.tag) - seq_base;",
+					s->name);
+			}
+
+			/* NOTE: I'm quite sure this could be done smarter. but w/e...
+			 *
+			 * FIXME: make sure that when s->elems_per_word > 1, p_[name]
+			 * is sized to accept a multiple of s->elems_per_word items,
+			 * padding it out as necessary.
+			 */
+			code_f(pr, "for(unsigned i=0; i<p_%s_len; i+=%d) {", s->name,
+				s->elems_per_word);
+			indent(pr, 1);
+			unsigned long mask = (1 << s->bits_per_elem) - 1;
+			code_f(pr, "L4_Word_t w = L4_MsgWord(&msg, seq_base++);");
+			for(int j=0; j<s->elems_per_word; j++) {
+				code_f(pr, "p_%s[i * %d + %d] = (w & %#lxL); w >>= %d;", s->name,
+					s->elems_per_word, s->elems_per_word - j - 1, mask,
+					s->bits_per_elem);
+			}
+			close_brace(pr);
+		}
+	}
+
+	/* TODO: decode string-carried parameters */
+
+	build_dispatch_parms(pr->ns, &parm_list, inf);
 
 	/* the vtable call. */
 	const char *ret1, *ret2;

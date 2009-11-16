@@ -34,8 +34,12 @@ interface Devserv
 			raises(Posix::Errno);
 
 	[Label(0xf101)]
-	thread_id lookup(in word major, in word minor, in device_type type)
-		raises(Posix::Errno);
+	void lookup(
+		out thread_id result,
+		in word major,
+		in word minor,
+		in device_type type)
+			raises(Posix::Errno);
 
 	[Label(0xf102)]
 	void unregister(

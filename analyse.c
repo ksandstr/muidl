@@ -215,6 +215,7 @@ static struct message_info *build_message(
 		u->last_reg = next_mr;
 		next_mr++;
 	}
+	inf->untyped_words = next_mr - 1;
 
 	/* allocate sequences. */
 	inf->num_inline_seq = g_list_length(seq);

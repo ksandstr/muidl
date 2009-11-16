@@ -127,6 +127,7 @@ struct message_info
 	 */
 	int num_untyped;
 	struct untyped_param **untyped;
+	int untyped_words;		/* MsgWord offset where inline sequences begin */
 
 	/* sequence types that are passed inline. */
 	int num_inline_seq;

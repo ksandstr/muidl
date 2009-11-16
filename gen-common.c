@@ -99,12 +99,22 @@ static void print_vtable(
 			const char *name = IDL_IDENT(decl).str;
 			switch(IDL_PARAM_DCL(p).attr) {
 				case IDL_PARAM_IN: {
-					if(IDL_NODE_TYPE(p) == IDLN_TYPE_SEQUENCE) {
-						NOTDEFINED(p);
+					char *typestr;
+					if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
+						IDL_tree subtype = get_type_spec(
+							IDL_TYPE_SEQUENCE(type).simple_type_spec);
+						typestr = in_param_type(ns, subtype);
+						fprintf(of, "const %s%s*%s%s, ",
+							typestr, type_space(typestr),
+							is_reserved_word(name) ? "_" : "", name);
+						fprintf(of, "unsigned %s%s_len",
+							is_reserved_word(name) ? "_" : "", name);
+					} else {
+						/* TODO: arrays, strings, structs */
+						typestr = in_param_type(ns, type);
+						fprintf(of, "%s%s%s%s", typestr, type_space(typestr),
+							is_reserved_word(name) ? "_" : "", name);
 					}
-					char *typestr = in_param_type(ns, type);
-					fprintf(of, "%s%s%s%s", typestr, type_space(typestr),
-						is_reserved_word(name) ? "_" : "", name);
 					g_free(typestr);
 					break;
 				}
