@@ -656,102 +656,147 @@ static unsigned short_mask(IDL_tree fldtype)
 }
 
 
-static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
+static void print_helper_vars(
+	struct print_ctx *pr,
+	const struct message_info *msg,
+	bool inout)
 {
-	code_f(pr, "/* decoding of `%s' */", METHOD_NAME(inf->node));
+	for(int i=0; i<msg->num_untyped; i++) {
+		const struct untyped_param *u = msg->untyped[i];
 
-	/* helper variables. */
-	for(int i=0; i<inf->num_params; i++) {
-		const struct param_info *pinf = &inf->params[i];
+		const enum IDL_param_attr attr = IDL_PARAM_DCL(u->param_dcl).attr;
+		const bool decode = attr != IDL_PARAM_OUT;
 
-		if(is_value_type(pinf->type)
-			&& IDL_PARAM_DCL(pinf->param_dcl).attr == IDL_PARAM_IN)
-		{
-			/* automatic valuetype in-parameters get implicit conversion at
-			 * the function call site, so we don't decode them into
-			 * variables here.
+		if(attr == IDL_PARAM_IN && is_value_type(u->type)) {
+			/* an in-only valuetype parameter is passed as a call to
+			 * "L4_MsgWord()" at the vtable call site.
 			 */
 			continue;
 		}
 
-		char *initializer = NULL;
-		if(IDL_PARAM_DCL(pinf->param_dcl).attr != IDL_PARAM_OUT) {
-			if(IS_MAPGRANT_TYPE(pinf->type)) {
-				assert(pinf->first_reg == pinf->last_reg - 1);
-				initializer = g_strdup_printf(" = {\n"
-					"\t.raw = { L4_MsgWord(&msg, %d), L4_MsgWord(&msg, %d) }\n"
-					"}", (int)pinf->first_reg - 1,
-					(int)pinf->last_reg - 1);
-			} else if(IS_FPAGE_TYPE(pinf->type)) {
-				initializer = g_strdup_printf(" = { .raw = L4_MsgWord(&msg, %d) }",
-					(int)pinf->first_reg - 1);
-			} else if(is_value_type(pinf->type)) {
-				initializer = g_strdup_printf(" = L4_MsgWord(&msg, %d)",
-					(int)pinf->first_reg - 1);
-			} else {
-				/* TODO: add rigid, long types */
-				NOTDEFINED(pinf->type);
-			}
+		if(!inout && attr == IDL_PARAM_INOUT) {
+			continue;
 		}
 
-		char *tstr;
-		if(is_value_type(pinf->type)) tstr = value_type(pr->ns, pinf->type);
-		else if(is_rigid_type(pr->ns, pinf->type)) {
-			tstr = rigid_type(pr->ns, pinf->type);
+		char *initializer = NULL;
+		const char *deflt = "";
+		if(IS_MAPGRANT_TYPE(u->type)) {
+			assert(u->first_reg == u->last_reg - 1);
+			if(!decode) deflt = " = { .raw = { 0, 0 } }";
+			else {
+				initializer = g_strdup_printf(" = {\n"
+						"\t.raw = { L4_MsgWord(&msg, %d), L4_MsgWord(&msg, %d) }\n"
+					"}", (int)u->first_reg - 1,
+					(int)u->last_reg - 1);
+			}
+		} else if(IS_FPAGE_TYPE(u->type)) {
+			if(!decode) deflt = " = { .raw = 0 }";
+			else {
+				initializer = g_strdup_printf(" = { .raw = L4_MsgWord(&msg, %d) }",
+					(int)u->first_reg - 1);
+			}
+		} else if(is_value_type(u->type)) {
+			if(!decode) deflt = " = 0";
+			else {
+				initializer = g_strdup_printf(" = L4_MsgWord(&msg, %d)",
+					(int)u->first_reg - 1);
+			}
 		} else {
-			NOTDEFINED(pinf->type);
+			/* TODO: fixed-size structs, arrays */
+			NOTDEFINED(u->type);
 		}
-		code_f(pr, "%s p_%s%s;", tstr, pinf->name,
-			initializer != NULL ? initializer : "");
+
+		char *tstr = value_type(pr->ns, u->type);
+		code_f(pr, "%s p_%s%s;", tstr, u->name,
+			initializer != NULL ? initializer : deflt);
 		g_free(tstr);
 		g_free(initializer);
 	}
+	/* TODO: inline sequences! */
+	/* TODO: stringitem things! */
+}
 
-	IDL_tree rettyp = get_type_spec(IDL_OP_DCL(inf->node).op_type_spec);
+
+static void build_dispatch_parms(
+	GList **parm_list,
+	const struct method_info *inf)
+{
+	const struct message_info *req = inf->request;
+	for(IDL_tree cur = IDL_OP_DCL(inf->node).parameter_dcls;
+		cur != NULL;
+		cur = IDL_LIST(cur).next)
+	{
+		IDL_tree p = IDL_LIST(cur).data;
+		const char *name = IDL_IDENT(IDL_PARAM_DCL(p).simple_declarator).str;
+		if(IDL_PARAM_DCL(p).attr != IDL_PARAM_IN) {
+			/* out & inout parameters */
+			add_str_f(parm_list, "&p_%s", name);
+		} else {
+			IDL_tree type = get_type_spec(IDL_PARAM_DCL(p).param_type_spec);
+			if(IS_FPAGE_TYPE(type)) {
+				add_str_f(parm_list, "p_%s", name);
+			} else if(is_value_type(type)) {
+				struct untyped_param *u = NULL;
+				for(int i=0; i<req->num_untyped; i++) {
+					if(strcmp(req->untyped[i]->name, name) == 0) {
+						u = req->untyped[i];
+						break;
+					}
+				}
+				if(u == NULL) {
+					fprintf(stderr, "%s: brain damage!\n", __FUNCTION__);
+					abort();
+				}
+				for(int r=u->first_reg; r <= u->last_reg; r++) {
+					add_str_f(parm_list, "L4_MsgWord(&msg, %d)", r - 1);
+				}
+			} else {
+				/* TODO: sequence, string, array, struct types */
+				NOTDEFINED(type);
+			}
+		}
+	}
+}
+
+
+static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
+{
+	code_f(pr, "/* decoding of `%s' */", METHOD_NAME(inf->node));
+
+	print_helper_vars(pr, inf->request, true);
+	if(inf->num_reply_msgs > 0) {
+		print_helper_vars(pr, inf->replies[0], false);
+	}
+
 	bool ret_is_real;
 	char *rtstr = return_type(pr->ns, inf->node, &ret_is_real),
 		*name = decapsify(METHOD_NAME(inf->node));
-	const bool is_voidfn = (rettyp == NULL || strcmp(rtstr, "void") == 0);
+	const bool is_voidfn = (inf->return_type == NULL || strcmp(rtstr, "void") == 0);
 
-	/* build the actual parameter list. */
+	/* build the actual parameter list for the vtable call. */
 	GList *parm_list = NULL;	/* <char *>, g_free()'d at end */
 
-	/* the result out-parameter, if non-valuetype or both hidden by error
-	 * status and not unsigned short or octet
-	 */
-	if(rettyp != NULL && !ret_is_real && !IS_USHORT_TYPE(rettyp)
-		&& IDL_NODE_TYPE(rettyp) != IDLN_TYPE_OCTET)
+	if(inf->return_type != NULL && !ret_is_real
+		&& !IS_USHORT_TYPE(inf->return_type)
+		&& IDL_NODE_TYPE(inf->return_type) != IDLN_TYPE_OCTET)
 	{
+		/* the result out-parameter, if non-valuetype or both hidden by error
+		 * status and not unsigned short or octet
+		 */
 		char *typ;
-		if(is_value_type(rettyp)) typ = value_type(pr->ns, rettyp);
-		else if(IS_MAPGRANT_TYPE(rettyp)) typ = g_strdup("L4_MapItem_t");
-		else typ = rigid_type(pr->ns, rettyp);
+		if(is_value_type(inf->return_type)) {
+			typ = value_type(pr->ns, inf->return_type);
+		} else if(IS_MAPGRANT_TYPE(inf->return_type)) {
+			typ = g_strdup("L4_MapItem_t");
+		} else {
+			typ = rigid_type(pr->ns, inf->return_type);
+		}
 		code_f(pr, "%s result;", typ);
 		add_str_f(&parm_list, "&result");
 		g_free(typ);
 	}
 
-	for(int i=0; i<inf->num_params; i++) {
-		struct param_info *pinf = &inf->params[i];
-		switch(IDL_PARAM_DCL(pinf->param_dcl).attr) {
-			case IDL_PARAM_IN:
-				if(IS_FPAGE_TYPE(pinf->type)) {
-					add_str_f(&parm_list, "p_%s", pinf->name);
-				} else if(is_value_type(pinf->type)) {
-					for(int r=pinf->first_reg; r <= pinf->last_reg; r++) {
-						add_str_f(&parm_list, "L4_MsgWord(&msg, %d)", r - 1);
-					}
-				} else {
-					NOTDEFINED(pinf->type);
-				}
-				break;
-
-			case IDL_PARAM_INOUT:
-			case IDL_PARAM_OUT:
-				add_str_f(&parm_list, "&p_%s", pinf->name);
-				break;
-		}
-	}
+	build_dispatch_parms(&parm_list, inf);
 
 	/* the vtable call. */
 	const char *ret1, *ret2;
@@ -786,8 +831,11 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 		indent(pr, -1);
 	}
 
+	/* FIXME: reply decoding */
+#if 0
 	if(!IDL_OP_DCL(inf->node).f_oneway) {
 		code_f(pr, "L4_MsgClear(&msg);");
+
 		IDL_tree n_ex = find_neg_exn(inf->node);
 		bool first_if = true;
 		if(n_ex != NULL) {
@@ -855,10 +903,11 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 			if(!first_if) close_brace(pr);
 		}
 	}
+#endif
 
 	g_free(rtstr);
 	g_free(name);
-	g_list_foreach(parm_list, (GFunc)g_free, NULL);
+	list_dispose(parm_list);
 }
 
 
@@ -1017,15 +1066,8 @@ static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 			exit(EXIT_FAILURE);
 		}
 
-		if(inf->label == 0) {
-			/* FIXME: assign method labels at some point */
-			fprintf(stderr, "error: can't assign automatic label to `%s'\n",
-				METHOD_NAME(method));
-			exit(EXIT_FAILURE);
-		}
-
 		cur->data = inf;
-		if(inf->tagmask != NO_TAGMASK) {
+		if(inf->request->tagmask != NO_TAGMASK) {
 			tagmask_list = g_list_prepend(tagmask_list, inf);
 		}
 	}
@@ -1053,10 +1095,11 @@ static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 		cur = g_list_next(cur))
 	{
 		struct method_info *inf = cur->data;
-		assert(inf->tagmask != NO_TAGMASK);
+		assert(inf->request->tagmask != NO_TAGMASK);
 		code_f(pr, "%sif((tag.raw & 0x%lx) == 0x%lx) {",
 			cur == g_list_first(tagmask_list) ? "" : "} else ",
-			(unsigned long)inf->tagmask, (unsigned long)inf->label << 16);
+			(unsigned long)inf->request->tagmask,
+			(unsigned long)inf->request->label << 16);
 		indent(pr, 1);
 
 		print_op_decode(pr, inf);
@@ -1083,7 +1126,7 @@ static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 			struct method_info *inf = cur->data;
 			if(g_list_find(tagmask_list, inf) != NULL) continue; /* been done */
 
-			code_f(pr, "case 0x%lx: {", (unsigned long)inf->label);
+			code_f(pr, "case 0x%lx: {", (unsigned long)inf->request->label);
 			indent(pr, 1);
 			print_op_decode(pr, inf);
 			if(IDL_OP_DCL(inf->node).f_oneway) code_f(pr, "reply = false;");

@@ -291,7 +291,7 @@ void print_common_header(struct print_ctx *pr)
 	 * implementations (so as to avoid polluting the namespace).
 	 */
 	if(g_hash_table_size(pr->ifaces) > 0) {
-		code_f(pr, "\n#ifdef MUIDL_IMPL_SOURCE\n");
+		code_f(pr, "\n#ifdef MUIDL_IMPL_SOURCE");
 		GHashTableIter iter;
 		g_hash_table_iter_init(&iter, pr->ifaces);
 		gpointer key, value;
@@ -299,7 +299,7 @@ void print_common_header(struct print_ctx *pr)
 			IDL_tree iface = (IDL_tree)value;
 
 			/* vtable declaration */
-			code_f(pr, "/* vtable for `%s': */", (const char *)key);
+			code_f(pr, "\n/* vtable for `%s': */", (const char *)key);
 			print_vtable(pr->of, pr->tree, pr->ns, iface);
 
 			/* dispatcher prototype */

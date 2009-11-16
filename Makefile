@@ -25,7 +25,7 @@ check:
 	./autotest.pl $(AUTOTEST_FILES)
 
 
-muidl: muidl.o analyse.o verify.o gen-common.o
+muidl: muidl.o util.o analyse.o verify.o gen-common.o
 	$(CC) -o $@ $^ $(CFLAGS) $(LIBS)
 
 
@@ -39,6 +39,7 @@ tags: $(wildcard *.[ch])
 
 # TODO: generate these automagically
 muidl.o: muidl.c muidl.h
+util.o: util.c muidl.h
 gen-common.o: gen-common.c muidl.h
 analyse.o: analyse.c muidl.h
 verify.o: verify.c muidl.h

@@ -32,6 +32,10 @@
 #include <glib.h>
 
 
+/* FIXME: make this per-target, i.e. independent of the current platform. */
+#define BITS_PER_WORD 32
+
+
 /* utilities for libIDL */
 #define IFACE_REPO_ID(t) IDL_IDENT_REPO_ID(IDL_INTERFACE((t)).ident)
 #define IFACE_NAME(t) (IDL_IDENT(IDL_INTERFACE((t)).ident).str)
@@ -89,7 +93,7 @@ struct print_ctx
 };
 
 
-struct param_info
+struct untyped_param
 {
 	const char *name;
 	IDL_tree type, param_dcl;
@@ -97,17 +101,51 @@ struct param_info
 };
 
 
-/* TODO: add has_tagmask bool instead of special NO_TAGMASK value */
-struct method_info
+struct seq_param
 {
-	IDL_tree node;
+	const char *name;
+	int max_elems, bits_per_elem, elems_per_word;
+	IDL_tree elem_type;
+	int min_words, max_words;
+};
+
+
+/* TODO: add has_tagmask bool instead of special NO_TAGMASK value */
+struct message_info
+{
 	uint16_t label;
 	uint32_t tagmask;		/* tag mask, or NO_TAGMASK if not set */
-	int num_params, num_out_params;
-	struct param_info params[];
+
+	/* parameters that are passed in untyped words. may contain multi-word
+	 * types such as constant-length structs that are encoded as words, or
+	 * arrays of word-packable types.
+	 */
+	int num_untyped;
+	struct untyped_param **untyped;
+
+	/* sequence types that are passed inline. */
+	int num_inline_seq;
+	struct seq_param **seq;
+
+	/* other things (long sequences, long arrays, variable-length struct types)
+	 * that are passed as string items.
+	 */
+	int num_long;
+	IDL_tree long_dcls[];	/* of IDLN_PARAM_DCL */
 };
 
 #define NO_TAGMASK ((uint32_t)~0u)
+
+
+struct method_info
+{
+	const char *name;
+	IDL_tree node, return_type;
+	struct message_info *request;
+
+	int num_reply_msgs;	/* oneway ? 0 : 1 + len(raises_list) */
+	struct message_info *replies[];
+};
 
 
 /* from muidl.c */
@@ -148,19 +186,29 @@ extern char *rigid_type(IDL_ns ns, IDL_tree type);
  * but fuck it -- i'm not carrying "type section" and "variable section"
  * separately.
  */
-extern const char *type_space(const char *ctype);
+extern const char *type_space(const char *ctype)
+	__attribute__((pure));
 
 /* returns true for strings that cannot appear as identifiers in C code. */
-extern bool is_reserved_word(const char *str);
+extern bool is_reserved_word(const char *str)
+	__attribute__((pure));
 
-extern bool is_value_type(IDL_tree type);
+extern bool is_value_type(IDL_tree type) __attribute__((pure));
 extern bool is_rigid_type(IDL_ns ns, IDL_tree type);
 
 /* chase typedefs down to the final (non-typedef) type. */
-extern IDL_tree get_type_spec(IDL_tree node);
+extern IDL_tree get_type_spec(IDL_tree node)
+	__attribute__((pure));
 
 /* is this IDLN_EXCEPT_DCL a NegativeReturn exception? */
 extern bool is_negs_exn(IDL_tree except_dcl);
+
+
+/* from util.c */
+
+/* g_free()s every element, then g_list_free()s the list */
+extern void list_dispose(GList *list);
+extern void free_message_info(struct message_info *inf);
 
 
 /* from analyse.c */
