@@ -38,6 +38,17 @@ interface Example
 	[Label(0xfad1)]
 	void outsy_operation(in word foo, out word bar);
 
+
+	typedef sequence<short, 25> short_seq;
+	typedef sequence<long, 16> long_seq;
+
+	[Label(0xabcd)]
+	long multi_sequence_call(
+		in short_seq first,
+		in short_seq second,
+		out long_seq first_out,
+		inout long_seq the_inout);
+
 /* TEST 1: oneway operation with non-void return type
  * expected: failure
  */

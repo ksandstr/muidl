@@ -714,6 +714,9 @@ static void print_helper_vars(
 	/* inline sequences */
 	for(int i=0; i<msg->num_inline_seq; i++) {
 		const struct seq_param *s = msg->seq[i];
+		if(!inout && IDL_PARAM_DCL(s->param_dcl).attr == IDL_PARAM_INOUT) {
+			continue;
+		}
 
 		char *tstr = value_type(pr->ns, s->elem_type);
 		code_f(pr, "%s p_%s[%d];", tstr, s->name, s->max_elems);

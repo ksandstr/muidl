@@ -171,6 +171,7 @@ static struct message_info *build_message(
 			struct seq_param *s = g_new(struct seq_param, 1);
 			s->name = name;
 			s->max_elems = IDL_INTEGER(IDL_TYPE_SEQUENCE(type).positive_int_const).value;
+			s->param_dcl = p;
 			s->elem_type = get_type_spec(IDL_TYPE_SEQUENCE(type).simple_type_spec);
 			s->bits_per_elem = size_in_bits(s->elem_type);
 			s->elems_per_word = BITS_PER_WORD / s->bits_per_elem;

@@ -108,7 +108,7 @@ struct seq_param
 {
 	const char *name;
 	int max_elems, bits_per_elem, elems_per_word;
-	IDL_tree elem_type;
+	IDL_tree elem_type, param_dcl;
 	int min_words, max_words;
 };
 
