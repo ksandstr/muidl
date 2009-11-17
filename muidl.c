@@ -876,14 +876,25 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 			code_f(pr, "for(unsigned i=0; i<p_%s_len; i+=%d) {", s->name,
 				s->elems_per_word);
 			indent(pr, 1);
-			unsigned long mask = (1 << s->bits_per_elem) - 1;
-			code_f(pr, "L4_Word_t w = L4_MsgWord(&msg, seq_base++);");
-			for(int j=0; j<s->elems_per_word; j++) {
-				code_f(pr, "p_%s[i * %d + %d] = (w & %#lxL); w >>= %d;", s->name,
-					s->elems_per_word, s->elems_per_word - j - 1, mask,
-					s->bits_per_elem);
+			if(s->bits_per_elem == BITS_PER_WORD) {
+				/* full word case. */
+				code_f(pr, "p_%s[i] = L4_MsgWord(&msg, seq_base + i);",
+					s->name);
+			} else {
+				/* masked-shift bit-packing case. */
+				uint64_t mask;
+				if(s->bits_per_elem >= 64) mask = ~UINT64_C(0);
+				else mask = (1ull << s->bits_per_elem) - 1;
+				code_f(pr, "L4_Word_t w = L4_MsgWord(&msg, seq_base + i);");
+				for(int j=0; j<s->elems_per_word; j++) {
+					code_f(pr, "p_%s[i * %d + %d] = w & UINT%d_C(%#llx); w >>= %d;",
+						s->name, s->elems_per_word, s->elems_per_word - j - 1,
+						BITS_PER_WORD, (unsigned long long)mask,
+						s->bits_per_elem);
+				}
 			}
 			close_brace(pr);
+			code_f(pr, "seq_base += p_%s_len;", s->name);
 		}
 	}
 
@@ -1287,7 +1298,9 @@ static gboolean iter_print_dispatchers(IDL_tree_func_data *tf, void *ud)
 
 static void print_dispatcher(struct print_ctx *pr)
 {
-	fprintf(pr->of, "#include <kernel/types.h>\n"
+	fprintf(pr->of, "#include <stdint.h>\n"
+		"\n"
+		"#include <kernel/types.h>\n"
 		"#include <kernel/message.h>\n"
 		"\n"
 		"#include <l4/types.h>\n"
