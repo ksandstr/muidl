@@ -990,17 +990,22 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 				indent(pr, 1);
 			}
 			code_f(pr, "L4_MsgClear(&msg);");
-			char *retval_str = NULL;
+			char *retval_str;
 			if(n_ex != NULL && inf->return_type != NULL) {
 				/* strictly positive integral return types that're 31 bits or
 				 * shorter: unsigned short and octet. (whee!)
 				 */
 				retval_str = tmp_f(pr, "retval & %#x",
 					short_mask(inf->return_type));
-			} else if(inf->return_type != NULL) {
-				/* FIXME */
-				retval_str = tmp_f(pr, "%s",
-					"/* FIXME: would encode non-n_ex return value here */");
+			} else if(inf->return_type == NULL) {
+				/* void */
+				retval_str = NULL;
+			} else if(is_value_type(inf->return_type)) {
+				retval_str = tmp_f(pr, "retval");
+			} else {
+				retval_str = tmp_f(pr,
+					"/* FIXME: return_type <%s> not handled by %s */",
+					IDL_NODE_TYPE_NAME(inf->return_type), __FUNCTION__);
 			}
 			print_msg_encoder(pr, inf->replies[0], retval_str, "&msg", "p_");
 			if(!first_if) close_brace(pr);
