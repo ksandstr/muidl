@@ -1457,9 +1457,12 @@ int main(int argc, char *argv[])
 		ok = ok && status;
 	}
 
+#ifndef NDEBUG
 	g_free(opts);
 	g_strfreev(arg_defines);
 	g_strfreev(arg_idl_files);
+	g_strfreev(arg_include_paths);
+#endif
 
 	return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }
