@@ -296,6 +296,17 @@ bool is_value_type(IDL_tree type)
 }
 
 
+/* TODO: make value_type() return a tmp string; this requires updates to all
+ * callsites however, since the pointer must not be passed to g_free()
+ * afterward.
+ *
+ * the call-site update can be accomplished by replacing ns with struct
+ * print_ctx *pr (which is required for tmpstrings anyhow), and looking at the
+ * compiler's error messages.
+ *
+ * and the same should be done for rigid_type() and the like, too. maybe move
+ * them into types.c or some such for good measure.
+ */
 char *value_type(IDL_ns ns, IDL_tree type)
 {
 	if(type == NULL) return g_strdup("void");
