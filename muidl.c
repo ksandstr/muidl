@@ -1361,11 +1361,12 @@ bool do_idl_file(const char *cppopts, const char *filename)
 {
 	IDL_tree tree = NULL;
 	IDL_ns ns = NULL;
+
 	int n = IDL_parse_filename(filename, cppopts, &msg_callback,
 		&tree, &ns, IDLF_PROPERTIES | IDLF_XPIDL | IDLF_SHOW_CPP_ERRORS
 			| IDLF_COMBINE_REOPENED_MODULES
-			| (arg_verbose_idl ? IDLF_VERBOSE : 0
-			| IDLF_INHIBIT_INCLUDES | IDLF_INHIBIT_TAG_ONLY),
+			| (arg_verbose_idl ? IDLF_VERBOSE : 0)
+			| IDLF_INHIBIT_INCLUDES,
 		IDL_WARNING1);
 	if(n == IDL_ERROR) {
 		fprintf(stderr, "IDL_parse_filename() failed.\n");
@@ -1465,8 +1466,20 @@ int main(int argc, char *argv[])
 	parse_cmdline(argc, argv);
 
 	if(arg_version) {
-		printf("muidl (µidl) version 0.1\n");
+		printf("muidl (µidl) version 0.1\n"
+			"(compiled for libIDL version %d.%d.%d)\n",
+			LIBIDL_MAJOR_VERSION, LIBIDL_MINOR_VERSION,
+			LIBIDL_MICRO_VERSION);
 		return EXIT_SUCCESS;
+	}
+
+	/* combined module disinhibition first appears in libIDL 0.8.14;
+	 * if it gets into Debian testing before µidl is released, remove this
+	 * part.
+	 */
+	if(LIBIDL_VERSION_CODE < LIBIDL_GEN_VERSION(0, 8, 14)) {
+		fprintf(stderr, "warning: libIDL version is earlier than 0.8.14. "
+			"spurious module inhibits may occur.\n");
 	}
 
 	if(strvlen(arg_idl_files) == 0) {

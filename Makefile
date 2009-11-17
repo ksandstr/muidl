@@ -1,5 +1,6 @@
 
 PKG=libIDL-2.0 glib-2.0
+PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib/pkgconfig
 CFLAGS:=-std=gnu99 -Wall -g $(shell pkg-config --cflags $(PKG)) -O2 -march=native
 LIBS:=-lm $(shell pkg-config --libs $(PKG))
 
