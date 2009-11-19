@@ -153,7 +153,7 @@ static gboolean supported_types_only(IDL_tree_func_data *tf, gpointer udptr)
 			return FALSE;	/* no point */
 
 		case IDLN_TYPE_WIDE_STRING:
-			if(IDL_TYPE_STRING(node).positive_int_const == NULL) {
+			if(IDL_TYPE_WIDE_STRING(node).positive_int_const == NULL) {
 				fail(v, "wide strings must be bounded");
 			}
 			return FALSE;
