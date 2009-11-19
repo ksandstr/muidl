@@ -182,6 +182,8 @@ sub autotest {
 			# indicating test failure. so the expect clause succeeds.
 		} elsif($t->{expect} =~ /^abort/ && $signum == $signo{ABRT}) {
 			# abort case, i.e. exited with SIGABRT
+		} elsif($t->{expect} =~ /^succe/ && $retcode == 0) {
+			# success (ignore survivor guilt)
 		} else {
 			# TODO: report somewhere more proper
 			print STDERR "Test ID $t->{id} failed: expected `$t->{expect}',"
