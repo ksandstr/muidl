@@ -120,6 +120,43 @@ interface Example
 	void register(in long something);
 #endif
 
+/* TEST 9: any as parameter type
+ * expected: failure
+ */
+#if __TEST__ == 9
+	void object_parameter(in any parameter_name_whoop_whoop_golly);
+#endif
+
+/* TEST 10: an unbounded sequence appears
+ * expected: failure
+ */
+#if __TEST__ == 10
+	typedef sequence<char> quasi_string;
+	void whatever_the_butt(in quasi_string not_a_real_string_guys);
+#endif
+
+/* TEST 11: unbounded strings
+ * expected: failure
+ */
+#if __TEST__ == 11
+	string this_one_will_fail();
+#endif
+
+/* TEST 12: unbounded wide strings
+ * expected: failure
+ */
+#if __TEST__ == 12
+	wstring this_one_is_not_looking_so_hot_either();
+#endif
+
+/* TEST 13: multidimensional arrays
+ * expected: failure
+ */
+#if __TEST__ == 13
+	typedef long john[2][6];
+	oneway void asbestos(in john smith);
+#endif
+
 };
 
 };
