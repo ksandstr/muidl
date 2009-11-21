@@ -49,7 +49,10 @@ static void print_stub_decl(
 		params == NULL ? "L4_ThreadId_t _service_tid)" : "");
 	g_free(name);
 	g_free(rettypstr);
-	if(params != NULL) indent(pr, 1);
+	if(params != NULL) {
+		indent(pr, 1);
+		code_f(pr, "L4_ThreadId_t _service_tid,");
+	}
 	for(IDL_tree cur = params; cur != NULL; cur = IDL_LIST(cur).next) {
 		IDL_tree param = IDL_LIST(cur).data;
 		enum IDL_param_attr attr = IDL_PARAM_DCL(param).attr;
