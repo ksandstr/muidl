@@ -152,7 +152,9 @@ void print_stubs_file(struct print_ctx *pr)
 	print_file_heading(pr);
 
 	static const char *hdrfiles[] = {
-		"stdint.h", "stdbool.h", "kernel/types.h", "l4/types.h",
+		"stdint.h", "stdbool.h",
+		"l4/types.h", "l4/ipc.h", "l4/message.h",
+		"kernel/types.h",
 	};
 	print_headers(pr, hdrfiles, G_N_ELEMENTS(hdrfiles));
 	code_f(pr, "#include \"%s\"\n", pr->common_header_name);
