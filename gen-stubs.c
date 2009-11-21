@@ -65,20 +65,20 @@ static void print_stub_decl(
 		char *tmpstr = NULL;
 		if(attr == IDL_PARAM_IN && is_value_type(type)) {
 			tmpstr = value_type(pr->ns, type);
-			code_f(pr, "%s %s%s", tmpstr, name, suffix);
+			code_f(pr, "%s p_%s%s", tmpstr, name, suffix);
 		} else if(is_rigid_type(pr->ns, type)) {
 			tmpstr = fixed_type(pr->ns, type);
-			code_f(pr, "%s%s *%s_p%s",
+			code_f(pr, "%s%s *p_%s%s",
 				attr == IDL_PARAM_IN ? "const " : "",
 				tmpstr, name, suffix);
 		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
 			IDL_tree subtype = get_type_spec(
 				IDL_TYPE_SEQUENCE(type).simple_type_spec);
 			tmpstr = fixed_type(pr->ns, subtype);
-			code_f(pr, "%s%s *seq_%s,",
+			code_f(pr, "%s%s *p_%s,",
 				attr == IDL_PARAM_IN ? "const " : "",
 				tmpstr, name);
-			code_f(pr, "unsigned int seq_%s_len%s", name, suffix);
+			code_f(pr, "unsigned int %s_len%s", name, suffix);
 		} else {
 			/* TODO: handle structs, strings, arrays etc */
 			NOTDEFINED(type);
@@ -101,6 +101,8 @@ static void print_stubs_for_iface(struct print_ctx *pr, IDL_tree iface)
 	{
 		IDL_tree op = cur->data,
 			params = IDL_OP_DCL(op).parameter_dcls;
+		struct method_info *inf = analyse_op_dcl(pr, op);
+		g_return_if_fail(inf != NULL);
 
 		const char *stubpfx = IDL_tree_property_get(IDL_OP_DCL(op).ident,
 			"StubPrefix");
@@ -113,13 +115,34 @@ static void print_stubs_for_iface(struct print_ctx *pr, IDL_tree iface)
 		code_f(pr, "{");
 		indent(pr, 1);
 
-		/* FIXME: this needs the analyse.c output for each operation, so pass
-		 * that to this function instead of a pile of IDL_OP_DCLs.
+		const struct message_info *req = inf->request;
+
+		code_f(pr, "L4_Msg_t msg;\n"
+				   "L4_MsgClear(&msg);\n"
+				   "L4_Set_MsgTag(&msg, %#x);",
+			(unsigned)req->label);
+		print_msg_encoder(pr, req, NULL, "&msg", "p_");
+		if(req->tagmask != NO_TAGMASK) {
+			/* force tagmask's bits to what is specified in the label. */
+			code_f(pr, "msg.tag.raw = (msg.tag.raw & %#x) | (%#x & %#x);",
+				~(unsigned)req->tagmask, (unsigned)req->label,
+				(unsigned)req->tagmask);
+		}
+
+		/* TODO: use AcceptStrings, provide mapitem reception ranges, etc,
+		 * where applicable
 		 */
-		code_f(pr, "/* stub body goes here */");
+		code_f(pr, "L4_Accept(L4_UntypedWordsAcceptor);\n"
+				   "L4_MsgLoad(&msg);");
+		code_f(pr, "L4_MsgTag_t tag = L4_%s(_service_tid);",
+			inf->num_reply_msgs > 0 ? "Call" : "Send");
+
+		/* TODO: recognize reply types, decode exceptions etc. */
 
 		close_brace(pr);
 		code_f(pr, "\n");
+
+		free_method_info(inf);
 	}
 }
 
