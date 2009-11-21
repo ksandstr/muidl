@@ -1391,8 +1391,8 @@ bool do_idl_file(const char *cppopts, const char *filename)
 	memcpy(basename, filepart, strlen(filepart) + 1);
 	char *dot = strrchr(basename, '.');
 	if(dot != NULL) *dot = '\0';
-	char *commonname = g_strdup_printf("%s-defs.h", basename);
 
+	char *commonname = g_strdup_printf("%s-defs.h", basename);
 	struct print_ctx print_ctx = {
 		.of = stdout,
 		.ns = ns, .tree = tree, .ifaces = ifaces,
@@ -1401,13 +1401,14 @@ bool do_idl_file(const char *cppopts, const char *filename)
 		.tmpstrchunk = g_string_chunk_new(1024),
 	};
 	print_into(commonname, &print_common_header, &print_ctx);
-	char *dispname = g_strdup_printf("%s-dispatch.c", basename);
-	print_into(dispname, &print_dispatcher, &print_ctx);
+	print_into(tmp_f(&print_ctx, "%s-service.c", basename),
+		&print_dispatcher, &print_ctx);
+	print_into(tmp_f(&print_ctx, "%s-client.c", basename),
+		&print_stubs_file, &print_ctx);
 
 	g_string_chunk_free(print_ctx.tmpstrchunk);
 	g_hash_table_destroy(ifaces);
 	g_free(commonname);
-	g_free(dispname);
 
 	IDL_ns_free(ns);
 	IDL_tree_free(tree);

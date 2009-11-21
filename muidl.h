@@ -249,4 +249,8 @@ extern bool verify_idl_input(IDL_ns ns, IDL_tree tree);
 extern void print_common_header(struct print_ctx *pr);
 
 
+/* from gen-stubs.c */
+
+extern void print_stubs_file(struct print_ctx *pr);
+
 #endif

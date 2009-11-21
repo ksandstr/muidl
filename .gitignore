@@ -4,5 +4,6 @@ muidl
 .*.sw[opn]
 tags
 *-defs.h
-*-dispatch.c
+*-service.c
+*-client.c
 *.gc??
