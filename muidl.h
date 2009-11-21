@@ -164,6 +164,7 @@ extern int code_f(struct print_ctx *pr, const char *fmt, ...)
 	__attribute__((format(printf, 2, 3)));
 
 extern void indent(struct print_ctx *pr, int change);
+extern void close_brace(struct print_ctx *pr);
 
 
 extern char *vtable_prefix(IDL_ns ns, IDL_tree iface);

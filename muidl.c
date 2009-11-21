@@ -633,7 +633,7 @@ int code_f(struct print_ctx *pr, const char *fmt, ...)
 }
 
 
-static void close_brace(struct print_ctx *pr)
+void close_brace(struct print_ctx *pr)
 {
 	indent(pr, -1);
 	code_f(pr, "}");
