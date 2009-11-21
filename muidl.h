@@ -210,6 +210,13 @@ extern IDL_tree get_type_spec(IDL_tree node)
 /* is this IDLN_EXCEPT_DCL a NegativeReturn exception? */
 extern bool is_negs_exn(IDL_tree except_dcl);
 
+extern void print_msg_encoder(
+	struct print_ctx *pr,
+	const struct message_info *msg,
+	const char *retval_str,
+	const char *msg_str,
+	const char *var_prefix);
+
 
 /* from util.c */
 

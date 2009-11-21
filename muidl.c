@@ -782,13 +782,15 @@ static void build_dispatch_parms(
 }
 
 
-static void print_msg_encoder(
+void print_msg_encoder(
 	struct print_ctx *pr,
 	const struct message_info *msg,
 	const char *retval_str,
 	const char *msg_str,
 	const char *var_prefix)
 {
+	if(var_prefix == NULL) var_prefix = "";
+
 	int next_r = 1;
 	if(retval_str != NULL) {
 		code_f(pr, "L4_MsgAppendWord(%s, %s);", msg_str, retval_str);
@@ -796,28 +798,26 @@ static void print_msg_encoder(
 	}
 
 	for(int i=0; i<msg->num_untyped; i++) {
-		struct untyped_param *u = msg->untyped[i];
-		if(IDL_PARAM_DCL(u->param_dcl).attr == IDL_PARAM_IN) {
-			continue;
+		const struct untyped_param *u = msg->untyped[i];
+		bool short_type = IS_FPAGE_TYPE(u->type) || is_value_type(u->type);
+		if(short_type && u->first_reg != next_r) {
+			fprintf(stderr, "warning: next reg# is %d, but first_reg is %d (opdcl `%s')\n",
+				next_r, (int)u->first_reg, u->name);
 		}
 
-		for(int r = u->first_reg; r <= u->last_reg; r++) {
-			if(r != next_r) {
-				fprintf(stderr, "warning: next reg# is %d, but r is %d (opdcl `%s')\n",
-					next_r, r, u->name);
-			}
-			if(IS_FPAGE_TYPE(u->type)) {
-				code_f(pr, "L4_MsgAppendWord(&msg, p_%s.raw);", u->name);
-				next_r++;
-			} else if(is_value_type(u->type)) {
-				code_f(pr, "L4_MsgAppendWord(&msg, p_%s);", u->name);
-				next_r++;
-			} else {
-				/* TODO: handle mapitems, rigid types, and long types
-				 * as out-values too
-				 */
-				NOTDEFINED(u->type);
-			}
+		if(IS_FPAGE_TYPE(u->type)) {
+			code_f(pr, "L4_MsgAppendWord(&msg, %s%s.raw);", var_prefix,
+				u->name);
+			next_r++;
+		} else if(is_value_type(u->type)) {
+			code_f(pr, "L4_MsgAppendWord(&msg, %s%s);", var_prefix,
+				u->name);
+			next_r++;
+		} else {
+			/* TODO: handle mapitems, rigid types, and long types
+			 * as out-values too
+			 */
+			NOTDEFINED(u->type);
 		}
 	}
 	/* TODO: inline sequences */
