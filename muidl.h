@@ -224,6 +224,14 @@ extern char *tmp_f(struct print_ctx *pr, const char *fmt, ...)
 	__attribute__((format(printf, 2, 3)));
 extern char *tmp_vf(struct print_ctx *pr, const char *fmt, va_list args);
 
+/* "this file was generated with. modify this instead." */
+extern void print_file_heading(struct print_ctx *pr);
+
+extern void print_headers(
+	struct print_ctx *pr,
+	const char * const *strs,
+	int len);
+
 
 /* from analyse.c */
 

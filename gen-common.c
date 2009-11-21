@@ -264,11 +264,7 @@ static gboolean print_struct_decls(IDL_tree_func_data *tf, gpointer userdata)
 
 void print_common_header(struct print_ctx *pr)
 {
-	code_f(pr,
-		"/* THIS FILE WAS GENERATED WITH µidl!\n"
-		" *\n"
-		" * Do not modify it, modify the source IDL file `%s' instead.\n"
-		" */\n", pr->idlfilename);
+	print_file_heading(pr);
 
 	/* include guard */
 	char *upper = g_utf8_strup(pr->common_header_name, -1);
@@ -285,10 +281,7 @@ void print_common_header(struct print_ctx *pr)
 		"kernel/types.h",
 		"l4/types.h",
 	};
-	for(int i=0; i<G_N_ELEMENTS(hdrfiles); i++) {
-		code_f(pr, "#include <%s>", hdrfiles[i]);
-	}
-	code_f(pr, "\n");
+	print_headers(pr, hdrfiles, G_N_ELEMENTS(hdrfiles));
 
 	/* struct, union & enum declarations as they appear in the IDL source. this
 	 * is appropriate because IDL doesn't permit forward declaration of

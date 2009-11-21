@@ -93,3 +93,22 @@ char *tmp_f(struct print_ctx *pr, const char *fmt, ...)
 	va_end(al);
 	return result;
 }
+
+
+void print_headers(struct print_ctx *pr, const char * const *strs, int len)
+{
+	for(int i=0; i<len; i++) {
+		code_f(pr, "#include <%s>", strs[i]);
+	}
+	code_f(pr, "\n");
+}
+
+
+void print_file_heading(struct print_ctx *pr)
+{
+	code_f(pr,
+		"/* THIS FILE WAS GENERATED WITH µidl!\n"
+		" *\n"
+		" * Do not modify it, modify the source IDL file `%s' instead.\n"
+		" */\n", pr->idlfilename);
+}
