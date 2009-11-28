@@ -14,11 +14,11 @@ all: tags muidl
 
 clean:
 	rm -f *.o
-	rm -f *-defs.h *-service.c *-client.c
 
 
 distclean: clean
 	rm -f muidl
+	rm -f *-defs.h *-service.c *-client.c
 	@rm -f tags
 
 
