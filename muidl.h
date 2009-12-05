@@ -217,6 +217,12 @@ extern void print_msg_encoder(
 	const char *msg_str,
 	const char *var_prefix);
 
+extern void print_decode_inline_seqs(
+	struct print_ctx *pr,
+	const struct message_info *msg,
+	const char *msg_str,
+	const char *var_prefix);
+
 
 /* from util.c */
 

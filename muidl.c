@@ -825,6 +825,62 @@ void print_msg_encoder(
 }
 
 
+/* generic decoding of inline sequences. used by both dispatchers and
+ * stubs.
+ */
+void print_decode_inline_seqs(
+	struct print_ctx *pr,
+	const struct message_info *req,
+	const char *msgstr,
+	const char *var_prefix)
+{
+	if(req->num_inline_seq == 0) return;
+
+	code_f(pr, "int seq_base = %d;", req->untyped_words);
+	for(int i=0; i<req->num_inline_seq; i++) {
+		struct seq_param *s = req->seq[i];
+		if(i + 1 < req->num_inline_seq) {
+			/* not the last, therefore take a length word. */
+			code_f(pr, "%s%s_len = L4_MsgWord(%s, seq_base++);",
+				var_prefix, s->name, msgstr);
+		} else {
+			/* compute length from untyped words counter. */
+			code_f(pr, "%s%s_len = L4_UntypedWords((%s)->tag) - seq_base;",
+				var_prefix, s->name, msgstr);
+		}
+
+		/* NOTE: I'm quite sure this could be done smarter. but w/e...
+		 *
+		 * FIXME: make sure that when s->elems_per_word > 1, p_[name]
+		 * is sized to accept a multiple of s->elems_per_word items,
+		 * padding it out as necessary.
+		 */
+		code_f(pr, "for(unsigned i=0; i<%s%s_len; i+=%d) {", var_prefix,
+			s->name, s->elems_per_word);
+		indent(pr, 1);
+		if(s->bits_per_elem == BITS_PER_WORD) {
+			/* full word case. */
+			code_f(pr, "%s%s[i] = L4_MsgWord(%s, seq_base + i);",
+				var_prefix, s->name, msgstr);
+		} else {
+			/* masked-shift bit-packing case. */
+			uint64_t mask;
+			if(s->bits_per_elem >= 64) mask = ~UINT64_C(0);
+			else mask = (1ull << s->bits_per_elem) - 1;
+			code_f(pr, "L4_Word_t w = L4_MsgWord(%s, seq_base + i);", msgstr);
+			for(int j=0; j<s->elems_per_word; j++) {
+				code_f(pr, "%s%s[i * %d + %d] = w & UINT%d_C(%#llx); w >>= %d;",
+					var_prefix, s->name, s->elems_per_word,
+					s->elems_per_word - j - 1, BITS_PER_WORD,
+					(unsigned long long)mask, s->bits_per_elem);
+			}
+		}
+		close_brace(pr);
+		code_f(pr, "seq_base += %s%s_len;", var_prefix, s->name);
+	}
+}
+
+
 static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 {
 	code_f(pr, "/* decoding of `%s' */", METHOD_NAME(inf->node));
@@ -863,51 +919,7 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 		g_free(typ);
 	}
 
-	if(req->num_inline_seq > 0) {
-		/* decode inline sequences */
-		code_f(pr, "int seq_base = %d;", req->untyped_words);
-		for(int i=0; i<req->num_inline_seq; i++) {
-			struct seq_param *s = req->seq[i];
-			if(i + 1 < req->num_inline_seq) {
-				/* not the last, therefore take a length word. */
-				code_f(pr, "p_%s_len = L4_MsgWord(&msg, seq_base++);",
-					s->name);
-			} else {
-				/* compute length from untyped words counter. */
-				code_f(pr, "p_%s_len = L4_UntypedWords(msg.tag) - seq_base;",
-					s->name);
-			}
-
-			/* NOTE: I'm quite sure this could be done smarter. but w/e...
-			 *
-			 * FIXME: make sure that when s->elems_per_word > 1, p_[name]
-			 * is sized to accept a multiple of s->elems_per_word items,
-			 * padding it out as necessary.
-			 */
-			code_f(pr, "for(unsigned i=0; i<p_%s_len; i+=%d) {", s->name,
-				s->elems_per_word);
-			indent(pr, 1);
-			if(s->bits_per_elem == BITS_PER_WORD) {
-				/* full word case. */
-				code_f(pr, "p_%s[i] = L4_MsgWord(&msg, seq_base + i);",
-					s->name);
-			} else {
-				/* masked-shift bit-packing case. */
-				uint64_t mask;
-				if(s->bits_per_elem >= 64) mask = ~UINT64_C(0);
-				else mask = (1ull << s->bits_per_elem) - 1;
-				code_f(pr, "L4_Word_t w = L4_MsgWord(&msg, seq_base + i);");
-				for(int j=0; j<s->elems_per_word; j++) {
-					code_f(pr, "p_%s[i * %d + %d] = w & UINT%d_C(%#llx); w >>= %d;",
-						s->name, s->elems_per_word, s->elems_per_word - j - 1,
-						BITS_PER_WORD, (unsigned long long)mask,
-						s->bits_per_elem);
-				}
-			}
-			close_brace(pr);
-			code_f(pr, "seq_base += p_%s_len;", s->name);
-		}
-	}
+	print_decode_inline_seqs(pr, req, "&msg", "p_");
 
 	/* TODO: decode string-carried parameters */
 
