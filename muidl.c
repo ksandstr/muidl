@@ -42,7 +42,7 @@ gboolean arg_verbose = FALSE;
 static gboolean arg_version = FALSE, arg_verbose_idl = FALSE,
 	arg_defs_only = FALSE, arg_client_only = FALSE, arg_service_only = FALSE;
 static gchar **arg_defines = NULL, **arg_idl_files = NULL,
-	**arg_include_paths = NULL;
+	**arg_include_paths = NULL, *arg_dest_path = NULL;
 
 
 static void add_str_f(GList **listptr, const char *fmt, ...)
@@ -1381,12 +1381,17 @@ static void print_into(
 	void (*prtfn)(struct print_ctx *),
 	volatile struct print_ctx *pr)
 {
-	FILE *f = fopen(filename, "wb");
+	char *path;
+	if(arg_dest_path == NULL) path = g_strdup(filename);
+	else path = g_build_path("/", arg_dest_path, filename, NULL);
+
+	FILE *f = fopen(path, "wb");
 	if(f == NULL) {
-		fprintf(stderr, "can't open `%s' for writing: %s\n", filename,
+		fprintf(stderr, "can't open `%s' for writing: %s\n", path,
 			strerror(errno));
 		exit(EXIT_FAILURE);
 	}
+	g_free(path);
 
 	FILE *oldof = pr->of;
 	pr->of = f;
@@ -1477,6 +1482,8 @@ static void parse_cmdline(int argc, char *argv[])
 		  "command-line definitions for cpp(1)", "NAME[=VALUE]" },
 		{ "include-path", 'I', 0, G_OPTION_ARG_STRING_ARRAY,
 		  &arg_include_paths, "add PATH to preprocessor search list", "PATH" },
+		{ "destination-path", 'd', 0, G_OPTION_ARG_STRING,
+		  &arg_dest_path, "produce files in PATH", "PATH" },
 		{ "defs-only", 0, 0, G_OPTION_ARG_NONE, &arg_defs_only,
 		  "only produce `-defs.h'", NULL },
 		{ "client-only", 0, 0, G_OPTION_ARG_NONE, &arg_client_only,
@@ -1507,6 +1514,14 @@ static void parse_cmdline(int argc, char *argv[])
 		+ (arg_service_only ? 1 : 0);
 	if(only > 1) {
 		fprintf(stderr, "only one `--X-only' option may be given at a time.\n");
+		exit(EXIT_FAILURE);
+	}
+
+	if(arg_dest_path != NULL
+		&& !g_file_test(arg_dest_path, G_FILE_TEST_IS_DIR))
+	{
+		fprintf(stderr, "destination `%s' doesn't look like a directory",
+			arg_dest_path);
 		exit(EXIT_FAILURE);
 	}
 }
