@@ -820,7 +820,45 @@ void print_msg_encoder(
 			NOTDEFINED(u->type);
 		}
 	}
-	/* TODO: inline sequences */
+
+	/* inline sequences */
+	if(msg->num_inline_seq > 0) {
+		code_f(pr, "int seq_base = %d;", msg->untyped_words);
+	}
+	for(int i=0; i<msg->num_inline_seq; i++) {
+		struct seq_param *s = msg->seq[i];
+		const enum IDL_param_attr attr = IDL_PARAM_DCL(s->param_dcl).attr;
+		char *len_lvalue = tmp_f(pr, "%s%s%s_len",
+			attr == IDL_PARAM_INOUT ? "*" : "", var_prefix, s->name);
+		if(i + 1 < msg->num_inline_seq) {
+			/* not the last; encode a length word. */
+			code_f(pr, "L4_MsgAppendWord(&msg, %s);", len_lvalue);
+		}
+		code_f(pr, "for(unsigned i=0,_l=(%s); i<_l; i+=%d) {", len_lvalue,
+			s->elems_per_word);
+		indent(pr, 1);
+		if(s->bits_per_elem == BITS_PER_WORD) {
+			/* full word case. */
+			code_f(pr, "L4_MsgAppendWord(&msg, %s%s[i]);", var_prefix,
+				s->name);
+		} else {
+			/* masked-shift bit-packing case. */
+			uint64_t mask;
+			if(s->bits_per_elem >= 64) mask = ~UINT64_C(0);
+			else mask = (UINT64_C(1) << s->bits_per_elem) - 1;
+			code_f(pr, "L4_Word_t t = 0;");
+			for(int j=0; j<s->elems_per_word; j++) {
+				if(j > 0) code_f(pr, "t <<= %d;", s->bits_per_elem);
+				code_f(pr, "t |= %s%s[i * %d + %d] & UINT%d_C(%#llx);",
+					var_prefix, s->name, s->elems_per_word,
+					s->elems_per_word - j - 1, BITS_PER_WORD,
+					(unsigned long long)mask);
+			}
+			code_f(pr, "L4_MsgAppendWord(&msg, t);");
+		}
+		close_brace(pr);
+	}
+
 	/* TODO: string buffers */
 }
 
@@ -866,7 +904,7 @@ void print_decode_inline_seqs(
 			/* masked-shift bit-packing case. */
 			uint64_t mask;
 			if(s->bits_per_elem >= 64) mask = ~UINT64_C(0);
-			else mask = (1ull << s->bits_per_elem) - 1;
+			else mask = (UINT64_C(1) << s->bits_per_elem) - 1;
 			code_f(pr, "L4_Word_t w = L4_MsgWord(%s, seq_base + i);", msgstr);
 			for(int j=0; j<s->elems_per_word; j++) {
 				code_f(pr, "%s%s[i * %d + %d] = w & UINT%d_C(%#llx); w >>= %d;",
