@@ -89,6 +89,30 @@ static void print_stub_decl(
 }
 
 
+static void print_store_untyped_words(
+	struct print_ctx *pr,
+	const struct message_info *reply,
+	const char *var_prefix)
+{
+	for(int i=0; i<reply->num_untyped; i++) {
+		const struct untyped_param *u = reply->untyped[i];
+		if(IS_WORD_TYPE(u->type)) {
+			code_f(pr, "L4_StoreMR(%d, %s%s);", u->first_reg, var_prefix,
+				u->name);
+		} else if(IS_FPAGE_TYPE(u->type)) {
+			code_f(pr, "L4_StoreMR(%d, &%s%s->raw);", u->first_reg,
+				var_prefix, u->name);
+		} else if(is_value_type(u->type)) {
+			code_f(pr, "{ L4_Word_t _tmp; L4_StoreMR(%d, &_tmp); %s%s = _tmp; }",
+				u->first_reg, var_prefix, u->name);
+		} else {
+			/* TODO: multi-word untyped parameters */
+			NOTDEFINED(u->type);
+		}
+	}
+}
+
+
 static void print_stubs_for_iface(struct print_ctx *pr, IDL_tree iface)
 {
 	const char *iface_stubpfx = IDL_tree_property_get(
@@ -146,11 +170,9 @@ static void print_stubs_for_iface(struct print_ctx *pr, IDL_tree iface)
 			const struct message_info *reply = inf->replies[reply_ix++];
 			code_f(pr, "if(L4_Label(tag) == 0) {");
 			indent(pr, 1);
-			if(reply->num_untyped > 0 || reply->num_inline_seq > 0
-				|| reply->num_long > 0)
-			{
+			print_store_untyped_words(pr, reply, "p_");
+			if(reply->num_inline_seq > 0 || reply->num_long > 0) {
 				code_f(pr, "L4_MsgStore(tag, &msg);");
-				/* TODO: decode untyped words! */
 				print_decode_inline_seqs(pr, reply, "&msg", "p_");
 				/* TODO: decode string-carried things! */
 			}
