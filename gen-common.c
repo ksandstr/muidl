@@ -136,6 +136,51 @@ static void print_vtable(
 }
 
 
+static gboolean print_stub_protos(IDL_tree_func_data *tf, gpointer userdata)
+{
+	struct print_ctx *pr = userdata;
+	switch(IDL_NODE_TYPE(tf->tree)) {
+		default: return FALSE;
+
+		case IDLN_LIST:
+		case IDLN_MODULE:
+		case IDLN_SRCFILE:
+		case IDLN_INTERFACE:
+			return TRUE;
+
+		case IDLN_OP_DCL:
+			/* whee! */
+			break;
+	}
+
+	const char *stubpfx = IDL_tree_property_get(
+		IDL_OP_DCL(tf->tree).ident, "StubPrefix");
+	if(stubpfx == NULL) {
+		IDL_tree iface = IDL_get_parent_node(tf->tree, IDLN_INTERFACE, NULL);
+		if(iface != NULL) {
+			stubpfx = IDL_tree_property_get(IDL_INTERFACE(iface).ident,
+				"StubPrefix");
+		}
+	}
+
+	fprintf(pr->of, "extern ");
+	print_generic_stub_decl(pr, stubpfx, tf->tree,
+		IDL_OP_DCL(tf->tree).parameter_dcls);
+	int n = fseek(pr->of, -1, SEEK_CUR);
+	if(n != 0) {
+		/* FIXME: yeah, get us a variant of code_f() that can be told to skip
+		 * newlines. this'll do until then.
+		 */
+		perror("fseek");
+		exit(EXIT_FAILURE);
+	}
+	fprintf(pr->of, ";\n\n");
+
+	/* looked at the op dcl already. */
+	return FALSE;
+}
+
+
 static gboolean print_struct_decls(IDL_tree_func_data *tf, gpointer userdata)
 {
 	struct print_ctx *print = userdata;
@@ -288,6 +333,10 @@ void print_common_header(struct print_ctx *pr)
 	 * structs, unions, enums, or typedefs.
 	 */
 	IDL_tree_walk_in_order(pr->tree, &print_struct_decls, pr);
+	code_f(pr, " ");
+
+	/* stub prototypes. */
+	IDL_tree_walk_in_order(pr->tree, &print_stub_protos, pr);
 	code_f(pr, " ");
 
 	/* interface vtables and dispatcher prototypes, but only for service
