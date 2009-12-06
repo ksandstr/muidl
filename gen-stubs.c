@@ -35,8 +35,7 @@ char *fixed_type(IDL_ns ns, IDL_tree type)
 }
 
 
-/* TODO: export this, use in gen-common.c */
-static void print_stub_decl(
+void print_generic_stub_decl(
 	struct print_ctx *pr,
 	const char *stubpfx,
 	IDL_tree op,
@@ -133,7 +132,7 @@ static void print_stubs_for_iface(struct print_ctx *pr, IDL_tree iface)
 		if(stubpfx == NULL) stubpfx = iface_stubpfx;
 
 		/* declaration */
-		print_stub_decl(pr, stubpfx, op, params);
+		print_generic_stub_decl(pr, stubpfx, op, params);
 
 		/* body */
 		code_f(pr, "{");

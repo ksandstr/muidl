@@ -271,5 +271,11 @@ extern void print_common_header(struct print_ctx *pr);
 /* from gen-stubs.c */
 
 extern void print_stubs_file(struct print_ctx *pr);
+extern void print_generic_stub_decl(
+	struct print_ctx *pr,
+	const char *stubpfx,
+	IDL_tree op,
+	IDL_tree params);
+
 
 #endif
