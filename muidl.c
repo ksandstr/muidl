@@ -826,8 +826,8 @@ void print_msg_encoder(
 	for(int i=0; i<msg->num_inline_seq; i++) {
 		struct seq_param *s = msg->seq[i];
 		const enum IDL_param_attr attr = IDL_PARAM_DCL(s->param_dcl).attr;
-		char *len_lvalue = tmp_f(pr, "%s%s%s_len",
-			attr == IDL_PARAM_INOUT ? "*" : "", var_prefix, s->name);
+		char *len_lvalue = tmp_f(pr, "%s%s_len",
+			attr == IDL_PARAM_INOUT ? "*" : "", s->name);
 		if(i + 1 < msg->num_inline_seq) {
 			/* not the last; encode a length word. */
 			code_f(pr, "L4_MsgAppendWord(&msg, %s);", len_lvalue);
