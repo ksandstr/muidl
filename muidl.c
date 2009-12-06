@@ -839,7 +839,7 @@ void print_msg_encoder(
 			code_f(pr, "L4_MsgAppendWord(&msg, %s%s[i]);", var_prefix,
 				s->name);
 		} else {
-			/* masked-shift bit-packing case. */
+			/* shifting bit-pack case */
 			uint64_t mask;
 			if(s->bits_per_elem >= 64) mask = ~UINT64_C(0);
 			else mask = (UINT64_C(1) << s->bits_per_elem) - 1;
@@ -847,9 +847,8 @@ void print_msg_encoder(
 			for(int j=0; j<s->elems_per_word; j++) {
 				if(j > 0) code_f(pr, "t <<= %d;", s->bits_per_elem);
 				code_f(pr, "t |= %s%s[i * %d + %d] & UINT%d_C(%#llx);",
-					var_prefix, s->name, s->elems_per_word,
-					s->elems_per_word - j - 1, BITS_PER_WORD,
-					(unsigned long long)mask);
+					var_prefix, s->name, s->elems_per_word, j,
+					BITS_PER_WORD, (unsigned long long)mask);
 			}
 			code_f(pr, "L4_MsgAppendWord(&msg, t);");
 		}
