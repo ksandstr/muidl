@@ -39,7 +39,8 @@
 
 /* command-line arguments */
 gboolean arg_verbose = FALSE;
-static gboolean arg_version = FALSE, arg_verbose_idl = FALSE;
+static gboolean arg_version = FALSE, arg_verbose_idl = FALSE,
+	arg_defs_only = FALSE, arg_client_only = FALSE, arg_service_only = FALSE;
 static gchar **arg_defines = NULL, **arg_idl_files = NULL,
 	**arg_include_paths = NULL;
 
@@ -1445,11 +1446,18 @@ bool do_idl_file(const char *cppopts, const char *filename)
 		.common_header_name = commonname,
 		.tmpstrchunk = g_string_chunk_new(1024),
 	};
-	print_into(commonname, &print_common_header, &print_ctx);
-	print_into(tmp_f(&print_ctx, "%s-service.c", basename),
-		&print_dispatcher, &print_ctx);
-	print_into(tmp_f(&print_ctx, "%s-client.c", basename),
-		&print_stubs_file, &print_ctx);
+
+	if(!arg_service_only && !arg_client_only) {
+		print_into(commonname, &print_common_header, &print_ctx);
+	}
+	if(!arg_defs_only && !arg_client_only) {
+		print_into(tmp_f(&print_ctx, "%s-service.c", basename),
+			&print_dispatcher, &print_ctx);
+	}
+	if(!arg_defs_only && !arg_service_only) {
+		print_into(tmp_f(&print_ctx, "%s-client.c", basename),
+			&print_stubs_file, &print_ctx);
+	}
 
 	g_string_chunk_free(print_ctx.tmpstrchunk);
 	g_hash_table_destroy(ifaces);
@@ -1469,6 +1477,12 @@ static void parse_cmdline(int argc, char *argv[])
 		  "command-line definitions for cpp(1)", "NAME[=VALUE]" },
 		{ "include-path", 'I', 0, G_OPTION_ARG_STRING_ARRAY,
 		  &arg_include_paths, "add PATH to preprocessor search list", "PATH" },
+		{ "defs-only", 0, 0, G_OPTION_ARG_NONE, &arg_defs_only,
+		  "only produce `-defs.h'", NULL },
+		{ "client-only", 0, 0, G_OPTION_ARG_NONE, &arg_client_only,
+		  "only produce `-client.c'", NULL },
+		{ "service-only", 0, 0, G_OPTION_ARG_NONE, &arg_service_only,
+		  "only produce `-service.c'", NULL },
 		{ "verbose", 'v', 0, G_OPTION_ARG_NONE, &arg_verbose,
 		  "enable verbose output", NULL },
 		{ "verbose-idl", 0, 0, G_OPTION_ARG_NONE, &arg_verbose_idl,
@@ -1488,6 +1502,13 @@ static void parse_cmdline(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 	g_option_context_free(oc);
+
+	int only = (arg_defs_only ? 1 : 0) + (arg_client_only ? 1 : 0)
+		+ (arg_service_only ? 1 : 0);
+	if(only > 1) {
+		fprintf(stderr, "only one `--X-only' option may be given at a time.\n");
+		exit(EXIT_FAILURE);
+	}
 }
 
 
