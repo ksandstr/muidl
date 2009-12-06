@@ -822,9 +822,6 @@ void print_msg_encoder(
 	}
 
 	/* inline sequences */
-	if(msg->num_inline_seq > 0) {
-		code_f(pr, "int seq_base = %d;", msg->untyped_words);
-	}
 	for(int i=0; i<msg->num_inline_seq; i++) {
 		struct seq_param *s = msg->seq[i];
 		const enum IDL_param_attr attr = IDL_PARAM_DCL(s->param_dcl).attr;
@@ -898,14 +895,14 @@ void print_decode_inline_seqs(
 		indent(pr, 1);
 		if(s->bits_per_elem == BITS_PER_WORD) {
 			/* full word case. */
-			code_f(pr, "%s%s[i] = L4_MsgWord(%s, seq_base + i);",
+			code_f(pr, "%s%s[i] = L4_MsgWord(%s, seq_base++);",
 				var_prefix, s->name, msgstr);
 		} else {
 			/* masked-shift bit-packing case. */
 			uint64_t mask;
 			if(s->bits_per_elem >= 64) mask = ~UINT64_C(0);
 			else mask = (UINT64_C(1) << s->bits_per_elem) - 1;
-			code_f(pr, "L4_Word_t w = L4_MsgWord(%s, seq_base + i);", msgstr);
+			code_f(pr, "L4_Word_t w = L4_MsgWord(%s, seq_base++);", msgstr);
 			for(int j=0; j<s->elems_per_word; j++) {
 				code_f(pr, "%s%s[i * %d + %d] = w & UINT%d_C(%#llx); w >>= %d;",
 					var_prefix, s->name, s->elems_per_word,
@@ -914,7 +911,6 @@ void print_decode_inline_seqs(
 			}
 		}
 		close_brace(pr);
-		code_f(pr, "seq_base += %s%s_len;", var_prefix, s->name);
 	}
 }
 
