@@ -137,7 +137,63 @@ static void print_stubs_for_iface(struct print_ctx *pr, IDL_tree iface)
 		code_f(pr, "L4_MsgTag_t tag = L4_%s(_service_tid);",
 			inf->num_reply_msgs > 0 ? "Call" : "Send");
 
-		/* TODO: recognize reply types, decode exceptions etc. */
+		/* handle IPC failure. */
+		code_f(pr, "if(L4_IpcFailed(tag)) return (int)L4_ErrorCode();");
+
+		/* the reply message, if present */
+		int reply_ix = 0;
+		if(inf->num_reply_msgs > 0 && !IS_EXN_MSG(inf->replies[0])) {
+			const struct message_info *reply = inf->replies[reply_ix++];
+			code_f(pr, "if(L4_Label(tag) == 0) {");
+			indent(pr, 1);
+			if(reply->num_untyped > 0 || reply->num_inline_seq > 0
+				|| reply->num_long > 0)
+			{
+				code_f(pr, "L4_MsgStore(tag, &msg);");
+				/* TODO: decode untyped words! */
+				print_decode_inline_seqs(pr, reply, "&msg", "p_");
+				/* TODO: decode string-carried things! */
+			}
+			code_f(pr, "return 0;");
+		}
+		/* exception messages */
+		while(reply_ix < inf->num_reply_msgs) {
+			const struct message_info *ex = inf->replies[reply_ix++];
+			assert(IS_EXN_MSG(ex));
+
+			const char *ifpfx = "";
+			if(reply_ix > 1) {
+				indent(pr, -1);
+				ifpfx = "} else ";
+			}
+			if(is_negs_exn(ex->node)) {
+				const unsigned label = 1;	/* FIXME: get from properties! */
+				code_f(pr, "%sif(L4_Label(tag) == %u) {", ifpfx, label);
+				indent(pr, 1);
+				code_f(pr, "L4_Word_t _code;");
+				code_f(pr, "L4_StoreMR(1, &_code);");
+				code_f(pr, "return -(int)_code;");
+			} else {
+				code_f(pr, "%sif(false) {", ifpfx);
+				indent(pr, 1);
+				code_f(pr, "/* would check & decode exception `%s' */",
+					EXN_REPO_ID(ex->node));
+			}
+		}
+		if(reply_ix > 0) close_brace(pr);
+
+		if(inf->num_reply_msgs == 0) {
+			/* no replies expected. indicate success. */
+			code_f(pr, "return 0;");
+		} else {
+			/* no replies matched. this is a communication error on the
+			 * callee's part; signal as such.
+			 *
+			 * FIXME: record this case somewhere, i.e. that -235 indicates a
+			 * non-conforming reply.
+			 */
+			code_f(pr, "return -235;");
+		}
 
 		close_brace(pr);
 		code_f(pr, "\n");

@@ -62,6 +62,10 @@
 	&& IDL_TYPE_INTEGER((op_type)).f_type == IDL_INTEGER_TYPE_SHORT)
 
 
+/* is a <struct message_info *> a pointer to an exception message? */
+#define IS_EXN_MSG(msg) (IDL_NODE_TYPE((msg)->node) == IDLN_EXCEPT_DCL)
+
+
 /* diagnostics, or something -- all NOTDEFINED() and NOTSUPPORTED() states
  * should be caught in analysis functions, however.
  */
