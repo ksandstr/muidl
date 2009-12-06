@@ -343,12 +343,26 @@ void print_common_header(struct print_ctx *pr)
 	 * implementations (so as to avoid polluting the namespace).
 	 */
 	if(g_hash_table_size(pr->ifaces) > 0) {
-		code_f(pr, "\n#ifdef MUIDL_IMPL_SOURCE");
 		GHashTableIter iter;
 		g_hash_table_iter_init(&iter, pr->ifaces);
 		gpointer key, value;
 		while(g_hash_table_iter_next(&iter, &key, &value)) {
-			IDL_tree iface = (IDL_tree)value;
+			IDL_tree iface = (IDL_tree)value,
+				mod = IDL_get_parent_node(iface, IDLN_MODULE, NULL);
+
+			/* vtable etc. selector */
+			char *modpfx = NULL, *ifpfx;
+			if(mod != NULL) {
+				modpfx = g_utf8_strup(IDL_IDENT(IDL_MODULE(mod).ident).str,
+					-1);
+			}
+			ifpfx = g_utf8_strup(IDL_IDENT(IDL_INTERFACE(iface).ident).str,
+				-1);
+			code_f(pr, "#ifdef %s%s%s_IMPL_SOURCE",
+				modpfx == NULL ? " " : modpfx, mod == NULL ? "" : "_",
+				ifpfx);
+			g_free(modpfx);
+			g_free(ifpfx);
 
 			/* vtable declaration */
 			code_f(pr, "\n/* vtable for `%s': */", (const char *)key);
@@ -364,8 +378,10 @@ void print_common_header(struct print_ctx *pr)
 			code_f(pr, "const struct %s_vtable *vtable);", vtprefix);
 			indent(pr, -1);
 			g_free(vtprefix);
+
+			/* close off vtable selector */
+			code_f(pr, "\n#endif\n");
 		}
-		code_f(pr, "\n#endif\n");
 	}
 
 	code_f(pr, "#endif");
