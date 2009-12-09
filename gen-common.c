@@ -129,7 +129,7 @@ static void print_vtable(
 			}
 		}
 
-		fprintf(of, "),\n");
+		fprintf(of, ");\n");
 	}
 	fprintf(of, "};\n");
 	g_list_free(methods);
