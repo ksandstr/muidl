@@ -1210,7 +1210,7 @@ static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 		*dispname = dispatcher_name(pr->ns, iface, &vtprefix);
 	code_f(pr, "L4_Word_t %s(", dispname);
 	indent(pr, 1);
-	code_f(pr, "struct %s_vtable *vtable)", vtprefix);
+	code_f(pr, "const struct %s_vtable *vtable)", vtprefix);
 	indent(pr, -1);
 	code_f(pr, "{");
 	indent(pr, 1);
