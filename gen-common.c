@@ -358,7 +358,7 @@ void print_common_header(struct print_ctx *pr)
 			}
 			ifpfx = g_utf8_strup(IDL_IDENT(IDL_INTERFACE(iface).ident).str,
 				-1);
-			code_f(pr, "#ifdef %s%s%s_IMPL_SOURCE",
+			code_f(pr, "#if defined(%s%s%s_IMPL_SOURCE) || defined(MUIDL_SOURCE)",
 				modpfx == NULL ? " " : modpfx, mod == NULL ? "" : "_",
 				ifpfx);
 			g_free(modpfx);

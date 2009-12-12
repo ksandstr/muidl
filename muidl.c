@@ -1360,6 +1360,8 @@ static gboolean iter_print_dispatchers(IDL_tree_func_data *tf, void *ud)
 
 static void print_dispatcher(struct print_ctx *pr)
 {
+	fprintf(pr->of, "#define MUIDL_SOURCE\n\n");
+
 	fprintf(pr->of, "#include <stdint.h>\n"
 		"\n"
 		"#include <kernel/types.h>\n"
@@ -1369,6 +1371,7 @@ static void print_dispatcher(struct print_ctx *pr)
 		"#include <l4/message.h>\n"
 		"#include <l4/ipc.h>\n"
 		"\n");
+
 	fprintf(pr->of, "#include \"%s\"\n\n", pr->common_header_name);
 
 	IDL_tree_walk_in_order(pr->tree, &iter_print_dispatchers, pr);
