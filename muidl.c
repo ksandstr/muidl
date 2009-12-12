@@ -695,20 +695,20 @@ static void print_helper_vars(
 			if(!decode) deflt = " = { .raw = { 0, 0 } }";
 			else {
 				initializer = g_strdup_printf(" = {\n"
-						"\t.raw = { L4_MsgWord(&msg, %d), L4_MsgWord(&msg, %d) }\n"
+						"\t.raw = { L4_MsgWord(msgp, %d), L4_MsgWord(msgp, %d) }\n"
 					"}", (int)u->first_reg - 1,
 					(int)u->last_reg - 1);
 			}
 		} else if(IS_FPAGE_TYPE(u->type)) {
 			if(!decode) deflt = " = { .raw = 0 }";
 			else {
-				initializer = g_strdup_printf(" = { .raw = L4_MsgWord(&msg, %d) }",
+				initializer = g_strdup_printf(" = { .raw = L4_MsgWord(msgp, %d) }",
 					(int)u->first_reg - 1);
 			}
 		} else if(is_value_type(u->type)) {
 			if(!decode) deflt = " = 0";
 			else {
-				initializer = g_strdup_printf(" = L4_MsgWord(&msg, %d)",
+				initializer = g_strdup_printf(" = L4_MsgWord(msgp, %d)",
 					(int)u->first_reg - 1);
 			}
 		} else {
@@ -771,7 +771,7 @@ static void build_dispatch_parms(
 				abort();
 			}
 			for(int r=u->first_reg; r <= u->last_reg; r++) {
-				add_str_f(parm_list, "L4_MsgWord(&msg, %d)", r - 1);
+				add_str_f(parm_list, "L4_MsgWord(msgp, %d)", r - 1);
 			}
 		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
 			add_str_f(parm_list, "p_%s, p_%s_len", name, name);
@@ -807,11 +807,11 @@ void print_msg_encoder(
 		}
 
 		if(IS_FPAGE_TYPE(u->type)) {
-			code_f(pr, "L4_MsgAppendWord(&msg, %s%s.raw);", var_prefix,
-				u->name);
+			code_f(pr, "L4_MsgAppendWord(%s, %s%s.raw);", msg_str,
+				var_prefix, u->name);
 			next_r++;
 		} else if(is_value_type(u->type)) {
-			code_f(pr, "L4_MsgAppendWord(&msg, %s%s);", var_prefix,
+			code_f(pr, "L4_MsgAppendWord(%s, %s%s);", msg_str, var_prefix,
 				u->name);
 			next_r++;
 		} else {
@@ -830,15 +830,15 @@ void print_msg_encoder(
 			attr == IDL_PARAM_INOUT ? "*" : "", s->name);
 		if(i + 1 < msg->num_inline_seq) {
 			/* not the last; encode a length word. */
-			code_f(pr, "L4_MsgAppendWord(&msg, %s);", len_lvalue);
+			code_f(pr, "L4_MsgAppendWord(%s, %s);", msg_str, len_lvalue);
 		}
 		code_f(pr, "for(unsigned i=0,_l=(%s); i<_l; i+=%d) {", len_lvalue,
 			s->elems_per_word);
 		indent(pr, 1);
 		if(s->bits_per_elem == BITS_PER_WORD) {
 			/* full word case. */
-			code_f(pr, "L4_MsgAppendWord(&msg, %s%s[i]);", var_prefix,
-				s->name);
+			code_f(pr, "L4_MsgAppendWord(%s, %s%s[i]);", msg_str,
+				var_prefix, s->name);
 		} else {
 			/* shifting bit-pack case */
 			uint64_t mask;
@@ -851,7 +851,7 @@ void print_msg_encoder(
 					var_prefix, s->name, s->elems_per_word, j,
 					BITS_PER_WORD, (unsigned long long)mask);
 			}
-			code_f(pr, "L4_MsgAppendWord(&msg, t);");
+			code_f(pr, "L4_MsgAppendWord(%s, t);", msg_str);
 		}
 		close_brace(pr);
 	}
@@ -953,7 +953,7 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 		g_free(typ);
 	}
 
-	print_decode_inline_seqs(pr, req, "&msg", "p_");
+	print_decode_inline_seqs(pr, req, "msgp", "p_");
 
 	/* TODO: decode string-carried parameters */
 
@@ -1005,12 +1005,12 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 			/* FIXME: grab exception label from somewhere!
 			 * (linear search for n_ex in message_info->node.)
 			 */
-			code_f(pr, "L4_MsgClear(&msg);");
-			code_f(pr, "L4_Set_MsgLabel(&msg, MSG_ERROR);");
+			code_f(pr, "L4_MsgClear(msgp);");
+			code_f(pr, "L4_Set_MsgLabel(msgp, MSG_ERROR);");
 			IDL_tree memb = IDL_LIST(IDL_EXCEPT_DCL(n_ex).members).data,
 				fldtype = get_type_spec(IDL_MEMBER(memb).type_spec);
 			assert(IDL_list_length(IDL_MEMBER(memb).dcls) == 1);
-			code_f(pr, "L4_MsgAppendWord(&msg, %#x & ((L4_Word_t)-retval));",
+			code_f(pr, "L4_MsgAppendWord(msgp, %#x & ((L4_Word_t)-retval));",
 				short_mask(fldtype));
 			close_brace(pr);
 			first_if = false;
@@ -1032,8 +1032,8 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 			code_f(pr, "%sif(ctx->exception_indicating_thingy != 0) {",
 				first_if ? "" : "} else ");
 			indent(pr, 1);
-			code_f(pr, "L4_MsgClear(&msg);");
-			code_f(pr, "/* FIXME: code that forwards ctx->exception in &msg */");
+			code_f(pr, "L4_MsgClear(msgp);");
+			code_f(pr, "/* FIXME: code that forwards ctx->exception in msgp */");
 			close_brace(pr);
 			fprintf(pr->of, "#endif\n");
 		}
@@ -1046,7 +1046,7 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 				code_f(pr, "else {");
 				indent(pr, 1);
 			}
-			code_f(pr, "L4_MsgClear(&msg);");
+			code_f(pr, "L4_MsgClear(msgp);");
 			char *retval_str;
 			if(n_ex != NULL && inf->return_type != NULL) {
 				/* strictly positive integral return types that're 31 bits or
@@ -1064,7 +1064,7 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 					"/* FIXME: return_type <%s> not handled by %s */",
 					IDL_NODE_TYPE_NAME(inf->return_type), __FUNCTION__);
 			}
-			print_msg_encoder(pr, inf->replies[0], retval_str, "&msg", "p_");
+			print_msg_encoder(pr, inf->replies[0], retval_str, "msgp", "p_");
 			if(!first_if) close_brace(pr);
 		}
 	}
@@ -1215,6 +1215,9 @@ static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 	code_f(pr, "{");
 	indent(pr, 1);
 
+	code_f(pr, "muidl_supp_alloc_context(sizeof(struct idl_context));");
+	code_f(pr, "struct idl_context *idlctx = muidl_supp_get_context();");
+
 	GList *methods = all_methods_of_iface(pr->ns, iface);
 
 	GList *tagmask_list = NULL;
@@ -1249,9 +1252,10 @@ static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 			"L4_MsgTag_t tag = L4_Wait(&sender_tid);\n"
 			"for(;;) {");
 	indent(pr, 1);
-	code_f(pr,	"if(L4_IpcFailed(tag)) return L4_ErrorCode();\n"
-				"L4_Msg_t msg;\n"
-				"L4_MsgStore(tag, &msg);");
+	code_f(pr,	"idlctx->last_sender = sender_tid;\n"
+				"if(L4_IpcFailed(tag)) return L4_ErrorCode();\n"
+				"L4_Msg_t *msgp = &idlctx->last_msg;\n"
+				"L4_MsgStore(tag, msgp);");
 
 	/* tag-mask dispatched things, in IDL order. */
 	for(GList *cur = g_list_first(tagmask_list);
@@ -1318,7 +1322,7 @@ static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 
 	if(have_tagmask) close_brace(pr);
 
-	code_f(pr, "L4_MsgLoad(&msg);\n"
+	code_f(pr, "L4_MsgLoad(msgp);\n"
 		"L4_Accept(acc);\n"
 		"tag = L4_ReplyWait(sender_tid, &sender_tid);");
 
@@ -1366,6 +1370,8 @@ static void print_dispatcher(struct print_ctx *pr)
 		"\n"
 		"#include <kernel/types.h>\n"
 		"#include <kernel/message.h>\n"
+		"#include <kernel/muidlsupp.h>\n"
+		"#include <kernel/idl.h>\n"
 		"\n"
 		"#include <l4/types.h>\n"
 		"#include <l4/message.h>\n"
