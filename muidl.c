@@ -1307,8 +1307,8 @@ static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 		indent(pr, 1);
 	}
 
-	/* handler for unrecognized messages */
-	code_f(pr, "/* FIXME: pop an error or something? */");
+	/* catch & release unrecognized messages */
+	code_f(pr, "return MUIDL_UNKNOWN_LABEL;");
 
 	if(have_switch) {
 		/* finish the unrecognized-messages handler */
