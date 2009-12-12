@@ -928,7 +928,7 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 	bool ret_is_real;
 	char *rtstr = return_type(pr->ns, inf->node, &ret_is_real),
 		*name = decapsify(METHOD_NAME(inf->node));
-	const bool is_voidfn = (inf->return_type == NULL || strcmp(rtstr, "void") == 0);
+	const bool is_voidfn = strcmp(rtstr, "void") == 0;
 
 	/* build the actual parameter list for the vtable call. */
 	GList *parm_list = NULL;	/* <char *>, g_free()'d at end */
