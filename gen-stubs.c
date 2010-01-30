@@ -1,6 +1,6 @@
 /*
  * gen-stubs.c -- generic stub generation for the L4.X2 API
- * Copyright 2009  Kalle A. Sandström <ksandstr@iki.fi>
+ * Copyright 2009, 2010  Kalle A. Sandström <ksandstr@iki.fi>
  *
  * This file is part of µiX.
  *
@@ -20,6 +20,7 @@
 
 #include <glib.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <assert.h>
 #include <libIDL/IDL.h>
 
@@ -35,6 +36,14 @@ char *fixed_type(IDL_ns ns, IDL_tree type)
 }
 
 
+static bool has_pager_target(IDL_ns ns, IDL_tree op_dcl)
+{
+	IDL_tree prop_node = IDL_OP_DCL(op_dcl).ident;
+	const char *pt = IDL_tree_property_get(prop_node, "PagerTarget");
+	return pt != NULL;
+}
+
+
 void print_generic_stub_decl(
 	struct print_ctx *pr,
 	const char *stubpfx,
@@ -43,14 +52,15 @@ void print_generic_stub_decl(
 {
 	char *name = decapsify(METHOD_NAME(op)),
 		*rettypstr = return_type(pr->ns, op, NULL);
+	bool pt = has_pager_target(pr->ns, op);
 	code_f(pr, "%s%s%s(%s", rettypstr, type_space(rettypstr),
 		stubpfx == NULL ? name : tmp_f(pr, "%s_%s", stubpfx, name),
-		params == NULL ? "L4_ThreadId_t _service_tid)" : "");
+		params == NULL ? (pt ? "void)" : "L4_ThreadId_t _service_tid)") : "");
 	g_free(name);
 	g_free(rettypstr);
 	if(params != NULL) {
 		indent(pr, 1);
-		code_f(pr, "L4_ThreadId_t _service_tid,");
+		if(!pt) code_f(pr, "L4_ThreadId_t _service_tid,");
 	}
 	for(IDL_tree cur = params; cur != NULL; cur = IDL_LIST(cur).next) {
 		IDL_tree param = IDL_LIST(cur).data;
@@ -157,8 +167,9 @@ static void print_stubs_for_iface(struct print_ctx *pr, IDL_tree iface)
 		 */
 		code_f(pr, "L4_Accept(L4_UntypedWordsAcceptor);\n"
 				   "L4_MsgLoad(&msg);");
-		code_f(pr, "L4_MsgTag_t tag = L4_%s(_service_tid);",
-			inf->num_reply_msgs > 0 ? "Call" : "Send");
+		code_f(pr, "L4_MsgTag_t tag = L4_%s(%s);",
+			inf->num_reply_msgs > 0 ? "Call" : "Send",
+			has_pager_target(pr->ns, inf->node) ? "L4_Pager()" : "_service_tid");
 
 		/* handle IPC failure. */
 		code_f(pr, "if(L4_IpcFailed(tag)) return (int)L4_ErrorCode();");
