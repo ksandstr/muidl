@@ -874,14 +874,19 @@ void print_decode_inline_seqs(
 	code_f(pr, "int seq_base = %d;", req->untyped_words);
 	for(int i=0; i<req->num_inline_seq; i++) {
 		struct seq_param *s = req->seq[i];
+		enum IDL_param_attr attr = IDL_PARAM_DCL(s->param_dcl).attr;
+		char *len_lvalue = tmp_f(pr, "%s%s%s_len%s",
+			attr != IDL_PARAM_IN ? "*" : "",
+			var_prefix, s->name,
+			attr != IDL_PARAM_IN ? "_ptr" : "");
 		if(i + 1 < req->num_inline_seq) {
 			/* not the last, therefore take a length word. */
-			code_f(pr, "%s%s_len = L4_MsgWord(%s, seq_base++);",
-				var_prefix, s->name, msgstr);
+			code_f(pr, "%s = L4_MsgWord(%s, seq_base++);",
+				len_lvalue, msgstr);
 		} else {
 			/* compute length from untyped words counter. */
-			code_f(pr, "%s%s_len = L4_UntypedWords((%s)->tag) - seq_base;",
-				var_prefix, s->name, msgstr);
+			code_f(pr, "%s = L4_UntypedWords((%s)->tag) - seq_base;",
+				len_lvalue, msgstr);
 		}
 
 		/* NOTE: I'm quite sure this could be done smarter. but w/e...
@@ -890,8 +895,8 @@ void print_decode_inline_seqs(
 		 * is sized to accept a multiple of s->elems_per_word items,
 		 * padding it out as necessary.
 		 */
-		code_f(pr, "for(unsigned i=0; i<%s%s_len; i+=%d) {", var_prefix,
-			s->name, s->elems_per_word);
+		code_f(pr, "for(unsigned i=0; i<%s; i+=%d) {", len_lvalue,
+			s->elems_per_word);
 		indent(pr, 1);
 		if(s->bits_per_elem == BITS_PER_WORD) {
 			/* full word case. */

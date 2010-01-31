@@ -87,7 +87,9 @@ void print_generic_stub_decl(
 			code_f(pr, "%s%s *p_%s,",
 				attr == IDL_PARAM_IN ? "const " : "",
 				tmpstr, name);
-			code_f(pr, "unsigned int %s_len%s", name, suffix);
+			code_f(pr, "unsigned int %sp_%s_len%s%s",
+				attr != IDL_PARAM_IN ? "*" : "", name,
+				attr != IDL_PARAM_IN ? "_ptr" : "", suffix);
 		} else {
 			/* TODO: handle structs, strings, arrays etc */
 			NOTDEFINED(type);
