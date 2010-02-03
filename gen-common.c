@@ -1,6 +1,6 @@
 /*
  * gen-common.c -- generic common header file generation for the L4 C API
- * Copyright 2009  Kalle A. Sandström <ksandstr@iki.fi>
+ * Copyright 2009, 2010  Kalle A. Sandström <ksandstr@iki.fi>
  *
  * This file is part of µiX.
  *
@@ -39,7 +39,7 @@ static void print_out_param(
 		IDL_tree elemtyp = get_type_spec(
 			IDL_TYPE_SEQUENCE(type).simple_type_spec);
 		b = in_param_type(ns, elemtyp);
-		fprintf(of, "%s **%s_ptr, unsigned *%s_len", b, name, name);
+		fprintf(of, "%s *%s_buf, unsigned *%s_len_p", b, name, name);
 	} else if(is_value_type(type)) {
 		b = value_type(ns, type);
 		fprintf(of, "%s *%s_ptr", b, name);
