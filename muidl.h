@@ -1,6 +1,6 @@
 /*
  * muidl.h -- extern definitions for µidl
- * Copyright 2009  Kalle A. Sandström <ksandstr@iki.fi>
+ * Copyright 2009, 2010  Kalle A. Sandström <ksandstr@iki.fi>
  *
  * This file is part of µiX.
  *
@@ -250,6 +250,17 @@ extern void print_headers(
 	struct print_ctx *pr,
 	const char * const *strs,
 	int len);
+
+/* length lvalue for a sequence. for_dispatcher is true when called from a
+ * dispatcher's reply encoder, and false when called from a stub. allocates
+ * temp memory.
+ */
+extern const char *seq_len_lvalue(
+	struct print_ctx *pr,
+	IDL_tree param,
+	const char *var_prefix,
+	const char *name,
+	bool for_dispatcher);
 
 
 /* from analyse.c */

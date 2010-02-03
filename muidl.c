@@ -1,6 +1,6 @@
 /*
  * muidl.c -- IDL compiler for µiX
- * Copyright 2009  Kalle A. Sandström <ksandstr@iki.fi>
+ * Copyright 2009, 2010  Kalle A. Sandström <ksandstr@iki.fi>
  *
  * This file is part of µiX.
  *
@@ -825,19 +825,13 @@ void print_msg_encoder(
 	/* inline sequences */
 	for(int i=0; i<msg->num_inline_seq; i++) {
 		struct seq_param *s = msg->seq[i];
-		const enum IDL_param_attr attr = IDL_PARAM_DCL(s->param_dcl).attr;
-		/* FIXME: this appears in at least three places. make it into a
-		 * function in util.c or somewhere.
-		 */
-		char *len_lvalue = tmp_f(pr, "%s%s%s_len%s",
-			attr != IDL_PARAM_IN ? "*" : "",
-			var_prefix, s->name,
-			attr != IDL_PARAM_IN ? "_ptr" : "");
+		const char *len_lvalue = seq_len_lvalue(pr, s->param_dcl, var_prefix,
+			s->name, true);
 		if(i + 1 < msg->num_inline_seq) {
 			/* not the last; encode a length word. */
 			code_f(pr, "L4_MsgAppendWord(%s, %s);", msg_str, len_lvalue);
 		}
-		code_f(pr, "for(unsigned i=0,_l=(%s); i<_l; i+=%d) {", len_lvalue,
+		code_f(pr, "for(unsigned i=0, _l=%s; i<_l; i+=%d) {", len_lvalue,
 			s->elems_per_word);
 		indent(pr, 1);
 		if(s->bits_per_elem == BITS_PER_WORD) {
@@ -879,11 +873,8 @@ void print_decode_inline_seqs(
 	code_f(pr, "int seq_base = %d;", req->untyped_words);
 	for(int i=0; i<req->num_inline_seq; i++) {
 		struct seq_param *s = req->seq[i];
-		enum IDL_param_attr attr = IDL_PARAM_DCL(s->param_dcl).attr;
-		char *len_lvalue = tmp_f(pr, "%s%s%s_len%s",
-			attr != IDL_PARAM_IN ? "*" : "",
-			var_prefix, s->name,
-			attr != IDL_PARAM_IN ? "_ptr" : "");
+		const char *len_lvalue = seq_len_lvalue(pr, s->param_dcl,
+			var_prefix, s->name, false);
 		if(i + 1 < req->num_inline_seq) {
 			/* not the last, therefore take a length word. */
 			code_f(pr, "%s = L4_MsgWord(%s, seq_base++);",

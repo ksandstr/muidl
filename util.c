@@ -1,6 +1,6 @@
 /*
  * util.c -- utilities for µidl
- * Copyright 2009  Kalle A. Sandström <ksandstr@iki.fi>
+ * Copyright 2009, 2010  Kalle A. Sandström <ksandstr@iki.fi>
  *
  * This file is part of µiX.
  *
@@ -111,4 +111,18 @@ void print_file_heading(struct print_ctx *pr)
 		" *\n"
 		" * Do not modify it, modify the source IDL file `%s' instead.\n"
 		" */\n", pr->idlfilename);
+}
+
+
+const char *seq_len_lvalue(
+	struct print_ctx *pr,
+	IDL_tree param,
+	const char *var_prefix,
+	const char *name,
+	bool for_dispatcher)
+{
+	enum IDL_param_attr attr = IDL_PARAM_DCL(param).attr;
+	bool ptr = attr != IDL_PARAM_IN && !for_dispatcher;
+	return tmp_f(pr, "%s%s%s_len%s", ptr ? "*" : "", var_prefix, name,
+		ptr ? "_ptr" : "");
 }
