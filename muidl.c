@@ -752,8 +752,9 @@ static void build_dispatch_parms(
 	{
 		IDL_tree p = IDL_LIST(cur).data,
 			type = get_type_spec(IDL_PARAM_DCL(p).param_type_spec);
+		const enum IDL_param_attr attr = IDL_PARAM_DCL(p).attr;
 		const char *name = IDL_IDENT(IDL_PARAM_DCL(p).simple_declarator).str;
-		if(IDL_PARAM_DCL(p).attr != IDL_PARAM_IN && is_rigid_type(ns, type)) {
+		if(attr != IDL_PARAM_IN && is_rigid_type(ns, type)) {
 			/* rigid out & inout parameters */
 			add_str_f(parm_list, "&p_%s", name);
 		} else if(IS_FPAGE_TYPE(type)) {
@@ -774,7 +775,9 @@ static void build_dispatch_parms(
 				add_str_f(parm_list, "L4_MsgWord(msgp, %d)", r - 1);
 			}
 		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
-			add_str_f(parm_list, "p_%s, p_%s_len", name, name);
+			add_str_f(parm_list, "p_%s", name);
+			add_str_f(parm_list, "%sp_%s_len",
+				attr == IDL_PARAM_IN ? "" : "&", name);
 		} else {
 			/* TODO: string, array, struct types */
 			NOTDEFINED(type);
