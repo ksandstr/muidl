@@ -70,18 +70,15 @@ static bool get_msg_label(struct message_info *inf, IDL_tree prop_node)
 	if(iface != NULL) {
 		IDL_tree ifprop = IDL_INTERFACE(iface).ident;
 		unsigned long ifacelabel = 0;
-		if(get_ul_property(&ifacelabel, ifprop, "IfaceLabel")) {
+		if(get_ul_property(&ifacelabel, ifprop, "IfaceLabel")
+			&& ifacelabel != 0)
+		{
 			inf->sublabel = inf->label;
 			inf->label = ifacelabel;
 		} else {
 			inf->sublabel = NO_SUBLABEL;
 		}
-		/* FIXME: however, in the presence of a sublabel, messages longer than
-		 * 62 words are still permitted -- when 62 should be the limit in that
-		 * case.
-		 *
-		 * also TODO: disallow tagmasks alongside ifacelabels.
-		 */
+		/* TODO: disallow tagmasks alongside ifacelabels. */
 	}
 
 	return true;
