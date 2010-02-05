@@ -1,6 +1,6 @@
 /*
  * analyse.c -- analysis of IDL elements
- * Copyright 2009  Kalle A. Sandström <ksandstr@iki.fi>
+ * Copyright 2009, 2010  Kalle A. Sandström <ksandstr@iki.fi>
  *
  * This file is part of µiX.
  *
@@ -318,7 +318,7 @@ struct method_info *analyse_op_dcl(
 		}
 	}
 	inf->request = build_message(NULL, pbuf, nparms);
-	inf->node = method;
+	inf->request->node = method;
 	if(!get_msg_label(inf->request, IDL_OP_DCL(method).ident)) {
 		/* FIXME: assign a label somehow, blow up only if that fails */
 		fprintf(stderr, "error: can't assign automatic label to `%s'\n",
