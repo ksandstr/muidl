@@ -106,6 +106,7 @@ static gboolean supported_types_only(IDL_tree_func_data *tf, gpointer udptr)
 		node = IDL_get_parent_node(node, IDLN_ANY, NULL);
 	}
 
+	bool in_const = IDL_get_parent_node(node, IDLN_CONST_DCL, NULL) != NULL;
 	switch(IDL_NODE_TYPE(node)) {
 		case IDLN_INTERFACE: {
 			/* what do badgers eat?
@@ -141,19 +142,25 @@ static gboolean supported_types_only(IDL_tree_func_data *tf, gpointer udptr)
 			return FALSE;
 
 		case IDLN_TYPE_SEQUENCE:
-			if(IDL_TYPE_SEQUENCE(node).positive_int_const == NULL) {
+			if(IDL_TYPE_SEQUENCE(node).positive_int_const == NULL
+				&& !in_const)
+			{
 				fail(v, "sequences must be bounded");
 			}
 			break;
 
 		case IDLN_TYPE_STRING:
-			if(IDL_TYPE_STRING(node).positive_int_const == NULL) {
-				fail(v, "strings must be bounded");
+			if(IDL_TYPE_STRING(node).positive_int_const == NULL
+				&& !in_const)
+			{
+				fail(v, "string types must be bounded");
 			}
 			return FALSE;	/* no point */
 
 		case IDLN_TYPE_WIDE_STRING:
-			if(IDL_TYPE_WIDE_STRING(node).positive_int_const == NULL) {
+			if(IDL_TYPE_WIDE_STRING(node).positive_int_const == NULL
+				&& !in_const)
+			{
 				fail(v, "wide strings must be bounded");
 			}
 			return FALSE;

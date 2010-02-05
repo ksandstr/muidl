@@ -1,6 +1,6 @@
 /*
  * test.idl -- general test-case playground
- * Copyright 2009  Kalle A. Sandström <ksandstr@iki.fi>
+ * Copyright 2009, 2010  Kalle A. Sandström <ksandstr@iki.fi>
  *
  * This file is part of µiX.
  *
@@ -29,6 +29,11 @@ module register
 {
 
 typedef L4X2::word word;
+
+const long MAX_LONGSEQ_LEN = 16;
+const char SOME_CHAR_OR_OTHER = 'q';
+const boolean A_BOOLEAN = FALSE;
+const string LUPINE_BRAVERY = "piss lightning\n\tshit success";
 
 struct unrelated_to_muix
 {
@@ -61,7 +66,7 @@ interface Example
 
 	typedef sequence<octet, 64> byte_seq;
 	typedef sequence<short, 25> short_seq;
-	typedef sequence<long, 16> long_seq;
+	typedef sequence<long, MAX_LONGSEQ_LEN> long_seq;
 
 	[Label(0xabcd)]
 	long multi_sequence_call(

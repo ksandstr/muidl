@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <assert.h>
 #include <libIDL/IDL.h>
 
@@ -307,6 +308,79 @@ static gboolean print_struct_decls(IDL_tree_func_data *tf, gpointer userdata)
 }
 
 
+static gboolean print_consts(IDL_tree_func_data *tf, gpointer userdata)
+{
+	struct print_ctx *pr = userdata;
+
+	/* we'll emit constant declarations found in interfaces and modules only.
+	 * others needn't apply.
+	 */
+	switch(IDL_NODE_TYPE(tf->tree)) {
+		default: return FALSE;
+
+		case IDLN_MODULE:
+		case IDLN_INTERFACE:
+			return TRUE;
+
+		/* (basic container stuff) */
+		case IDLN_LIST:
+		case IDLN_GENTREE:
+			return TRUE;
+
+		case IDLN_CONST_DCL:
+			break;
+	}
+
+	char *ln = long_name(pr->ns, tf->tree);
+	for(int i=0; ln[i] != '\0'; i++) ln[i] = toupper(ln[i]);
+	IDL_tree value = IDL_resolve_const_exp(IDL_CONST_DCL(tf->tree).const_exp,
+		IDLN_ANY);
+	char *val;
+	switch(IDL_NODE_TYPE(value)) {
+		case IDLN_INTEGER:
+			val = g_strdup_printf("%lld", (long long)IDL_INTEGER(value).value);
+			break;
+
+		case IDLN_STRING: {
+			char *tmp = g_strescape(IDL_STRING(value).value, NULL);
+			val = g_strconcat("\"", tmp, "\"", NULL);
+			g_free(tmp);
+			break;
+		}
+
+		case IDLN_CHAR: {
+			char c = *IDL_CHAR(value).value;
+			val = g_strdup_printf(isprint(c) ? "'%c'" : "'\\%o'", c);
+			break;
+		}
+
+		case IDLN_BOOLEAN:
+			val = g_strdup(IDL_BOOLEAN(value).value ? "true" : "false");
+			break;
+
+		case IDLN_FLOAT:
+			val = g_strdup_printf("%f", IDL_FLOAT(value).value);
+			break;
+
+		/* TODO: */
+		case IDLN_FIXED:
+		case IDLN_WIDE_CHAR:
+		case IDLN_WIDE_STRING:
+
+		default:
+			fprintf(stderr, "%s: can't handle constant type <%s>!\n",
+				__FUNCTION__, IDL_NODE_TYPE_NAME(tf->tree));
+			/* FIXME: fail softly */
+			abort();
+	}
+	code_f(pr, "#define %s %s", ln, val);
+	g_free(ln);
+	g_free(val);
+
+	return FALSE;
+}
+
+
 void print_common_header(struct print_ctx *pr)
 {
 	print_file_heading(pr);
@@ -327,6 +401,10 @@ void print_common_header(struct print_ctx *pr)
 		"l4/types.h",
 	};
 	print_headers(pr, hdrfiles, G_N_ELEMENTS(hdrfiles));
+
+	/* constant declarations. */
+	IDL_tree_walk_in_order(pr->tree, &print_consts, pr);
+	code_f(pr, " ");
 
 	/* struct, union & enum declarations as they appear in the IDL source. this
 	 * is appropriate because IDL doesn't permit forward declaration of
