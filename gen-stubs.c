@@ -156,6 +156,9 @@ static void print_stubs_for_iface(struct print_ctx *pr, IDL_tree iface)
 				   "L4_MsgClear(&msg);\n"
 				   "L4_Set_MsgLabel(&msg, %#x);",
 			(unsigned)req->label);
+		if(req->sublabel != NO_SUBLABEL) {
+			code_f(pr, "L4_MsgAppendWord(&msg, %#x);", req->sublabel);
+		}
 		print_msg_encoder(pr, req, NULL, "&msg", "p_");
 		if(req->tagmask != NO_TAGMASK) {
 			/* force tagmask's bits to what is specified in the label. */

@@ -63,6 +63,27 @@ static bool get_msg_label(struct message_info *inf, IDL_tree prop_node)
 	if(!get_ul_property(&labelval, prop_node, "Label")) return false;
 	inf->label = labelval;
 
+	IDL_tree iface = IDL_get_parent_node(prop_node, IDLN_INTERFACE, NULL);
+	/* exceptions, among other things, can appear outside interfaces.
+	 * fortunately sublabels don't apply to them.
+	 */
+	if(iface != NULL) {
+		IDL_tree ifprop = IDL_INTERFACE(iface).ident;
+		unsigned long ifacelabel = 0;
+		if(get_ul_property(&ifacelabel, ifprop, "IfaceLabel")) {
+			inf->sublabel = inf->label;
+			inf->label = ifacelabel;
+		} else {
+			inf->sublabel = NO_SUBLABEL;
+		}
+		/* FIXME: however, in the presence of a sublabel, messages longer than
+		 * 62 words are still permitted -- when 62 should be the limit in that
+		 * case.
+		 *
+		 * also TODO: disallow tagmasks alongside ifacelabels.
+		 */
+	}
+
 	return true;
 }
 
@@ -144,7 +165,8 @@ static struct message_info *build_message(
 
 			unsigned long mr_n = 0;
 			if(!get_ul_property(&mr_n, ident, "MR")) return false;
-			if(mr_n > 0) {
+			u->reg_manual = mr_n > 0;
+			if(u->reg_manual) {
 				if(mr_n > 63) {
 					fprintf(stderr, "%s: MR(%lu) too large\n", __FUNCTION__,
 						mr_n);
@@ -285,6 +307,44 @@ static struct message_info *build_exception_message(IDL_tree exn)
 }
 
 
+/* bump register offsets up by one. fails and returns false when either MR0 is
+ * specified in a parameter attribute, or when the message would have been too
+ * large (i.e. more than 62 words).
+ */
+static bool sublabel_bump(struct message_info *req, GError **error_p)
+{
+	assert(req->sublabel != NO_SUBLABEL);
+	assert(IDL_NODE_TYPE(req->node) == IDLN_OP_DCL);
+
+	if(req->untyped_words > 62) {
+		g_set_error(error_p, 0, 0,
+			"sublabel_bump: message won't fit in 63 words (%d given)",
+			req->untyped_words);
+		return false;
+	}
+	for(int i=0; i<req->num_untyped; i++) {
+		struct untyped_param *u = req->untyped[i];
+		if(u->reg_manual && (u->first_reg == 0 || u->last_reg == 0)) {
+			g_set_error(error_p, 0, 0,
+				"sublabel_bump: register 0 assigned manually");
+			return false;
+		}
+	}
+
+	for(int i=0; i<req->num_untyped; i++) {
+		struct untyped_param *u = req->untyped[i];
+		/* (untyped_words is a MsgWord offset, therefore +1.) */
+		assert(u->first_reg < req->untyped_words + 1);
+		assert(u->last_reg < req->untyped_words + 1);
+		u->first_reg++;
+		u->last_reg++;
+	}
+	req->untyped_words++;
+
+	return true;
+}
+
+
 /* TODO: get the number and max dimensions of the string buffers we'll
  * send/receive once long types are implemented.
  */
@@ -324,6 +384,15 @@ struct method_info *analyse_op_dcl(
 		fprintf(stderr, "error: can't assign automatic label to `%s'\n",
 			METHOD_NAME(method));
 		goto fail;
+	}
+	if(inf->request->sublabel != NO_SUBLABEL) {
+		GError *err = NULL;
+		if(!sublabel_bump(inf->request, &err)) {
+			fprintf(stderr, "%s (op was `%s')\n", err->message,
+				METHOD_NAME(method));
+			g_error_free(err);
+			goto fail;
+		}
 	}
 
 	if(num_replies > 0) {

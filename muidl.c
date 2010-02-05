@@ -1201,6 +1201,16 @@ char *dispatcher_name(IDL_ns ns, IDL_tree iface, char **vtprefix_p)
 }
 
 
+static int method_info_by_label_cmp(gconstpointer ap, gconstpointer bp)
+{
+	const struct method_info *amsg = ap, *bmsg = bp;
+	const struct message_info *a = amsg->request, *b = bmsg->request;
+	if(a->label < b->label) return -1;
+	else if(a->label > b->label) return 1;
+	else return 0;
+}
+
+
 /* this outputs a very generic dispatcher. ones written in customized assembly
  * code are optimizations, which we won't touch until µidl is reasonably
  * feature-complete. (i.e. need-to basis, and optimizations don't usually need
@@ -1242,6 +1252,7 @@ static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 			tagmask_list = g_list_prepend(tagmask_list, inf);
 		}
 	}
+	methods = g_list_sort(methods, &method_info_by_label_cmp);
 	tagmask_list = g_list_reverse(tagmask_list);
 	const bool have_switch = g_list_length(tagmask_list) < g_list_length(methods),
 		have_tagmask = g_list_length(tagmask_list) > 0;
@@ -1289,22 +1300,61 @@ static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 	}
 
 	if(have_switch) {
+		/* TODO: update this to emit op decoders for sequences of sublabel
+		 * messages (since all for the same L4_Label() are sorted sequentially)
+		 * properly.
+		 */
 		code_f(pr, "bool reply = true;\nswitch(L4_Label(tag)) {");
 		indent(pr, 1);
+		struct method_info *prev = NULL, *inf;
 		for(GList *cur = g_list_first(methods);
 			cur != NULL;
-			cur = g_list_next(cur))
+			prev = inf, cur = g_list_next(cur))
 		{
-			struct method_info *inf = cur->data;
+			inf = cur->data;
 			if(g_list_find(tagmask_list, inf) != NULL) continue; /* been done */
 
-			code_f(pr, "case 0x%lx: {", (unsigned long)inf->request->label);
-			indent(pr, 1);
+			/* take care of ifacelabel chaining, which may appear mixed with
+			 * non-ifacelabeled methods in an inherited interface.
+			 */
+			const bool have_sl = inf->request->sublabel != NO_SUBLABEL,
+				in_chain = have_sl && prev != NULL
+					&& prev->request->label == inf->request->label
+					&& prev->request->sublabel != NO_SUBLABEL;
+
+			if(!in_chain) {
+				/* starts, or exists outside, a sublabel chain */
+				code_f(pr, "case 0x%x: {", (unsigned)inf->request->label);
+				indent(pr, 1);
+				if(have_sl) {
+					code_f(pr, "const L4_Word_t _sublabel = L4_MsgWord(msgp, 0);");
+				}
+			}
+			if(have_sl) {
+				code_f(pr, "if(_sublabel == %#x) {",
+					(unsigned)inf->request->sublabel);
+				indent(pr, 1);
+			}
 			print_op_decode(pr, inf);
 			if(IDL_OP_DCL(inf->node).f_oneway) code_f(pr, "reply = false;");
 			code_f(pr, "break;");
 			close_brace(pr);
-			code_f(pr, " ");		/* aesthetics, man! */
+
+			GList *next_link = g_list_next(cur);
+			struct method_info *next = next_link == NULL ? NULL : next_link->data;
+			if(!have_sl || next_link == NULL
+				|| next->request->label != inf->request->label)
+			{
+				/* we're the last in a sublabel chain, either because the next
+				 * item is NULL, because the label changes, or there wasn't any
+				 * sublabel chain at all.
+				 */
+				if(have_sl) {
+					code_f(pr, "return MUIDL_UNKNOWN_LABEL;");
+					close_brace(pr);
+				}
+				code_f(pr, " ");		/* aesthetics, man! */
+			}
 		}
 
 		code_f(pr, "default: {");

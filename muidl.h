@@ -105,6 +105,7 @@ struct untyped_param
 {
 	const char *name;
 	IDL_tree type, param_dcl;
+	bool reg_manual;		/* register set with a [MR(n)] attribute */
 	uint8_t first_reg, last_reg;
 };
 
@@ -123,6 +124,7 @@ struct message_info
 {
 	uint16_t label;
 	uint32_t tagmask;		/* tag mask, or NO_TAGMASK if not set */
+	uint32_t sublabel;		/* MR1 label, or NO_SUBLABEL if not applicable */
 
 	IDL_tree node;			/* IDL_{EXCEPT,OP}_DCL */
 
@@ -145,7 +147,8 @@ struct message_info
 	IDL_tree long_dcls[];	/* of IDLN_PARAM_DCL */
 };
 
-#define NO_TAGMASK ((uint32_t)~0u)
+#define NO_TAGMASK (~0u)
+#define NO_SUBLABEL (~0u)
 
 
 struct method_info
