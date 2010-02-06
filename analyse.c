@@ -375,6 +375,7 @@ struct method_info *analyse_op_dcl(
 		}
 	}
 	inf->request = build_message(NULL, pbuf, nparms);
+	if(inf->request == NULL) goto fail;
 	inf->request->node = method;
 	if(!get_msg_label(inf->request, IDL_OP_DCL(method).ident)) {
 		/* FIXME: assign a label somehow, blow up only if that fails */

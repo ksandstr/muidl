@@ -38,6 +38,7 @@ void list_dispose(GList *list)
 
 void free_message_info(struct message_info *inf)
 {
+	if(inf == NULL) return;
 	for(int i=0; i<inf->num_untyped; i++) {
 		g_free(inf->untyped[i]);
 	}
@@ -52,6 +53,7 @@ void free_message_info(struct message_info *inf)
 
 void free_method_info(struct method_info *inf)
 {
+	if(inf == NULL) return;
 	free_message_info(inf->request);
 	for(int i=0; i<inf->num_reply_msgs; i++) {
 		free_message_info(inf->replies[i]);
