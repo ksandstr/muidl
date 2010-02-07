@@ -75,6 +75,15 @@ interface Example
 		out long_seq first_out,
 		inout long_seq the_inout);
 
+	[Label(0xfee7)]		/* actually known as hooves */
+	oneway void string_bearing_call(
+		in string<64> something);
+
+	[Label(0xca75)]
+	void two_strings(
+		in string<128> the_first,
+		in string<64> the_second);
+
 /* TEST 1: oneway operation with non-void return type
  * expected: failure
  */

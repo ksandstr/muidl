@@ -124,6 +124,37 @@ static int size_in_bits(IDL_tree type)
 }
 
 
+/* a type's maximum length in bytes. returns negative for unbounded.
+ * doesn't include string terminator, since that's not transferred over IPC.
+ */
+static int max_size(IDL_tree type)
+{
+	if(is_value_type(type)) return size_in_bits(type) / 8;
+	switch(IDL_NODE_TYPE(type)) {
+		case IDLN_TYPE_SEQUENCE: {
+			IDL_tree bound = IDL_TYPE_SEQUENCE(type).positive_int_const,
+				elem = IDL_TYPE_SEQUENCE(type).simple_type_spec;
+			if(bound == NULL) return -1;
+			return max_size(elem) * IDL_INTEGER(bound).value;
+		}
+
+		case IDLN_TYPE_STRING: {
+			IDL_tree bound = IDL_TYPE_STRING(type).positive_int_const;
+			if(bound == NULL) return -1;
+			return IDL_INTEGER(bound).value;
+		}
+
+		case IDLN_TYPE_WIDE_STRING:
+		case IDLN_TYPE_ARRAY:
+		case IDLN_TYPE_STRUCT:
+		case IDLN_TYPE_UNION:
+		case IDLN_TYPE_ENUM:
+		default:
+			NOTDEFINED(type);
+	}
+}
+
+
 static bool is_bounded_seq(IDL_tree type)
 {
 	return IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE
@@ -206,8 +237,9 @@ static struct message_info *build_message(
 	seq = g_list_reverse(seq);
 	_long = g_list_reverse(_long);
 
+	const int num_long = g_list_length(_long);
 	inf = g_malloc(sizeof(struct message_info)
-		+ sizeof(IDL_tree) * g_list_length(_long));
+		+ sizeof(struct long_param) * num_long);
 
 	/* assign untyped words. */
 	inf->num_untyped = g_list_length(untyped);
@@ -267,11 +299,23 @@ static struct message_info *build_message(
 		max_mr += s->max_words;
 	}
 
-	if(g_list_first(_long) != NULL) {
-		fprintf(stderr, "%s: can't handle long types\n", __FUNCTION__);
-		goto fail;
-	}
+	/* long types: non-rigid and large structs, strings, wide strings,
+	 * sequences that can't be encoded inline, etc
+	 */
 	inf->num_long = 0;
+	GList *cur = g_list_first(_long);
+	for(int i=0; i<num_long; i++, cur = g_list_next(cur)) {
+		assert(cur != NULL);
+		IDL_tree param = cur->data,
+			type = get_type_spec(IDL_PARAM_DCL(param).param_type_spec),
+			decl = IDL_PARAM_DCL(param).simple_declarator;
+
+		struct long_param *p = g_new(struct long_param, 1);
+		p->name = IDL_IDENT(decl).str;
+		p->type = type;
+		p->param_dcl = param;
+		inf->long_params[inf->num_long++] = p;
+	}
 
 	g_list_free(untyped);
 	g_list_free(seq);
@@ -281,7 +325,7 @@ static struct message_info *build_message(
 fail:
 	list_dispose(untyped);
 	list_dispose(seq);
-	list_dispose(_long);
+	g_list_free(_long);
 	g_free(inf->untyped);
 	g_free(inf->seq);
 	g_free(inf);
@@ -486,4 +530,50 @@ fail:
 	}
 	g_free(inf);
 	return NULL;
+}
+
+
+struct stritem_info *dispatcher_stritems(GList *method_info_list)
+{
+	GArray *result = g_array_new(FALSE, FALSE, sizeof(struct stritem_info));
+	for(GList *cur = g_list_first(method_info_list);
+		cur != NULL;
+		cur = g_list_next(cur))
+	{
+		struct method_info *inf = cur->data;
+		struct message_info *req = inf->request;
+
+		for(int i=0; i<req->num_long; i++) {
+			struct long_param *p = req->long_params[i];
+			assert(IDL_PARAM_DCL(p->param_dcl).attr != IDL_PARAM_OUT);
+			int length = max_size(p->type);
+			bool stringlike = IDL_NODE_TYPE(p->type) == IDLN_TYPE_STRING
+				|| IDL_NODE_TYPE(p->type) == IDLN_TYPE_WIDE_STRING;
+			struct stritem_info *si;
+			if(result->len <= i) {
+				struct stritem_info tmp = {
+					.length = 0,
+					.stringlike = false,
+				};
+				g_array_append_val(result, tmp);
+				si = &g_array_index(result, struct stritem_info,
+					result->len - 1);
+				assert(si == &g_array_index(result, struct stritem_info, i));
+			} else {
+				si = &g_array_index(result, struct stritem_info, i);
+			}
+			if(!si->stringlike && stringlike) si->stringlike = true;
+			si->length = MAX(si->length, length);
+		}
+	}
+
+	if(result->len > 0) {
+		/* terminate and return. */
+		struct stritem_info tmp = { .length = -1 };
+		g_array_append_val(result, tmp);
+		return (void *)g_array_free(result, FALSE);
+	} else {
+		g_array_free(result, TRUE);
+		return NULL;
+	}
 }

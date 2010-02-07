@@ -47,6 +47,9 @@ void free_message_info(struct message_info *inf)
 	for(int i=0; i<inf->num_inline_seq; i++) g_free(inf->seq[i]);
 	g_free(inf->seq);
 
+	for(int i=0; i<inf->num_long; i++) g_free(inf->long_params[i]);
+	/* long_params is allocated at end-of-struct so no freeing for that. */
+
 	g_free(inf);
 }
 

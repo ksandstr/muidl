@@ -119,6 +119,13 @@ struct seq_param
 };
 
 
+struct long_param
+{
+	const char *name;
+	IDL_tree type, param_dcl;
+};
+
+
 /* TODO: add has_tagmask bool instead of special NO_TAGMASK value */
 struct message_info
 {
@@ -144,7 +151,7 @@ struct message_info
 	 * that are passed as string items.
 	 */
 	int num_long;
-	IDL_tree long_dcls[];	/* of IDLN_PARAM_DCL */
+	struct long_param *long_params[];
 };
 
 #define NO_TAGMASK (~0u)
@@ -159,6 +166,14 @@ struct method_info
 
 	int num_reply_msgs;	/* oneway ? 0 : 1 + len(raises_list) */
 	struct message_info *replies[];
+};
+
+
+struct stritem_info
+{
+	int length;			/* < 0 = terminator */
+	int offset;			/* not filled in by dispatcher_stritems() */
+	bool stringlike;	/* '\0' terminated? (not included in length.) */
 };
 
 
@@ -269,6 +284,12 @@ extern const char *seq_len_lvalue(
 /* from analyse.c */
 
 extern struct method_info *analyse_op_dcl(struct print_ctx *pr, IDL_tree op);
+
+/* result is a list of string buffers required by a dispatcher of the given
+ * list of <struct method_info *>. caller frees. zero-length is represented by
+ * NULL, or by the first item being the terminator.
+ */
+extern struct stritem_info *dispatcher_stritems(GList *methods);
 
 
 /* from verify.c */

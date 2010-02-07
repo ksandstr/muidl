@@ -668,6 +668,7 @@ static unsigned short_mask(IDL_tree fldtype)
 static void print_helper_vars(
 	struct print_ctx *pr,
 	const struct message_info *msg,
+	const struct stritem_info *stritems,
 	bool inout)
 {
 	/* fixed-length untyped */
@@ -733,7 +734,21 @@ static void print_helper_vars(
 		g_free(tstr);
 	}
 
-	/* TODO: stringitem things! */
+	/* long items */
+	for(int i=0; i<msg->num_long; i++) {
+		struct long_param *p = msg->long_params[i];
+
+		assert(stritems != NULL && stritems[i].length >= 0);
+		if(IDL_NODE_TYPE(p->type) == IDLN_TYPE_STRING) {
+			IDL_tree bnode = IDL_TYPE_STRING(p->type).positive_int_const;
+			assert(bnode != NULL);	/* ensured by verify.c */
+			code_f(pr, "char *p_%s = (char *)&_strbuf[%d];",
+				p->name, stritems[i].offset);
+		} else {
+			/* TODO: wide strings, structs, non-inline sequences, etc etc */
+			NOTDEFINED(p->type);
+		}
+	}
 }
 
 
@@ -775,8 +790,13 @@ static void build_dispatch_parms(
 			add_str_f(parm_list, "p_%s", name);
 			add_str_f(parm_list, "%sp_%s_len",
 				attr == IDL_PARAM_IN ? "" : "&", name);
+		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_STRING
+			|| IDL_NODE_TYPE(type) == IDLN_TYPE_WIDE_STRING)
+		{
+			/* these are fairly simple. */
+			add_str_f(parm_list, "p_%s", name);
 		} else {
-			/* TODO: string, array, struct types */
+			/* TODO: array, struct types */
 			NOTDEFINED(type);
 		}
 	}
@@ -916,14 +936,60 @@ void print_decode_inline_seqs(
 }
 
 
-static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
+static void print_null_termination(
+	struct print_ctx *pr,
+	const struct message_info *req,
+	const struct stritem_info *stritems,
+	const char *var_prefix)
+{
+	if(req->num_long == 0) return;
+
+	code_f(pr, "int str_state = 0;");
+	for(int i=0; i<req->num_long; i++) {
+		assert(stritems != NULL && stritems[i].length >= 0);
+
+		const struct long_param *p = req->long_params[i];
+		const struct stritem_info *si = &stritems[i];
+		code_f(pr,
+			"const L4_StringItem_t *si_%s = muidl_next_stringitem(msgp, &str_state);",
+			p->name);
+		code_f(pr, "if(si_%s == NULL) {", p->name);
+		indent(pr, 1);
+		/* FIXME! */
+		code_f(pr, "/* FIXME: return error on insufficient string items */");
+		close_brace(pr);
+		code_f(pr, "int xlen_%s = muidl_stritemlen(si_%s);",
+			p->name, p->name);
+
+		if(IDL_NODE_TYPE(p->type) == IDLN_TYPE_STRING) {
+			IDL_tree bound = IDL_TYPE_STRING(p->type).positive_int_const;
+			assert(bound != NULL);
+			int limit = MIN(IDL_INTEGER(bound).value, si->length);
+			code_f(pr, "if(xlen_%s > %d) xlen_%s = %d;",
+				p->name, limit, p->name, limit);
+			code_f(pr, "p_%s[xlen_%s] = '\\0';", p->name, p->name);
+		} else if(IDL_NODE_TYPE(p->type) == IDLN_TYPE_WIDE_STRING) {
+			/* FIXME */
+			NOTDEFINED(p->type);
+		} else {
+			/* FIXME: support sequences, structs, unions, arrays, etc */
+			NOTDEFINED(p->type);
+		}
+	}
+}
+
+
+static void print_op_decode(
+	struct print_ctx *pr,
+	struct method_info *inf,
+	const struct stritem_info *stritems)
 {
 	code_f(pr, "/* decoding of `%s' */", METHOD_NAME(inf->node));
 
 	const struct message_info *req = inf->request;
-	print_helper_vars(pr, inf->request, true);
+	print_helper_vars(pr, inf->request, stritems, true);
 	if(inf->num_reply_msgs > 0) {
-		print_helper_vars(pr, inf->replies[0], false);
+		print_helper_vars(pr, inf->replies[0], NULL, false);
 	}
 
 	bool ret_is_real;
@@ -955,8 +1021,7 @@ static void print_op_decode(struct print_ctx *pr, struct method_info *inf)
 	}
 
 	print_decode_inline_seqs(pr, req, "msgp", "p_");
-
-	/* TODO: decode string-carried parameters */
+	print_null_termination(pr, req, stritems, "p_");
 
 	build_dispatch_parms(pr->ns, &parm_list, inf);
 
@@ -1226,11 +1291,7 @@ static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 	code_f(pr, "{");
 	indent(pr, 1);
 
-	code_f(pr, "muidl_supp_alloc_context(sizeof(struct idl_context));");
-	code_f(pr, "struct idl_context *idlctx = muidl_supp_get_context();");
-
 	GList *methods = all_methods_of_iface(pr->ns, iface);
-
 	GList *tagmask_list = NULL;
 	for(GList *cur = g_list_first(methods);
 		cur != NULL;
@@ -1254,15 +1315,55 @@ static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 	const bool have_switch = g_list_length(tagmask_list) < g_list_length(methods),
 		have_tagmask = g_list_length(tagmask_list) > 0;
 
-	code_f(pr,
-		"L4_Acceptor_t acc = L4_UntypedWordsAcceptor;\n"
-		"for(;;) {");
+	/* compute the context size, and string buffer offsets. */
+	struct stritem_info *stritems = dispatcher_stritems(methods);
+	bool have_stritems = stritems != NULL && stritems[0].length >= 0;
+	const char *ctx_size;
+	if(have_stritems) {
+		int total = 0;
+		for(int i=0; stritems[i].length >= 0; i++) {
+			/* TODO: pad the offset to the data's proper alignment, include
+			 * that in the total.
+			 */
+			stritems[i].offset = total;
+			total += stritems[i].length;
+			if(stritems[i].stringlike) total++;	/* '\0' at the end. */
+		}
+		ctx_size = tmp_f(pr, "sizeof(struct idl_context) + %d + 32",
+			total);
+	} else {
+		ctx_size = "sizeof(struct idl_context)";
+	}
+	code_f(pr, "muidl_supp_alloc_context(%s);", ctx_size);
+	code_f(pr, "struct idl_context *idlctx = muidl_supp_get_context();");
+
+	/* emit acceptor data (where applicable) and select the acceptor-loading
+	 * code fragment.
+	 */
+	const char *acc_stmt = NULL;
+	if(!have_stritems) {
+		acc_stmt = "L4_Accept(L4_UntypedWordsAcceptor);";
+	} else {
+		code_f(pr, "char *_strbuf = (char *)&idlctx[1];");
+		code_f(pr,
+			"L4_MsgBuffer_t _msgbuf;\n"
+			"L4_MsgBufferClear(&_msgbuf);");
+		for(int i=0; stritems[i].length >= 0; i++) {
+			code_f(pr,
+				"L4_MsgBufferAppendSimpleRcvString(&_msgbuf,\n"
+					"\tL4_StringItem(%d, &_strbuf[%d]));",
+				stritems[i].length, stritems[i].offset);
+		}
+		acc_stmt = "L4_AcceptStrings(L4_StringItemsAcceptor, &_msgbuf);";
+	}
+
+	code_f(pr, "for(;;) {");
 	indent(pr, 1);
 	code_f(pr,
-			"L4_Accept(acc);\n"
+			"%s\n"
 			"L4_ThreadId_t sender_tid;\n"
 			"L4_MsgTag_t tag = L4_Wait(&sender_tid);\n"
-			"for(;;) {");
+			"for(;;) {", acc_stmt);
 	indent(pr, 1);
 	code_f(pr,	"idlctx->last_sender = sender_tid;\n"
 				"if(L4_IpcFailed(tag)) return L4_ErrorCode();\n"
@@ -1282,7 +1383,7 @@ static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 			(unsigned long)inf->request->label << 16);
 		indent(pr, 1);
 
-		print_op_decode(pr, inf);
+		print_op_decode(pr, inf, stritems);
 		if(IDL_OP_DCL(inf->node).f_oneway) code_f(pr, "break;");
 
 		if(g_list_next(cur) != NULL) indent(pr, -1);
@@ -1332,7 +1433,7 @@ static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 					(unsigned)inf->request->sublabel);
 				indent(pr, 1);
 			}
-			print_op_decode(pr, inf);
+			print_op_decode(pr, inf, stritems);
 			if(IDL_OP_DCL(inf->node).f_oneway) code_f(pr, "reply = false;");
 			code_f(pr, "break;");
 			close_brace(pr);
@@ -1374,8 +1475,9 @@ static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 	if(have_tagmask) close_brace(pr);
 
 	code_f(pr, "L4_MsgLoad(msgp);\n"
-		"L4_Accept(acc);\n"
-		"tag = L4_ReplyWait(sender_tid, &sender_tid);");
+		"%s\n"
+		"tag = L4_ReplyWait(sender_tid, &sender_tid);",
+		acc_stmt);
 
 	close_brace(pr);	/* inner for loop */
 	close_brace(pr);	/* outer for loop */
@@ -1387,6 +1489,7 @@ static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 	g_list_free(tagmask_list);
 	g_free(vtprefix);
 	g_free(dispname);
+	g_free(stritems);
 }
 
 
