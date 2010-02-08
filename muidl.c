@@ -1315,6 +1315,11 @@ static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 	code_f(pr, "{");
 	indent(pr, 1);
 
+	/* keep caller-configured transfer timeouts for reloading before each IPC
+	 * wait.
+	 */
+	code_f(pr, "const L4_Word_t _stored_timeouts = L4_XferTimeouts();");
+
 	GList *methods = all_methods_of_iface(pr->ns, iface);
 	GList *tagmask_list = NULL;
 	for(GList *cur = g_list_first(methods);
@@ -1386,6 +1391,7 @@ static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 	code_f(pr,
 			"%s\n"
 			"L4_ThreadId_t sender_tid;\n"
+			"L4_Set_XferTimeouts(_stored_timeouts);\n"
 			"L4_MsgTag_t tag = L4_Wait(&sender_tid);\n"
 			"for(;;) {", acc_stmt);
 	indent(pr, 1);
@@ -1498,7 +1504,9 @@ static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 
 	if(have_tagmask) close_brace(pr);
 
-	code_f(pr, "L4_MsgLoad(msgp);\n"
+	code_f(pr,
+		"L4_MsgLoad(msgp);\n"
+		"L4_Set_XferTimeouts(_stored_timeouts);\n"
 		"%s\n"
 		"tag = L4_ReplyWait(sender_tid, &sender_tid);",
 		acc_stmt);
