@@ -245,7 +245,7 @@ void print_stubs_file(struct print_ctx *pr)
 	print_file_heading(pr);
 
 	static const char *hdrfiles[] = {
-		"stdint.h", "stdbool.h",
+		"stdint.h", "stdbool.h", "string.h",
 		"l4/types.h", "l4/ipc.h", "l4/message.h",
 		"kernel/types.h",
 	};

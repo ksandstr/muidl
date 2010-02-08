@@ -875,7 +875,25 @@ void print_msg_encoder(
 		close_brace(pr);
 	}
 
-	/* TODO: string buffers */
+	/* long items */
+	for(int i=0; i<msg->num_long; i++) {
+		const struct long_param *p = msg->long_params[i];
+		const char *len_expr;
+		if(IDL_NODE_TYPE(p->type) == IDLN_TYPE_STRING) {
+			len_expr = tmp_f(pr, "strlen(%s%s)", var_prefix, p->name);
+		} else if(IDL_NODE_TYPE(p->type) == IDLN_TYPE_WIDE_STRING) {
+			len_expr = tmp_f(pr, "wcslen(%s%s) * sizeof(wchar_t)",
+				var_prefix, p->name);
+		} else {
+			/* FIXME: set len_expr to byte size of each element of p->type,
+			 * times one for structs and unions and times the length indication
+			 * (static for arrays, variable for sequences).
+			 */
+			NOTDEFINED(p->type);
+		}
+		code_f(pr, "L4_MsgAppendSimpleStringItem(%s, L4_StringItem(%s, (char *)%s%s));",
+			msg_str, len_expr, var_prefix, p->name);
+	}
 }
 
 
@@ -955,8 +973,14 @@ static void print_null_termination(
 			p->name);
 		code_f(pr, "if(si_%s == NULL) {", p->name);
 		indent(pr, 1);
-		/* FIXME! */
+		/* FIXME! add a muidl_error_report() function or some such? */
 		code_f(pr, "/* FIXME: return error on insufficient string items */");
+#if 1
+		code_f(pr, "extern void printk(const char *, ...);");
+		code_f(pr, "printk(\"insufficient string items (label %%#x, u %%d, t %%d)\\n\", "
+			"(unsigned int)L4_Label(msgp->tag), (int)L4_UntypedWords(msgp->tag), "
+			"(int)L4_TypedWords(msgp->tag));");
+#endif
 		close_brace(pr);
 		code_f(pr, "int xlen_%s = muidl_stritemlen(si_%s);",
 			p->name, p->name);
@@ -1520,7 +1544,9 @@ static void print_dispatcher(struct print_ctx *pr)
 {
 	fprintf(pr->of, "#define MUIDL_SOURCE\n\n");
 
-	fprintf(pr->of, "#include <stdint.h>\n"
+	/* TODO: make this use print_headers() */
+	fprintf(pr->of,
+		"#include <stdint.h>\n"
 		"\n"
 		"#include <kernel/types.h>\n"
 		"#include <kernel/message.h>\n"
