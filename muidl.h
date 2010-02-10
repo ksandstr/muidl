@@ -56,6 +56,8 @@
 	&& strcmp(NATIVE_NAME((t)), "l4_fpage_t") == 0)
 #define IS_WORD_TYPE(t) (IDL_NODE_TYPE((t)) == IDLN_NATIVE \
 	&& strcmp(NATIVE_NAME((t)), "l4_word_t") == 0)
+#define IS_TIME_TYPE(t) (IDL_NODE_TYPE((t)) == IDLN_NATIVE \
+	&& strcmp(NATIVE_NAME((t)), "l4_time_t") == 0)
 
 #define IS_USHORT_TYPE(op_type) \
 	(IDL_NODE_TYPE((op_type)) == IDLN_TYPE_INTEGER \

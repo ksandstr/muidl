@@ -72,23 +72,25 @@ void print_generic_stub_decl(
 			*suffix = IDL_LIST(cur).next == NULL ? ")" : ",";
 
 		char *tmpstr = NULL;
+		const char *prefix;
+		if(name[0] == '_' && name[1] == '_') prefix = ""; else prefix = "p_";
 		if(attr == IDL_PARAM_IN && is_value_type(type)) {
 			tmpstr = value_type(pr->ns, type);
-			code_f(pr, "%s p_%s%s", tmpstr, name, suffix);
+			code_f(pr, "%s %s%s%s", tmpstr, prefix, name, suffix);
 		} else if(is_rigid_type(pr->ns, type)) {
 			tmpstr = fixed_type(pr->ns, type);
-			code_f(pr, "%s%s *p_%s%s",
+			code_f(pr, "%s%s *%s%s%s",
 				attr == IDL_PARAM_IN ? "const " : "",
-				tmpstr, name, suffix);
+				tmpstr, prefix, name, suffix);
 		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
 			IDL_tree subtype = get_type_spec(
 				IDL_TYPE_SEQUENCE(type).simple_type_spec);
 			tmpstr = fixed_type(pr->ns, subtype);
-			code_f(pr, "%s%s *p_%s,",
+			code_f(pr, "%s%s *%s%s,",
 				attr == IDL_PARAM_IN ? "const " : "",
-				tmpstr, name);
-			code_f(pr, "unsigned int %sp_%s_len%s%s",
-				attr != IDL_PARAM_IN ? "*" : "", name,
+				tmpstr, prefix, name);
+			code_f(pr, "unsigned int %s%s%s_len%s%s",
+				attr != IDL_PARAM_IN ? "*" : "", prefix, name,
 				attr != IDL_PARAM_IN ? "_ptr" : "", suffix);
 		} else {
 			/* TODO: handle structs, strings, arrays etc */

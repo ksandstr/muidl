@@ -270,9 +270,13 @@ bool is_value_type(IDL_tree type)
 			return false;
 
 		case IDLN_NATIVE:
-			if(IS_WORD_TYPE(type) || IS_FPAGE_TYPE(type)) return true;
-			else if(IS_MAPGRANT_TYPE(type)) return false;	/* rigid */
-			else {
+			if(IS_WORD_TYPE(type) || IS_FPAGE_TYPE(type)
+				|| IS_TIME_TYPE(type))
+			{
+				return true;
+			} else if(IS_MAPGRANT_TYPE(type)) {
+				return false;	/* rigid, but not single-word */
+			} else {
 				/* FIXME: don't exit */
 				fprintf(stderr, "%s: unknown native type `%s'\n",
 					__FUNCTION__, NATIVE_NAME(type));
@@ -332,6 +336,7 @@ char *value_type(IDL_ns ns, IDL_tree type)
 			case IDLN_NATIVE: {
 				if(IS_WORD_TYPE(type)) return g_strdup("L4_Word_t");
 				else if(IS_FPAGE_TYPE(type)) return g_strdup("L4_Fpage_t");
+				else if(IS_TIME_TYPE(type)) return g_strdup("L4_Time_t");
 				else {
 					fprintf(stderr, "%s: native type `%s' not supported\n",
 						__FUNCTION__, NATIVE_NAME(type));
