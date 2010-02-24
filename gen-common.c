@@ -137,11 +137,7 @@ static void print_vtable(
 }
 
 
-/* from the stub's POV; the server only cares about transfer timeouts. */
-#define TIMEOUT_SEND (1 << 0)
-#define TIMEOUT_RECV (1 << 1)
-
-static int op_timeout_kind(IDL_tree opdcl)
+int op_timeout_kind(IDL_tree opdcl)
 {
 	int ret = 0;
 	IDL_tree propnode = IDL_OP_DCL(opdcl).ident;
@@ -163,10 +159,11 @@ static void print_extern_prototype(
 	struct print_ctx *pr,
 	const char *stubpfx,
 	IDL_tree op_dcl,
-	IDL_tree params)
+	IDL_tree params,
+	int tok)
 {
 	fprintf(pr->of, "extern ");
-	print_generic_stub_decl(pr, stubpfx, op_dcl, params);
+	print_generic_stub_decl(pr, stubpfx, op_dcl, params, tok);
 	int n = fseek(pr->of, -1, SEEK_CUR);
 	if(n != 0) {
 		/* FIXME: yeah, get us a variant of code_f() that can be told to skip
@@ -210,47 +207,11 @@ static gboolean print_stub_protos(IDL_tree_func_data *tf, gpointer userdata)
 
 	int tok = op_timeout_kind(opdcl);
 	IDL_tree params = IDL_OP_DCL(opdcl).parameter_dcls;
-	if(tok != 0) {
-		IDL_tree to_params = NULL;
-		/* copy the old parameter decls. */
-		for(IDL_tree cur = params; cur != NULL; cur = IDL_LIST(cur).next) {
-			to_params = IDL_list_concat(to_params,
-				IDL_list_new(IDL_LIST(cur).data));
-		}
-		/* add timeout parameters. */
-		static const char *to_names[] = {
-			"__send_timeout", "__recv_timeout",
-		};
-		for(int i=0; i<2; i++) {
-			if((tok & (1 << i)) == 0) continue;
-			IDL_tree param = IDL_param_dcl_new(IDL_PARAM_IN,
-				IDL_native_new(IDL_ident_new(g_strdup("l4_time_t"))),
-				IDL_ident_new(g_strdup(to_names[i])));
-			to_params = IDL_list_concat(to_params, IDL_list_new(param));
-		}
-
-		/* hax! */
-		IDL_tree old_ident = IDL_OP_DCL(opdcl).ident;
-		IDL_OP_DCL(opdcl).ident = IDL_ident_new(
-			g_strdup_printf("%s_timeout", IDL_IDENT(old_ident).str));
-		print_extern_prototype(pr, stubpfx, opdcl, to_params);
-		IDL_tree_free(IDL_OP_DCL(opdcl).ident);
-		IDL_OP_DCL(opdcl).ident = old_ident;
-
-		/* prevent loss of the previous params list's bits along with the
-		 * bathwater
-		 */
-		IDL_tree node = to_params;
-		for(int i=0, l=IDL_list_length(params); i<l; i++) {
-			assert(node != NULL);
-			assert(IDL_LIST(node).data == IDL_LIST(IDL_list_nth(params, i)).data);
-			IDL_LIST(node).data = NULL;
-			node = IDL_LIST(node).next;
-		}
-		IDL_tree_free(to_params);
-	}
-
-	print_extern_prototype(pr, stubpfx, tf->tree, params);
+	if(tok != 0) print_extern_prototype(pr, stubpfx, tf->tree, params, tok);
+	/* (TODO: should there be an attribute for not generating the "wait
+	 * forever" default stub?)
+	 */
+	print_extern_prototype(pr, stubpfx, tf->tree, params, 0);
 
 	/* looked at the op dcl already. */
 	return FALSE;

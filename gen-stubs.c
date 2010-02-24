@@ -48,20 +48,24 @@ void print_generic_stub_decl(
 	struct print_ctx *pr,
 	const char *stubpfx,
 	IDL_tree op,
-	IDL_tree params)
+	IDL_tree params,
+	int tok)		/* timeout kind mask */
 {
 	char *name = decapsify(METHOD_NAME(op)),
 		*rettypstr = return_type(pr->ns, op, NULL);
 	bool pt = has_pager_target(pr->ns, op);
-	code_f(pr, "%s%s%s(%s", rettypstr, type_space(rettypstr),
+	code_f(pr, "%s%s%s%s(%s", rettypstr, type_space(rettypstr),
 		stubpfx == NULL ? name : tmp_f(pr, "%s_%s", stubpfx, name),
-		params == NULL ? (pt ? "void)" : "L4_ThreadId_t _service_tid)") : "");
-	g_free(name);
-	g_free(rettypstr);
-	if(params != NULL) {
+		tok != 0 ? "_timeout" : "",
+		tok == 0 && params == NULL
+			? (pt ? "void)" : "L4_ThreadId_t _service_tid)")
+			: "");
+	if(tok != 0 || params != NULL) {
 		indent(pr, 1);
 		if(!pt) code_f(pr, "L4_ThreadId_t _service_tid,");
 	}
+	g_free(name);
+	g_free(rettypstr);
 	for(IDL_tree cur = params; cur != NULL; cur = IDL_LIST(cur).next) {
 		IDL_tree param = IDL_LIST(cur).data;
 		enum IDL_param_attr attr = IDL_PARAM_DCL(param).attr;
@@ -69,7 +73,7 @@ void print_generic_stub_decl(
 				IDL_PARAM_DCL(param).param_type_spec),
 			decl = IDL_PARAM_DCL(param).simple_declarator;
 		const char *name = IDL_IDENT(decl).str,
-			*suffix = IDL_LIST(cur).next == NULL ? ")" : ",";
+			*suffix = tok == 0 && IDL_LIST(cur).next == NULL ? ")" : ",";
 
 		char *tmpstr = NULL;
 		const char *prefix;
@@ -98,7 +102,19 @@ void print_generic_stub_decl(
 		}
 		g_free(tmpstr);
 	}
-	if(params != NULL) indent(pr, -1);
+	if(tok != 0) {
+		/* add timeout parameters. */
+		static const char *to_names[] = {
+			"__send_timeout", "__recv_timeout",
+		};
+		for(int i=0; i<2; i++) {
+			if((tok & (1 << i)) == 0) continue;
+			code_f(pr, "L4_Time_t %s%c", to_names[i],
+				tok >> (i + 1) != 0 ? ',' : ')');
+		}
+
+	}
+	if(params != NULL || tok != 0) indent(pr, -1);
 }
 
 
@@ -146,7 +162,7 @@ static void print_stubs_for_iface(struct print_ctx *pr, IDL_tree iface)
 		if(stubpfx == NULL) stubpfx = iface_stubpfx;
 
 		/* declaration */
-		print_generic_stub_decl(pr, stubpfx, op, params);
+		print_generic_stub_decl(pr, stubpfx, op, params, 0);
 
 		/* body */
 		code_f(pr, "{");

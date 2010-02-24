@@ -84,6 +84,13 @@
 		abort(); \
 	} while(0)
 
+/* masked return values of op_timeout_kind().
+ * these are from the stub's POV; the server only cares about transfer
+ * timeouts.
+ */
+#define TIMEOUT_SEND (1 << 0)
+#define TIMEOUT_RECV (1 << 1)
+
 
 struct print_ctx
 {
@@ -304,6 +311,8 @@ extern bool verify_idl_input(IDL_ns ns, IDL_tree tree);
 
 extern void print_common_header(struct print_ctx *pr);
 
+extern int op_timeout_kind(IDL_tree opdcl);	/* returns mask of TIMEOUT_* */
+
 
 /* from gen-stubs.c */
 
@@ -312,7 +321,8 @@ extern void print_generic_stub_decl(
 	struct print_ctx *pr,
 	const char *stubpfx,
 	IDL_tree op,
-	IDL_tree params);
+	IDL_tree params,
+	int timeout_kind);		/* nonzero adds _timeout to stub name */
 
 
 #endif
