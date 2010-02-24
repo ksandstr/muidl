@@ -154,6 +154,10 @@ static void print_stubs_for_iface(struct print_ctx *pr, IDL_tree iface)
 	{
 		IDL_tree op = cur->data,
 			params = IDL_OP_DCL(op).parameter_dcls;
+		/* FIXME: if tok != 0, output also the timeout-less convenience
+		 * stub.
+		 */
+		const int tok = op_timeout_kind(op);
 		struct method_info *inf = analyse_op_dcl(pr, op);
 		g_return_if_fail(inf != NULL);
 
@@ -162,7 +166,7 @@ static void print_stubs_for_iface(struct print_ctx *pr, IDL_tree iface)
 		if(stubpfx == NULL) stubpfx = iface_stubpfx;
 
 		/* declaration */
-		print_generic_stub_decl(pr, stubpfx, op, params, 0);
+		print_generic_stub_decl(pr, stubpfx, op, params, tok);
 
 		/* body */
 		code_f(pr, "{");
@@ -190,9 +194,13 @@ static void print_stubs_for_iface(struct print_ctx *pr, IDL_tree iface)
 		 */
 		code_f(pr, "L4_Accept(L4_UntypedWordsAcceptor);\n"
 				   "L4_MsgLoad(&msg);");
-		code_f(pr, "L4_MsgTag_t tag = L4_%s(%s);",
-			inf->num_reply_msgs > 0 ? "Call" : "Send",
+		code_f(pr, "const L4_ThreadId_t peer = %s;",
 			has_pager_target(pr->ns, inf->node) ? "L4_Pager()" : "_service_tid");
+		code_f(pr, "L4_ThreadId_t from_dummy;");
+		code_f(pr, "L4_MsgTag_t tag = L4_Ipc(peer, peer,\n"
+					"\tL4_Timeouts(%s, %s), &from_dummy);",
+			(tok & TIMEOUT_SEND) ? "__send_timeout" : "L4_Never",
+			(tok & TIMEOUT_RECV) ? "__recv_timeout" : "L4_Never");
 
 		/* handle IPC failure. */
 		code_f(pr, "if(L4_IpcFailed(tag)) return (int)L4_ErrorCode();");
