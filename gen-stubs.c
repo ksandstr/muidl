@@ -197,8 +197,9 @@ static void print_stubs_for_iface(struct print_ctx *pr, IDL_tree iface)
 		code_f(pr, "const L4_ThreadId_t peer = %s;",
 			has_pager_target(pr->ns, inf->node) ? "L4_Pager()" : "_service_tid");
 		code_f(pr, "L4_ThreadId_t from_dummy;");
-		code_f(pr, "L4_MsgTag_t tag = L4_Ipc(peer, peer,\n"
+		code_f(pr, "L4_MsgTag_t tag = L4_Ipc(peer, %s,\n"
 					"\tL4_Timeouts(%s, %s), &from_dummy);",
+			IDL_OP_DCL(inf->node).f_oneway ? "L4_nilthread" : "peer",
 			(tok & TIMEOUT_SEND) ? "__send_timeout" : "L4_Never",
 			(tok & TIMEOUT_RECV) ? "__recv_timeout" : "L4_Never");
 
