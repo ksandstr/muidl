@@ -102,7 +102,7 @@ static int each_stub_parameter(
 		} else if(is_rigid_type(pr->ns, type)) {
 			tmpstr = fixed_type(pr->ns, type);
 			(*paramfn)(pr, pnum++,
-				tmp_f(pr, "%s%s *", attr == IDL_PARAM_IN ? "const " : "",
+				tmp_f(pr, "%s%s *", in_only ? "const " : "",
 					tmpstr), c_name, is_last);
 		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
 			IDL_tree subtype = get_type_spec(
@@ -213,7 +213,7 @@ static void print_stub_timeout_wrapper(
 	char *rettypstr = return_type(pr->ns, inf->node, NULL);
 	char *callhead = tmp_f(pr, "%s%s",
 		strcmp(rettypstr, "void") == 0 ? "" : "return ",
-		stub_name(pr, stubpfx, inf->node, 0));
+		stub_name(pr, stubpfx, inf->node, tok));
 	g_free(rettypstr);
 
 	void each_param(
