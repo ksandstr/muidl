@@ -71,13 +71,13 @@ typedef void (*param_fn)(
 static int each_stub_parameter(
 	struct print_ctx *pr,
 	IDL_tree op,
-	IDL_tree params,
 	int tok,		/* timeout kind mask */
 	param_fn paramfn)
 {
 	assert((tok & ~(TIMEOUT_SEND | TIMEOUT_RECV)) == 0);
 	int pnum = 0;	/* just a counter for the callback */
 
+	IDL_tree params = IDL_OP_DCL(op).parameter_dcls;
 	if(!has_pager_target(pr->ns, op)) {
 		(*paramfn)(pr, pnum++, "L4_ThreadId_t", "_service_tid",
 			tok == 0 && params == NULL);
@@ -141,7 +141,6 @@ void print_generic_stub_decl(
 	struct print_ctx *pr,
 	const char *stubpfx,
 	IDL_tree op,
-	IDL_tree params,
 	int tok)		/* timeout kind mask */
 {
 	char *rettypstr = return_type(pr->ns, op, NULL);
@@ -168,7 +167,7 @@ void print_generic_stub_decl(
 		}
 	};
 
-	int n = each_stub_parameter(pr, op, params, tok, &each_param);
+	int n = each_stub_parameter(pr, op, tok, &each_param);
 	if(n == 0) code_f(pr, "%s(void)", stubhead);
 }
 
@@ -201,12 +200,11 @@ static void print_stub_timeout_wrapper(
 	struct print_ctx *pr,
 	const char *stubpfx,
 	struct method_info *inf,
-	IDL_tree params,
 	int tok)
 {
 	assert(tok != 0);
 
-	print_generic_stub_decl(pr, stubpfx, inf->node, params, 0);
+	print_generic_stub_decl(pr, stubpfx, inf->node, 0);
 	code_f(pr, "{"); indent(pr, 1);
 
 	/* figure out if the stub is void or not. TODO: replace with an
@@ -240,7 +238,7 @@ static void print_stub_timeout_wrapper(
 		}
 	};
 
-	int n = each_stub_parameter(pr, inf->node, params, tok, &each_param);
+	int n = each_stub_parameter(pr, inf->node, tok, &each_param);
 	if(n == 0) code_f(pr, "%s();", callhead);
 
 	close_brace(pr);
@@ -257,8 +255,7 @@ static void print_stubs_for_iface(struct print_ctx *pr, IDL_tree iface)
 		cur != NULL;
 		cur = g_list_next(cur))
 	{
-		IDL_tree op = cur->data,
-			params = IDL_OP_DCL(op).parameter_dcls;
+		IDL_tree op = cur->data;
 		const int tok = op_timeout_kind(op);
 		struct method_info *inf = analyse_op_dcl(pr, op);
 		g_return_if_fail(inf != NULL);
@@ -268,7 +265,7 @@ static void print_stubs_for_iface(struct print_ctx *pr, IDL_tree iface)
 		if(stubpfx == NULL) stubpfx = iface_stubpfx;
 
 		/* declaration */
-		print_generic_stub_decl(pr, stubpfx, op, params, tok);
+		print_generic_stub_decl(pr, stubpfx, op, tok);
 
 		/* body */
 		code_f(pr, "{");
@@ -368,7 +365,7 @@ static void print_stubs_for_iface(struct print_ctx *pr, IDL_tree iface)
 			/* convenience wrapper, so that callers don't need to say
 			 * "..._timeout(..., L4_Never, L4_Never)"
 			 */
-			print_stub_timeout_wrapper(pr, stubpfx, inf, params, tok);
+			print_stub_timeout_wrapper(pr, stubpfx, inf, tok);
 		}
 
 		free_method_info(inf);

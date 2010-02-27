@@ -321,7 +321,6 @@ extern void print_generic_stub_decl(
 	struct print_ctx *pr,
 	const char *stubpfx,
 	IDL_tree op,
-	IDL_tree params,
 	int timeout_kind);		/* nonzero adds _timeout to stub name */
 
 

@@ -159,11 +159,10 @@ static void print_extern_prototype(
 	struct print_ctx *pr,
 	const char *stubpfx,
 	IDL_tree op_dcl,
-	IDL_tree params,
 	int tok)
 {
 	fprintf(pr->of, "extern ");
-	print_generic_stub_decl(pr, stubpfx, op_dcl, params, tok);
+	print_generic_stub_decl(pr, stubpfx, op_dcl, tok);
 	int n = fseek(pr->of, -1, SEEK_CUR);
 	if(n != 0) {
 		/* FIXME: yeah, get us a variant of code_f() that can be told to skip
@@ -206,12 +205,11 @@ static gboolean print_stub_protos(IDL_tree_func_data *tf, gpointer userdata)
 	}
 
 	int tok = op_timeout_kind(opdcl);
-	IDL_tree params = IDL_OP_DCL(opdcl).parameter_dcls;
-	if(tok != 0) print_extern_prototype(pr, stubpfx, tf->tree, params, tok);
+	if(tok != 0) print_extern_prototype(pr, stubpfx, tf->tree, tok);
 	/* (TODO: should there be an attribute for not generating the "wait
 	 * forever" default stub?)
 	 */
-	print_extern_prototype(pr, stubpfx, tf->tree, params, 0);
+	print_extern_prototype(pr, stubpfx, tf->tree, 0);
 
 	/* looked at the op dcl already. */
 	return FALSE;
