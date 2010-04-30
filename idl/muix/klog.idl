@@ -1,0 +1,20 @@
+
+/* an approximation of the µiX Klog interface. test case for the "return with
+ * value from void function" issue.
+ */
+
+#include "muix/muix.idl"
+
+module muix
+{
+
+[StubPrefix(__klog), IfaceLabel(0xFEED)]
+interface Klog
+{
+	const long MAX_SEND_LENGTH = 128;
+
+	[Label(1), StubSendTimeout]
+	oneway void putstr_quick(in string<MAX_SEND_LENGTH> str);
+};
+
+};

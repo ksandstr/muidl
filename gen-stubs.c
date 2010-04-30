@@ -143,7 +143,7 @@ void print_generic_stub_decl(
 	IDL_tree op,
 	int tok)		/* timeout kind mask */
 {
-	char *rettypstr = return_type(pr->ns, op, NULL);
+	char *rettypstr = return_type(pr->ns, op, NULL, false);
 	char *stubhead = tmp_f(pr, "%s%s%s", rettypstr, type_space(rettypstr),
 		stub_name(pr, stubpfx, op, tok));
 	g_free(rettypstr);
@@ -210,7 +210,7 @@ static void print_stub_timeout_wrapper(
 	/* figure out if the stub is void or not. TODO: replace with an
 	 * is_void_stub() or some such.
 	 */
-	char *rettypstr = return_type(pr->ns, inf->node, NULL);
+	char *rettypstr = return_type(pr->ns, inf->node, NULL, false);
 	char *callhead = tmp_f(pr, "%s%s",
 		strcmp(rettypstr, "void") == 0 ? "" : "return ",
 		stub_name(pr, stubpfx, inf->node, tok));

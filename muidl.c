@@ -492,13 +492,31 @@ char *rigid_type(IDL_ns ns, IDL_tree type)
 }
 
 
-char *return_type(IDL_ns ns, IDL_tree op, bool *real_p)
+static bool has_timeouts(IDL_tree op)
+{
+	static const char *const kinds[] = {
+		"StubSendTimeout", "StubRecvTimeout",
+		/* TODO: add xfer timeout also */
+	};
+	IDL_tree p = IDL_OP_DCL(op).ident;
+	for(int i=0; i<G_N_ELEMENTS(kinds); i++) {
+		if(IDL_tree_property_get(p, kinds[i]) != NULL) return true;
+	}
+	return false;
+}
+
+
+char *return_type(
+	IDL_ns ns,
+	IDL_tree op,
+	bool *real_p,
+	bool for_vtable)
 {
 	bool spare_bool;
 	if(real_p == NULL) real_p = &spare_bool;
 
 	IDL_tree op_type = get_type_spec(IDL_OP_DCL(op).op_type_spec);
-	if(find_neg_exn(op) != NULL) {
+	if(find_neg_exn(op) != NULL || (!for_vtable && has_timeouts(op))) {
 		*real_p = false;
 		return g_strdup("int");
 	} else if(op_type == NULL || !is_value_type(op_type)) {
@@ -1022,7 +1040,7 @@ static void print_op_decode(
 	}
 
 	bool ret_is_real;
-	char *rtstr = return_type(pr->ns, inf->node, &ret_is_real),
+	char *rtstr = return_type(pr->ns, inf->node, &ret_is_real, true),
 		*name = decapsify(METHOD_NAME(inf->node));
 	const bool is_voidfn = strcmp(rtstr, "void") == 0;
 

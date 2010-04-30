@@ -206,7 +206,11 @@ extern char *vtable_prefix(IDL_ns ns, IDL_tree iface);
 extern char *dispatcher_name(IDL_ns ns, IDL_tree iface, char **vtprefix_p);
 extern GList *all_methods_of_iface(IDL_ns ns, IDL_tree iface);
 extern char *decapsify(const char *name);
-extern char *return_type(IDL_ns ns, IDL_tree opdcl, bool *real_p);
+extern char *return_type(
+	IDL_ns ns,
+	IDL_tree opdcl,
+	bool *real_p,
+	bool for_vtable);
 extern char *in_param_type(IDL_ns ns, IDL_tree tree);
 extern char *long_name(IDL_ns ns, IDL_tree node);
 

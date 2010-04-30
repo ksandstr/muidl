@@ -71,7 +71,7 @@ static void print_vtable(
 	{
 		IDL_tree op = cur->data;
 
-		char *rettypstr = return_type(ns, op, NULL),
+		char *rettypstr = return_type(ns, op, NULL, true),
 			*name = decapsify(METHOD_NAME(op));
 		fprintf(of, "\t%s%s(*%s)(", rettypstr, type_space(rettypstr), name);
 		g_free(rettypstr);
