@@ -1,8 +1,10 @@
 
 PKG=libIDL-2.0 glib-2.0
 PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib/pkgconfig
-CFLAGS:=-std=gnu99 -Wall -g $(shell pkg-config --cflags $(PKG)) -O2 -march=native
-LIBS:=-lm $(shell pkg-config --libs $(PKG))
+LLVM_BITS=backend
+CFLAGS:=-std=gnu99 -Wall -g -O2 -march=native \
+	$(shell pkg-config --cflags $(PKG))
+LIBS:=-lm $(shell pkg-config --libs $(PKG)) $(shell llvm-config --libs $(LLVM_BITS))
 
 AUTOTEST_FILES := $(wildcard test*.idl)
 

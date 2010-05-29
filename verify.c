@@ -1,6 +1,6 @@
 /*
  * verify.c -- verification of IDL tree inputs
- * Copyright 2009  Kalle A. Sandström <ksandstr@iki.fi>
+ * Copyright 2009, 2010  Kalle A. Sandström <ksandstr@iki.fi>
  *
  * This file is part of µiX.
  *
@@ -17,8 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with µiX.  If not, see <http://www.gnu.org/licenses/>.
  */
-
-#define _GNU_SOURCE
 
 #include <glib.h>
 #include <stdio.h>

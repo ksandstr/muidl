@@ -18,8 +18,6 @@
  * along with µiX.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _GNU_SOURCE
-
 #include <glib.h>
 #include <stdlib.h>
 #include <stdarg.h>
