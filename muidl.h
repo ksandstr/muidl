@@ -32,6 +32,8 @@
 #include <libIDL/IDL.h>
 #include <glib.h>
 
+#include <llvm-c/Core.h>
+
 
 /* FIXME: make this per-target, i.e. independent of the current platform. */
 #define BITS_PER_WORD 32
@@ -107,6 +109,18 @@ struct print_ctx
 
 	/* error handling bits */
 	jmp_buf fail_to;
+};
+
+
+struct llvm_ctx
+{
+	struct print_ctx *pr;
+	IDL_ns ns;
+	LLVMContextRef ctx;
+	LLVMModuleRef module;
+	LLVMBuilderRef builder;
+	LLVMTypeRef wordt, i32t, voidptrt;
+	LLVMValueRef zero;
 };
 
 
@@ -327,5 +341,11 @@ extern void print_generic_stub_decl(
 	IDL_tree op,
 	int timeout_kind);		/* nonzero adds _timeout to stub name */
 
+
+/* from dispatch.c */
+
+extern LLVMValueRef build_dispatcher_function(
+	struct llvm_ctx *ctx,
+	IDL_tree iface);
 
 #endif

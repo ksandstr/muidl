@@ -1626,6 +1626,41 @@ static void print_into(
 }
 
 
+static gboolean iter_emit_dispatchers(IDL_tree_func_data *tf, void *ud)
+{
+	struct llvm_ctx *ctx = ud;
+	switch(IDL_NODE_TYPE(tf->tree)) {
+		case IDLN_LIST:
+		case IDLN_MODULE:
+		case IDLN_SRCFILE:
+			return TRUE;
+
+		default: return FALSE;
+
+		case IDLN_INTERFACE:
+			/* TODO: consider exceptions. */
+			build_dispatcher_function(ctx, tf->tree);
+			return FALSE;
+	}
+}
+
+
+static LLVMModuleRef make_llvm_service_module(
+	struct llvm_ctx *ctx,
+	const char *basename)
+{
+	LLVMModuleRef mod = LLVMModuleCreateWithNameInContext(basename, ctx->ctx);
+	ctx->module = mod;
+
+	/* TODO: add extern functions */
+
+	IDL_tree_walk_in_order(ctx->pr->tree, &iter_emit_dispatchers, ctx);
+
+	ctx->module = NULL;
+	return mod;
+}
+
+
 bool do_idl_file(const char *cppopts, const char *filename)
 {
 	IDL_tree tree = NULL;
@@ -1681,6 +1716,20 @@ bool do_idl_file(const char *cppopts, const char *filename)
 		print_into(tmp_f(&print_ctx, "%s-client.c", basename),
 			&print_stubs_file, &print_ctx);
 	}
+
+	/* FIXME: make this governed by a sane commandline interface */
+	struct llvm_ctx lc = {
+		.pr = &print_ctx,
+		.ns = ns,
+		.ctx = LLVMContextCreate(),
+	};
+	lc.i32t = LLVMInt32TypeInContext(lc.ctx);
+	lc.wordt = lc.i32t;
+	lc.voidptrt = LLVMPointerType(LLVMInt8TypeInContext(lc.ctx), 0);
+	lc.zero = LLVMConstInt(lc.i32t, 0, 0);
+	LLVMModuleRef mod = make_llvm_service_module(&lc, basename);
+	LLVMDumpModule(mod);
+	LLVMDisposeModule(mod);
 
 	g_string_chunk_free(print_ctx.tmpstrchunk);
 	g_hash_table_destroy(ifaces);
