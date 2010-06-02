@@ -1,0 +1,15 @@
+
+#ifndef SEEN_MUIDL_IDL_TRIVIAL_TEST
+#define SEEN_MUIDL_IDL_TRIVIAL_TEST
+
+
+[StubPrefix(__countserv)]
+interface Countserv
+{
+	/* you may hyperventilate! */
+	long bump();
+	void set(in long value);
+};
+
+
+#endif

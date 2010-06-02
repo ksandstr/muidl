@@ -121,6 +121,13 @@ struct llvm_ctx
 	LLVMBuilderRef builder;
 	LLVMTypeRef wordt, i32t, voidptrt;
 	LLVMValueRef zero;
+
+	/* used by dispatcher building etc; common L4 IPC stuff */
+	LLVMValueRef utcb, from, mr1, mr2, tag;
+
+	/* dispatcher-specific things */
+	LLVMBasicBlockRef reply_bb, msgerr_bb;
+	LLVMValueRef vtab_arg, reply_tag;
 };
 
 

@@ -145,12 +145,139 @@ static LLVMValueRef build_t_from_tag(
 }
 
 
-/* TODO: make this cache things in @ctx, and move it into a llvmutil.c or some
- * such
+/* FIXME: move this into a llvmutil.c or some such
+ * FIXME: also get the LLVM context from somewhere.
+ */
+static LLVMTypeRef llvm_value_type(IDL_tree type)
+{
+	if(type == NULL) return LLVMVoidType();
+	switch(IDL_NODE_TYPE(type)) {
+		case IDLN_TYPE_INTEGER: {
+			static short bitlens[] = {
+				[IDL_INTEGER_TYPE_SHORT] = 16,
+				[IDL_INTEGER_TYPE_LONG] = 32,
+				[IDL_INTEGER_TYPE_LONGLONG] = 64,
+			};
+			int t = IDL_TYPE_INTEGER(type).f_type;
+			assert(t < G_N_ELEMENTS(bitlens));
+			/* NOTE: discards signedness info */
+			return LLVMIntType(bitlens[t]);
+		}
+
+		case IDLN_NATIVE: {
+			/* each of these is the size of a single word, which is all LLVM
+			 * wants to know.
+			 */
+			if(IS_WORD_TYPE(type) || IS_FPAGE_TYPE(type)
+				|| IS_TIME_TYPE(type))
+			{
+				/* FIXME: get word size from arch spec! */
+				return LLVMIntType(32);
+			} else {
+				fprintf(stderr, "%s: native type `%s' not supported\n",
+					__FUNCTION__, NATIVE_NAME(type));
+				exit(EXIT_FAILURE);
+			}
+			break;
+		}
+
+		case IDLN_TYPE_FLOAT:
+			switch(IDL_TYPE_FLOAT(type).f_type) {
+				case IDL_FLOAT_TYPE_FLOAT: return LLVMFloatType();
+				case IDL_FLOAT_TYPE_DOUBLE: return LLVMDoubleType();
+				case IDL_FLOAT_TYPE_LONGDOUBLE: return LLVMFP128Type();
+			}
+			g_assert_not_reached();
+
+		case IDLN_TYPE_BOOLEAN:
+		case IDLN_TYPE_OCTET:
+		case IDLN_TYPE_CHAR:
+			return LLVMIntType(8);
+		case IDLN_TYPE_WIDE_CHAR:
+			return LLVMIntType(32);
+
+		/* FIXME: should be the native int type */
+		case IDLN_TYPE_ENUM: return LLVMIntType(32);
+
+		default:
+			NOTDEFINED(type);
+	}
+}
+
+
+static void emit_in_parameter(
+	struct llvm_ctx *ctx,
+	LLVMTypeRef *dst,
+	int *pos_p,
+	IDL_tree type)
+{
+	if(is_value_type(type)) {
+		dst[(*pos_p)++] = llvm_value_type(type);
+	} else if(is_rigid_type(ctx->ns, type)) {
+		/* FIXME: handle structs, arrays, unions */
+		NOTDEFINED(type);
+	} else {
+		/* FIXME: handle sequences, strings, wide strings */
+		NOTDEFINED(type);
+	}
+}
+
+
+static void emit_out_parameter(
+	struct llvm_ctx *ctx,
+	LLVMTypeRef *dst,
+	int *pos_p,
+	IDL_tree type)
+{
+	printf("warning: not emitting llvm out-parameter for <%s>\n",
+		IDL_NODE_TYPE_NAME(type));
+}
+
+
+/* TODO: wrap this to cache things in @ctx, and move it into a llvmutil.c or
+ * some such
  */
 static LLVMTypeRef get_vtable_type(struct llvm_ctx *ctx, IDL_tree iface)
 {
-	/* TODO: derive from the interface... */
+	GList *methods = all_methods_of_iface(ctx->ns, iface);
+	for(GList *cur = g_list_first(methods);
+		cur != NULL;
+		cur = g_list_next(cur))
+	{
+		IDL_tree op = cur->data,
+			rettyp = get_type_spec(IDL_OP_DCL(op).op_type_spec),
+			param_list = IDL_OP_DCL(op).parameter_dcls;
+		/* each can be an out sequence, the return value too */
+		const int n_params_max = IDL_list_length(param_list) * 2
+			+ (rettyp != NULL ? 2 : 0);
+		LLVMTypeRef param_types[n_params_max];
+		int p_pos = 0;
+		if(rettyp != NULL) {
+			emit_out_parameter(ctx, param_types, &p_pos, rettyp);
+		}
+		for(IDL_tree p_cur = param_list;
+			p_cur != NULL;
+			p_cur = IDL_LIST(p_cur).next)
+		{
+			assert(p_pos < n_params_max);
+			IDL_tree pdecl = IDL_LIST(p_cur).data,
+				ptype = get_type_spec(IDL_PARAM_DCL(pdecl).param_type_spec);
+			switch(IDL_PARAM_DCL(pdecl).attr) {
+				case IDL_PARAM_IN:
+					emit_in_parameter(ctx, param_types, &p_pos, ptype);
+					break;
+
+				/* inout parameters are passed exactly like out-parameters, but
+				 * with a value already present.
+				 */
+				case IDL_PARAM_OUT:
+				case IDL_PARAM_INOUT:
+					emit_out_parameter(ctx, param_types, &p_pos, ptype);
+					break;
+			}
+		}
+	}
+	g_list_free(methods);
 
 	LLVMTypeRef assoc_fn_type = LLVMFunctionType(ctx->i32t, &ctx->i32t, 1, 0),
 		fn_types[] = {
@@ -162,14 +289,84 @@ static LLVMTypeRef get_vtable_type(struct llvm_ctx *ctx, IDL_tree iface)
 }
 
 
+static LLVMBasicBlockRef build_op_decode(
+	struct llvm_ctx *ctx,
+	LLVMValueRef function,
+	const struct method_info *inf)
+{
+	struct print_ctx *pr = ctx->pr;
+	char *name = IDL_NODE_TYPE(inf->node) == IDLN_OP_DCL
+		? decapsify(IDL_IDENT(IDL_OP_DCL(inf->node).ident).str)
+		: decapsify(IDL_IDENT(IDL_EXCEPT_DCL(inf->node).ident).str);
+	char *opname = g_strdup_printf("decode.%s", name);
+	LLVMBasicBlockRef bb = LLVMAppendBasicBlockInContext(ctx->ctx,
+		function, opname);
+	g_free(name);
+
+	/* (TODO: we're allowed to do this, right?) */
+	LLVMPositionBuilderAtEnd(ctx->builder, bb);
+
+	/* collection of arguments.
+	 *
+	 * FIXME: this only does the "in" half. the vtable prototype has arguments
+	 * for "out" halves as well.
+	 */
+	const struct message_info *req = inf->request;
+	int num_args = req->num_untyped + req->num_inline_seq * 2
+		+ req->num_long * 2, arg_pos = 0;
+	LLVMValueRef args[num_args];
+	for(int i=0; i < req->num_untyped; i++) {
+		const struct untyped_param *u = req->untyped[i];
+		assert(is_value_type(u->type));
+		/* simple types are carried in a single argument. */
+		LLVMTypeRef vt = llvm_value_type(u->type);
+		int mr = u->first_reg;
+		assert(u->first_reg == u->last_reg);
+		LLVMValueRef reg;
+		if(mr == 1) reg = ctx->mr1;
+		else if(mr == 2) reg = ctx->mr2;
+		else {
+			reg = LLVMBuildLoad(ctx->builder,
+				build_utcb_address(ctx, ctx->utcb, mr * 4),
+				tmp_f(pr, "mr%d", mr));
+		}
+		args[arg_pos++] = LLVMBuildIntCast(ctx->builder, reg, vt,
+			tmp_f(pr, "arg.u%d", i));
+	}
+
+	/* the function call.
+	 *
+	 * FIXME: get vtable offset somehow!
+	 */
+	LLVMValueRef fnptr = LLVMBuildLoad(ctx->builder,
+		LLVMBuildStructGEP(ctx->builder, ctx->vtab_arg, 0,
+				tmp_f(pr, "%s.offs", opname)),
+			tmp_f(pr, "%s.fnptr", opname));
+	LLVMValueRef fncall = LLVMBuildCall(ctx->builder, fnptr,
+		args, arg_pos, tmp_f(pr, "%s.call", opname));
+	LLVMValueRef ok_cond = LLVMBuildICmp(ctx->builder, LLVMIntSGE, fncall,
+		LLVMConstInt(ctx->i32t, 0, 1), "rcneg.cond");
+
+	/* FIXME: load reply registers in UTCB */
+
+	LLVMAddIncoming(ctx->reply_tag, &ctx->zero, &bb, 1);
+	LLVMBuildCondBr(ctx->builder, ok_cond, ctx->reply_bb, ctx->msgerr_bb);
+
+	return bb;
+}
+
+
 LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 {
+	GList *tagmask_list = NULL,
+		*methods = analyse_methods_of_iface(ctx->pr, &tagmask_list, iface);
+
 	LLVMTypeRef param = LLVMPointerType(get_vtable_type(ctx, iface), 0),
 		fn_type = LLVMFunctionType(ctx->wordt, &param, 1, 0);
 
 	char *dispname = dispatcher_name(ctx->ns, iface, NULL);
-	LLVMValueRef fn = LLVMAddFunction(ctx->module, dispname, fn_type),
-		vtab_arg = LLVMGetFirstParam(fn);
+	LLVMValueRef fn = LLVMAddFunction(ctx->module, dispname, fn_type);
+	ctx->vtab_arg = LLVMGetFirstParam(fn);
 	g_free(dispname);
 
 	ctx->builder = LLVMCreateBuilderInContext(ctx->ctx);
@@ -177,55 +374,51 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 		loop_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "loop"),
 		exit_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "exit"),
 		ret_ec_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "ret_errcode"),
-		dispatch_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "dispatch"),
-		reply_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "reply"),
-		msgerr_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "msgerr"),
-		decode_assoc_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "decode.associate"),
-		decode_deassoc_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "decode.deassociate");
+		dispatch_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "dispatch");
+	ctx->reply_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "reply");
+	ctx->msgerr_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "msgerr");
 
 	LLVMPositionBuilderAtEnd(ctx->builder, bb);
-	LLVMValueRef utcb = build_utcb_get(ctx),
-		xfer_timeouts_addr = build_utcb_address(ctx, utcb, -32),
+	ctx->utcb = build_utcb_get(ctx);
+	LLVMValueRef xfer_timeouts_addr = build_utcb_address(ctx, ctx->utcb, -32),
 		stored_timeouts = LLVMBuildLoad(ctx->builder,
 			xfer_timeouts_addr, "stored_timeouts"),
 		acceptor = LLVMConstInt(ctx->i32t, 0, 0);
 	LLVMBuildStore(ctx->builder, acceptor,
-		build_utcb_address(ctx, utcb, -64));
+		build_utcb_address(ctx, ctx->utcb, -64));
 	LLVMBuildStore(ctx->builder, stored_timeouts, xfer_timeouts_addr);
 	LLVMValueRef ipc_from, ipc_mr1, ipc_mr2,
-		ipc_tag = build_l4_ipc_call(ctx, utcb,
+		ipc_tag = build_l4_ipc_call(ctx, ctx->utcb,
 			ctx->zero, LLVMConstNot(ctx->zero), LLVMConstNot(ctx->zero), ctx->zero,
 			&ipc_from, &ipc_mr1, &ipc_mr2);
 	LLVMBuildBr(ctx->builder, loop_bb);
 
 	/* the main dispatch-replywait loop. */
 	LLVMPositionBuilderAtEnd(ctx->builder, loop_bb);
-	LLVMValueRef from_phi = LLVMBuildPhi(ctx->builder, ctx->wordt, "from.phi"),
-		mr1_phi = LLVMBuildPhi(ctx->builder, ctx->wordt, "mr1.phi"),
-		mr2_phi = LLVMBuildPhi(ctx->builder, ctx->wordt, "mr2.phi"),
-		tag_phi = LLVMBuildPhi(ctx->builder, ctx->wordt, "tag.phi");
-	LLVMAddIncoming(from_phi, &ipc_from, &bb, 1);
-	LLVMAddIncoming(mr1_phi, &ipc_mr1, &bb, 1);
-	LLVMAddIncoming(mr2_phi, &ipc_mr2, &bb, 1);
-	LLVMAddIncoming(tag_phi, &ipc_tag, &bb, 1);
-	LLVMBuildCondBr(ctx->builder, build_ipcfailed_cond(ctx, tag_phi),
+	ctx->from = LLVMBuildPhi(ctx->builder, ctx->wordt, "from.phi");
+	ctx->mr1 = LLVMBuildPhi(ctx->builder, ctx->wordt, "mr1.phi");
+	ctx->mr2 = LLVMBuildPhi(ctx->builder, ctx->wordt, "mr2.phi");
+	ctx->tag = LLVMBuildPhi(ctx->builder, ctx->wordt, "tag.phi");
+	LLVMAddIncoming(ctx->from, &ipc_from, &bb, 1);
+	LLVMAddIncoming(ctx->mr1, &ipc_mr1, &bb, 1);
+	LLVMAddIncoming(ctx->mr2, &ipc_mr2, &bb, 1);
+	LLVMAddIncoming(ctx->tag, &ipc_tag, &bb, 1);
+	LLVMBuildCondBr(ctx->builder, build_ipcfailed_cond(ctx, ctx->tag),
 		ret_ec_bb, dispatch_bb);
 
 	/* send reply, receive next message. */
 	/* message registers were already loaded, since ia32 only requires the tag
 	 * in a cpu register.
 	 */
-	LLVMPositionBuilderAtEnd(ctx->builder, reply_bb);
-	/* TODO: compute the right reply tag. */
-	LLVMValueRef reply_tag_phi = LLVMBuildPhi(ctx->builder, ctx->wordt,
-		"replytag.phi");
-	ipc_tag = build_l4_ipc_call(ctx, utcb,
-		from_phi, LLVMConstNot(ctx->zero), LLVMConstNot(ctx->zero),
-		reply_tag_phi, &ipc_from, &ipc_mr1, &ipc_mr2);
-	LLVMAddIncoming(from_phi, &ipc_from, &reply_bb, 1);
-	LLVMAddIncoming(mr1_phi, &ipc_mr1, &reply_bb, 1);
-	LLVMAddIncoming(mr2_phi, &ipc_mr2, &reply_bb, 1);
-	LLVMAddIncoming(tag_phi, &ipc_tag, &reply_bb, 1);
+	LLVMPositionBuilderAtEnd(ctx->builder, ctx->reply_bb);
+	ctx->reply_tag = LLVMBuildPhi(ctx->builder, ctx->wordt, "replytag.phi");
+	ipc_tag = build_l4_ipc_call(ctx, ctx->utcb,
+		ctx->from, LLVMConstNot(ctx->zero), LLVMConstNot(ctx->zero),
+		ctx->reply_tag, &ipc_from, &ipc_mr1, &ipc_mr2);
+	LLVMAddIncoming(ctx->from, &ipc_from, &ctx->reply_bb, 1);
+	LLVMAddIncoming(ctx->mr1, &ipc_mr1, &ctx->reply_bb, 1);
+	LLVMAddIncoming(ctx->mr2, &ipc_mr2, &ctx->reply_bb, 1);
+	LLVMAddIncoming(ctx->tag, &ipc_tag, &ctx->reply_bb, 1);
 	LLVMBuildBr(ctx->builder, loop_bb);
 
 	/* exit */
@@ -236,32 +429,34 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 	/* return L4_ErrorCode(); */
 	LLVMPositionBuilderAtEnd(ctx->builder, ret_ec_bb);
 	LLVMValueRef errorcode = LLVMBuildLoad(ctx->builder,
-		build_utcb_address(ctx, utcb, -36), "errcode");
+		build_utcb_address(ctx, ctx->utcb, -36), "errcode");
 	LLVMAddIncoming(retval, &errorcode, &ret_ec_bb, 1);
 	LLVMBuildBr(ctx->builder, exit_bb);
 
-	/* dispatch according to tag_phi. */
+	/* dispatch according to ctx->tag. */
 	LLVMPositionBuilderAtEnd(ctx->builder, dispatch_bb);
 	/* FIXME: get the correct value */
 	LLVMValueRef labelswitch = LLVMBuildSwitch(ctx->builder,
-		build_label_from_tag(ctx, tag_phi), exit_bb, 2);
+		build_label_from_tag(ctx, ctx->tag), exit_bb, 2);
 	LLVMValueRef unknownlabel = LLVMConstInt(ctx->wordt, 42666, 0);
 	LLVMAddIncoming(retval, &unknownlabel, &dispatch_bb, 1);
-	LLVMAddCase(labelswitch, LLVMConstInt(ctx->wordt, 0xf0ea, 0), decode_assoc_bb);
-	LLVMAddCase(labelswitch, LLVMConstInt(ctx->wordt, 0xf0eb, 0), decode_deassoc_bb);
 
-	/* decode associate(). */
-	LLVMPositionBuilderAtEnd(ctx->builder, decode_assoc_bb);
-	LLVMValueRef arg0 = mr1_phi,
-		fnptr = LLVMBuildLoad(ctx->builder,
-			LLVMBuildStructGEP(ctx->builder, vtab_arg, 0, "assoc.offs"),
-			"assoc.fnptr"),
-		fncall = LLVMBuildCall(ctx->builder, fnptr, &arg0, 1, "assoc.call"),
-		ok_cond = LLVMBuildICmp(ctx->builder, LLVMIntSGE, fncall,
-			LLVMConstInt(ctx->i32t, 0, 1), "rcneg.cond");
-	LLVMAddIncoming(reply_tag_phi, &ctx->zero, &decode_assoc_bb, 1);
-	LLVMBuildCondBr(ctx->builder, ok_cond, reply_bb, msgerr_bb);
+	/* FIXME: support for tag-mask labelled operations, such as for the L4.X2
+	 * pager protocol
+	 */
+	for(GList *cur = g_list_first(methods);
+		cur != NULL;
+		cur = g_list_next(cur))
+	{
+		struct method_info *inf = cur->data;
+		/* FIXME: handle sublabels! */
+		LLVMBasicBlockRef decode_bb = build_op_decode(ctx, fn, inf);
+		LLVMAddCase(labelswitch,
+			LLVMConstInt(ctx->wordt, inf->request->label, 0),
+			decode_bb);
+	}
 
+#if !1
 	/* decode deassociate(). */
 	LLVMPositionBuilderAtEnd(ctx->builder, decode_deassoc_bb);
 	arg0 = mr1_phi;
@@ -272,17 +467,21 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 	ok_cond = LLVMBuildICmp(ctx->builder, LLVMIntSGE, fncall,
 		LLVMConstInt(ctx->i32t, 0, 1), "rcneg.cond");
 	LLVMAddIncoming(reply_tag_phi, &ctx->zero, &decode_deassoc_bb, 1);
-	LLVMBuildCondBr(ctx->builder, ok_cond, reply_bb, msgerr_bb);
+	LLVMBuildCondBr(ctx->builder, ok_cond, ctx->reply_bb, msgerr_bb);
+#endif
 
 	/* send a MSG_ERROR. */
-	LLVMPositionBuilderAtEnd(ctx->builder, msgerr_bb);
+	LLVMPositionBuilderAtEnd(ctx->builder, ctx->msgerr_bb);
 	LLVMValueRef msgerr_tag = LLVMBuildOr(ctx->builder,
 		LLVMConstInt(ctx->wordt, 1, 0), LLVMConstInt(ctx->wordt, 1 << 16, 0),
 		"msgerr.tag");
-	LLVMAddIncoming(reply_tag_phi, &msgerr_tag, &msgerr_bb, 1);
-	LLVMBuildBr(ctx->builder, reply_bb);
+	LLVMAddIncoming(ctx->reply_tag, &msgerr_tag, &ctx->msgerr_bb, 1);
+	LLVMBuildBr(ctx->builder, ctx->reply_bb);
 
 	LLVMDisposeBuilder(ctx->builder);
 	ctx->builder = NULL;
+	g_list_foreach(methods, (GFunc)free_method_info, NULL);
+	g_list_free(methods);
+	g_list_free(tagmask_list);
 	return fn;
 }
