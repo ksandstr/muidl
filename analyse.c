@@ -531,6 +531,44 @@ fail:
 }
 
 
+static int method_info_by_label_cmp(gconstpointer ap, gconstpointer bp)
+{
+	const struct method_info *amsg = ap, *bmsg = bp;
+	const struct message_info *a = amsg->request, *b = bmsg->request;
+	if(a->label < b->label) return -1;
+	else if(a->label > b->label) return 1;
+	else return 0;
+}
+
+
+GList *analyse_methods_of_iface(
+	struct print_ctx *pr,
+	GList **tagmask_list_p,
+	IDL_tree iface)
+{
+	GList *methods = all_methods_of_iface(pr->ns, iface);
+	for(GList *cur = g_list_first(methods);
+		cur != NULL;
+		cur = g_list_next(cur))
+	{
+		IDL_tree method = cur->data;
+		struct method_info *inf = analyse_op_dcl(pr, method);
+		if(inf == NULL) {
+			/* FIXME: fail properly */
+			fprintf(stderr, "error: analyse_op_dcl() failed\n");
+			exit(EXIT_FAILURE);
+		}
+
+		cur->data = inf;
+		if(inf->request->tagmask != NO_TAGMASK) {
+			*tagmask_list_p = g_list_prepend(*tagmask_list_p, inf);
+		}
+	}
+	*tagmask_list_p = g_list_reverse(*tagmask_list_p);
+	return g_list_sort(methods, &method_info_by_label_cmp);
+}
+
+
 struct stritem_info *dispatcher_stritems(GList *method_info_list)
 {
 	GArray *result = g_array_new(FALSE, FALSE, sizeof(struct stritem_info));

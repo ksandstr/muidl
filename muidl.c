@@ -1308,16 +1308,6 @@ char *dispatcher_name(IDL_ns ns, IDL_tree iface, char **vtprefix_p)
 }
 
 
-static int method_info_by_label_cmp(gconstpointer ap, gconstpointer bp)
-{
-	const struct method_info *amsg = ap, *bmsg = bp;
-	const struct message_info *a = amsg->request, *b = bmsg->request;
-	if(a->label < b->label) return -1;
-	else if(a->label > b->label) return 1;
-	else return 0;
-}
-
-
 /* this outputs a very generic dispatcher. ones written in customized assembly
  * code are optimizations, which we won't touch until µidl is reasonably
  * feature-complete. (i.e. need-to basis, and optimizations don't usually need
@@ -1341,27 +1331,8 @@ static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
 	 */
 	code_f(pr, "const L4_Word_t _stored_timeouts = L4_XferTimeouts();");
 
-	GList *methods = all_methods_of_iface(pr->ns, iface);
-	GList *tagmask_list = NULL;
-	for(GList *cur = g_list_first(methods);
-		cur != NULL;
-		cur = g_list_next(cur))
-	{
-		IDL_tree method = cur->data;
-		struct method_info *inf = analyse_op_dcl(pr, method);
-		if(inf == NULL) {
-			/* FIXME: fail properly */
-			fprintf(stderr, "error: analyse_op_dcl() failed\n");
-			exit(EXIT_FAILURE);
-		}
-
-		cur->data = inf;
-		if(inf->request->tagmask != NO_TAGMASK) {
-			tagmask_list = g_list_prepend(tagmask_list, inf);
-		}
-	}
-	methods = g_list_sort(methods, &method_info_by_label_cmp);
-	tagmask_list = g_list_reverse(tagmask_list);
+	GList *tagmask_list = NULL,
+		*methods = analyse_methods_of_iface(pr, &tagmask_list, iface);
 	const bool have_switch = g_list_length(tagmask_list) < g_list_length(methods),
 		have_tagmask = g_list_length(tagmask_list) > 0;
 
