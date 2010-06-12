@@ -190,6 +190,7 @@ struct message_info
 
 struct method_info
 {
+	int vtab_offset;
 	const char *name;
 	IDL_tree node, return_type;
 	struct message_info *request;
@@ -322,7 +323,7 @@ extern struct method_info *analyse_op_dcl(struct print_ctx *pr, IDL_tree op);
 /* collect all operations of the interface given (including those in
  * subclasses, as per all_methods_of_iface()), separate tag-masked operations
  * into a given list, sort the rest by ascending label and return. result is a
- * GList of <struct method_info *>.
+ * GList of <struct method_info *> with vtab_offset filled in for each.
  *
  * the caller must do ``g_list_foreach(result, (GFunc)free_method_info,
  * NULL);'' followed by ``g_list_free(result); g_list_free(*tagmask_list_p);''

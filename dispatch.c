@@ -334,12 +334,9 @@ static LLVMBasicBlockRef build_op_decode(
 			tmp_f(pr, "arg.u%d", i));
 	}
 
-	/* the function call.
-	 *
-	 * FIXME: get vtable offset somehow!
-	 */
+	/* the function call. */
 	LLVMValueRef fnptr = LLVMBuildLoad(ctx->builder,
-		LLVMBuildStructGEP(ctx->builder, ctx->vtab_arg, 0,
+		LLVMBuildStructGEP(ctx->builder, ctx->vtab_arg, inf->vtab_offset,
 				tmp_f(pr, "%s.offs", opname)),
 			tmp_f(pr, "%s.fnptr", opname));
 	LLVMValueRef fncall = LLVMBuildCall(ctx->builder, fnptr,

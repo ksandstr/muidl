@@ -400,6 +400,7 @@ struct method_info *analyse_op_dcl(
 
 	struct method_info *inf = g_malloc0(sizeof(struct method_info)
 		+ sizeof(struct message_info *) * num_replies);
+	inf->vtab_offset = -1;
 	inf->node = method;
 	inf->name = IDL_IDENT(IDL_OP_DCL(method).ident).str;
 	inf->num_reply_msgs = num_replies;
@@ -547,6 +548,7 @@ GList *analyse_methods_of_iface(
 	IDL_tree iface)
 {
 	GList *methods = all_methods_of_iface(pr->ns, iface);
+	int vtab_pos = 0;
 	for(GList *cur = g_list_first(methods);
 		cur != NULL;
 		cur = g_list_next(cur))
@@ -558,6 +560,8 @@ GList *analyse_methods_of_iface(
 			fprintf(stderr, "error: analyse_op_dcl() failed\n");
 			exit(EXIT_FAILURE);
 		}
+
+		inf->vtab_offset = vtab_pos++;
 
 		cur->data = inf;
 		if(inf->request->tagmask != NO_TAGMASK) {
