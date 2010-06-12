@@ -147,6 +147,9 @@ static LLVMValueRef build_t_from_tag(
 #endif
 
 
+/* transforms a fundamental IDL type into a LLVM type that's compatible with
+ * its C representation.
+ */
 /* FIXME: move this into a llvmutil.c or some such */
 static LLVMTypeRef llvm_value_type(
 	struct llvm_ctx *ctx,

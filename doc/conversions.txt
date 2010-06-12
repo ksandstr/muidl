@@ -18,7 +18,8 @@ The following CORBA IDL types are supported by µIDL:
 Arrays, strings, sequences, structs and unions are made up of other types, and
 are not specified as conversions but rather as encodings.
 
-These types are mapped to L4 word types for transmission as follows:
+These fundamental types are mapped to L4 word types for transmission as
+follows:
 
   - unsigned integers are zero-extended to native word
   - signed integers are sign-extended to native word
@@ -30,3 +31,50 @@ These types are mapped to L4 word types for transmission as follows:
   - native words are obviously native words
   - booleans are handled as octets
 
+
+And to C types as follows:
+
+  - signed and unsigned integers are passed as the matching integer type from
+    <stdint.h>
+  - single and double precision floats are passed as that type; long doubles
+    are passed as the LLVM FP128 type (or some such).
+  - characters are passed as ``char''
+  - wide characters are passed as ``wchar_t''
+  - enumerations are passed as ``int'' (between 0 and 65535 inclusive)
+  - native words are passed as ``L4_Word_t'', ``L4_Fpage_t'' or ``L4_Time_t''
+  - booleans are passed as ``int'' (0 or 1)
+
+
+This identifies two mappings: IDL->L4 and IDL->C. A L4->C mapping is not
+possible due to information loss, but a C->L4 mapping is entirely possible via
+inversion of IDL->C to C->IDL' (where IDL' is a strict subset of IDL).
+
+Dispatchers perform decoding from L4 words into C types derived from IDL,
+and then encoding of replies from C to L4. Stubs apply C->L4 and then
+IDL+L4->C.
+
+During translation, C types are represented in the LLVM type system as
+follows:
+
+  - native words are the native word type (i32 or i64)
+  - integer types are the corresponding int type, right down to bitness
+  - booleans, octets and chars are i8
+  - wide chars are i32
+  - enums are i16
+  - float, double, and long double are float, double and fp128
+
+
+Therefore IDL->LLVM = IDL->C . C->LLVM, written out as follows:
+
+  - word, time, fpage -> wordt
+  - short, unsigned short, enum -> i16
+  - long, unsigned long -> i32
+  - long long, unsigned long long -> i64
+  - float -> float
+  - double -> double
+  - long double -> fp128
+  - boolean, octet, char -> i8
+  - wide char -> i32
+
+This transformation applies to parameters passed to stub and dispatch
+functions.
