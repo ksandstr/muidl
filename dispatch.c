@@ -395,6 +395,49 @@ static void emit_out_param(
 }
 
 
+static LLVMValueRef cast_to_word(
+	struct llvm_ctx *ctx,
+	LLVMValueRef val,
+	IDL_tree typ)
+{
+	switch(IDL_NODE_TYPE(typ)) {
+		case IDLN_TYPE_INTEGER:
+			if(IDL_TYPE_INTEGER(typ).f_signed) {
+				return LLVMBuildSExtOrBitCast(ctx->builder, val,
+					ctx->wordt, "cast.word.s");
+			} else {
+				return LLVMBuildZExtOrBitCast(ctx->builder, val,
+					ctx->wordt, "cast.word.z");
+			}
+
+		case IDLN_NATIVE:
+			/* nothing to do! */
+			return val;
+
+		case IDLN_TYPE_BOOLEAN:
+		case IDLN_TYPE_OCTET:
+			return LLVMBuildZExtOrBitCast(ctx->builder, val,
+				LLVMInt8TypeInContext(ctx->ctx), "cast.bo.z");
+
+		case IDLN_TYPE_CHAR:
+			return LLVMBuildSExtOrBitCast(ctx->builder, val,
+				LLVMInt8TypeInContext(ctx->ctx), "cast.c.s");
+
+		case IDLN_TYPE_WIDE_CHAR:
+		case IDLN_TYPE_ENUM:
+			return LLVMBuildZExtOrBitCast(ctx->builder, val,
+				ctx->i32t, "cast.wce.z");
+
+		case IDLN_TYPE_FLOAT:
+			/* FIXME */
+			NOTDEFINED(typ);
+
+		default:
+			NOTDEFINED(typ);
+	}
+}
+
+
 static LLVMBasicBlockRef build_op_decode(
 	struct llvm_ctx *ctx,
 	LLVMValueRef function,
@@ -487,7 +530,32 @@ static LLVMBasicBlockRef build_op_decode(
 				build_utcb_address(ctx, ctx->utcb, mr_pos * 4));
 			mr_pos++;
 		}
-		/* TODO: out parameters */
+		/* out and inout parameters
+		 *
+		 * NOTE: arg_ix is an inappropriate way to track parameters when
+		 * sequences are involved.
+		 */
+		const struct message_info *reply = inf->replies[0];
+		int arg_ix = 0;
+		for(IDL_tree cur = IDL_OP_DCL(reply->node).parameter_dcls;
+			cur != NULL;
+			cur = IDL_LIST(cur).next, arg_ix++)
+		{
+			IDL_tree p = IDL_LIST(cur).data;
+			if(IDL_PARAM_DCL(p).attr == IDL_PARAM_IN) continue;
+			IDL_tree typ = get_type_spec(IDL_PARAM_DCL(p).param_type_spec);
+			if(is_value_type(typ)) {
+				LLVMValueRef rval = LLVMBuildLoad(ctx->builder,
+					args[arg_ix], tmp_f(ctx->pr, "arg%d.raw", arg_ix));
+				rval = cast_to_word(ctx, rval, typ);
+				LLVMBuildStore(ctx->builder, rval,
+					build_utcb_address(ctx, ctx->utcb, mr_pos * 4));
+				mr_pos++;
+			} else {
+				/* FIXME! */
+				NOTDEFINED(typ);
+			}
+		}
 		/* label 0, t 0, u = mr_pos - 1 */
 		LLVMValueRef tag = LLVMConstInt(ctx->wordt, mr_pos - 1, 0);
 		LLVMAddIncoming(ctx->reply_tag, &tag, &pr_bb, 1);

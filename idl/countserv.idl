@@ -12,6 +12,9 @@ interface Countserv
 
 	[Label(667)]
 	void set(in long value);
+
+	[Label(668)]
+	void read(out long value);
 };
 
 
