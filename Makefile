@@ -1,11 +1,13 @@
 
 PKG=libIDL-2.0 glib-2.0
 PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib/pkgconfig
+LLVM_CONFIG=llvm-config-2.7
 LLVM_BITS=backend
 CFLAGS:=-std=gnu99 -Wall -g -O2 -march=native -pthread \
-	-D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS \
-	$(shell pkg-config --cflags $(PKG))
-LIBS:=-lm $(shell pkg-config --libs $(PKG)) $(shell llvm-config --libs $(LLVM_BITS))
+	$(shell pkg-config --cflags $(PKG)) \
+	$(shell $(LLVM_CONFIG) --cflags $(LLVM_BITS)|./remove-unwanted-opts.pl)
+LIBS:=-lm -ldl $(shell pkg-config --libs $(PKG)) \
+	$(shell $(LLVM_CONFIG) --libs $(LLVM_BITS))
 
 AUTOTEST_FILES := $(wildcard test*.idl)
 

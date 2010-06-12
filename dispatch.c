@@ -32,7 +32,7 @@ static LLVMValueRef build_utcb_get(struct llvm_ctx *ctx)
 {
 	LLVMTypeRef fntype = LLVMFunctionType(ctx->voidptrt, NULL, 0, 0);
 	LLVMValueRef func = LLVMConstInlineAsm(fntype, "movl %gs:0,$0\n",
-			"=r,~{dirflag},~{fpsr},~{flags}", 0);
+			"=r,~{dirflag},~{fpsr},~{flags}", 0, 0);
 	LLVMValueRef call = LLVMBuildCall(ctx->builder, func, NULL, 0, "utcbget");
 	LLVMSetTailCall(call, 1);
 	return call;
@@ -61,7 +61,7 @@ static LLVMValueRef build_l4_ipc_call(
 	LLVMValueRef fn = LLVMConstInlineAsm(ipc_type,
 		"call __L4_Ipc\n",
 		"={ax},={si},={bx},={bp},{ax},{cx},{dx},{si},{di},~{dirflag},~{fpsr},~{flags}",
-		1);
+		1, 0);
 	LLVMValueRef args[5] = {
 		arg_to, arg_timeouts, arg_fromspec, arg_mr0, utcb_ptr
 	};
