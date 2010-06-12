@@ -1,0 +1,32 @@
+
+The following CORBA IDL types are supported by µIDL:
+
+  - integer types (short, long, long long)
+  - unsigned integer types (octet, unsigned short, etc)
+  - floating point types (float, double, long double)
+  - character types (char, wide char)
+  - booleans
+  - string types (string, wide string)
+  - fixed-length array types
+  - enumerations
+  - native word types (word, fpage, time)
+  - union types
+  - fixed-length struct types
+  - sequences of fixed-length types (except arrays)
+
+
+Arrays, strings, sequences, structs and unions are made up of other types, and
+are not specified as conversions but rather as encodings.
+
+These types are mapped to L4 word types for transmission as follows:
+
+  - unsigned integers are zero-extended to native word
+  - signed integers are sign-extended to native word
+  - floating point types are stored by machine-specific representation
+    (bit-cast) in little-endian order (where necessary)
+  - characters are handled as unsigned short
+  - wide characters are handled as unsigned long
+  - enumerations are handled as unsigned short
+  - native words are obviously native words
+  - booleans are handled as octets
+

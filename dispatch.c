@@ -123,6 +123,7 @@ static LLVMValueRef build_label_from_tag(
 }
 
 
+#if 0
 static LLVMValueRef build_u_from_tag(
 	struct llvm_ctx *ctx,
 	LLVMValueRef mr0)
@@ -143,14 +144,15 @@ static LLVMValueRef build_t_from_tag(
 				"tag.u.raw"),
 			"tag.u");
 }
+#endif
 
 
-/* FIXME: move this into a llvmutil.c or some such
- * FIXME: also get the LLVM context from somewhere.
- */
-static LLVMTypeRef llvm_value_type(IDL_tree type)
+/* FIXME: move this into a llvmutil.c or some such */
+static LLVMTypeRef llvm_value_type(
+	struct llvm_ctx *ctx,
+	IDL_tree type)
 {
-	if(type == NULL) return LLVMVoidType();
+	if(type == NULL) return LLVMVoidTypeInContext(ctx->ctx);
 	switch(IDL_NODE_TYPE(type)) {
 		case IDLN_TYPE_INTEGER: {
 			static short bitlens[] = {
@@ -160,8 +162,7 @@ static LLVMTypeRef llvm_value_type(IDL_tree type)
 			};
 			int t = IDL_TYPE_INTEGER(type).f_type;
 			assert(t < G_N_ELEMENTS(bitlens));
-			/* NOTE: discards signedness info */
-			return LLVMIntType(bitlens[t]);
+			return LLVMIntTypeInContext(ctx->ctx, bitlens[t]);
 		}
 
 		case IDLN_NATIVE: {
@@ -171,8 +172,7 @@ static LLVMTypeRef llvm_value_type(IDL_tree type)
 			if(IS_WORD_TYPE(type) || IS_FPAGE_TYPE(type)
 				|| IS_TIME_TYPE(type))
 			{
-				/* FIXME: get word size from arch spec! */
-				return LLVMIntType(32);
+				return ctx->wordt;
 			} else {
 				fprintf(stderr, "%s: native type `%s' not supported\n",
 					__FUNCTION__, NATIVE_NAME(type));
@@ -183,21 +183,23 @@ static LLVMTypeRef llvm_value_type(IDL_tree type)
 
 		case IDLN_TYPE_FLOAT:
 			switch(IDL_TYPE_FLOAT(type).f_type) {
-				case IDL_FLOAT_TYPE_FLOAT: return LLVMFloatType();
-				case IDL_FLOAT_TYPE_DOUBLE: return LLVMDoubleType();
-				case IDL_FLOAT_TYPE_LONGDOUBLE: return LLVMFP128Type();
+				case IDL_FLOAT_TYPE_FLOAT:
+					return LLVMFloatTypeInContext(ctx->ctx);
+				case IDL_FLOAT_TYPE_DOUBLE:
+					return LLVMDoubleTypeInContext(ctx->ctx);
+				case IDL_FLOAT_TYPE_LONGDOUBLE:
+					return LLVMFP128TypeInContext(ctx->ctx);
 			}
 			g_assert_not_reached();
 
 		case IDLN_TYPE_BOOLEAN:
 		case IDLN_TYPE_OCTET:
 		case IDLN_TYPE_CHAR:
-			return LLVMIntType(8);
+			return LLVMInt8TypeInContext(ctx->ctx);
 		case IDLN_TYPE_WIDE_CHAR:
-			return LLVMIntType(32);
+			return ctx->i32t;
 
-		/* FIXME: should be the native int type */
-		case IDLN_TYPE_ENUM: return LLVMIntType(32);
+		case IDLN_TYPE_ENUM: return LLVMInt16TypeInContext(ctx->ctx);
 
 		default:
 			NOTDEFINED(type);
@@ -216,7 +218,7 @@ static void vtable_in_param_type(
 	IDL_tree type)
 {
 	if(is_value_type(type)) {
-		dst[(*pos_p)++] = llvm_value_type(type);
+		dst[(*pos_p)++] = llvm_value_type(ctx, type);
 	} else if(is_rigid_type(ctx->ns, type)) {
 		/* FIXME: handle structs, arrays, unions */
 		NOTDEFINED(type);
@@ -234,7 +236,7 @@ static void vtable_out_param_type(
 	IDL_tree type)
 {
 	if(is_value_type(type)) {
-		dst[(*pos_p)++] = LLVMPointerType(llvm_value_type(type), 0);
+		dst[(*pos_p)++] = LLVMPointerType(llvm_value_type(ctx, type), 0);
 	} else {
 		printf("warning: not emitting llvm out-parameter for <%s>\n",
 			IDL_NODE_TYPE_NAME(type));
@@ -335,7 +337,7 @@ static void emit_in_param(
 	 */
 	struct untyped_param *u = find_untyped(inf->request, pdecl);
 	if(u != NULL) {
-		LLVMTypeRef typ = llvm_value_type(u->type);
+		LLVMTypeRef typ = llvm_value_type(ctx, u->type);
 		assert(LLVMGetTypeKind(typ) == LLVMIntegerTypeKind);
 		/* integer types. */
 		if(LLVMGetIntTypeWidth(typ) <= LLVMGetIntTypeWidth(ctx->wordt)) {
@@ -381,7 +383,7 @@ static void emit_out_param(
 {
 	if(is_value_type(ptyp)) {
 		LLVMValueRef memptr = LLVMBuildAlloca(ctx->builder,
-			llvm_value_type(ptyp), "outparam.mem");
+			llvm_value_type(ctx, ptyp), "outparam.mem");
 		args[(*arg_pos_p)++] = memptr;
 	} else {
 		printf("can't hack seq/long out-parameter\n");
