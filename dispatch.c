@@ -229,8 +229,12 @@ static void emit_out_parameter(
 	int *pos_p,
 	IDL_tree type)
 {
-	printf("warning: not emitting llvm out-parameter for <%s>\n",
-		IDL_NODE_TYPE_NAME(type));
+	if(is_value_type(type)) {
+		dst[(*pos_p)++] = LLVMPointerType(llvm_value_type(type), 0);
+	} else {
+		printf("warning: not emitting llvm out-parameter for <%s>\n",
+			IDL_NODE_TYPE_NAME(type));
+	}
 }
 
 
@@ -240,6 +244,8 @@ static void emit_out_parameter(
 static LLVMTypeRef get_vtable_type(struct llvm_ctx *ctx, IDL_tree iface)
 {
 	GList *methods = all_methods_of_iface(ctx->ns, iface);
+	int num_fields = g_list_length(methods), f_offs = 0;
+	LLVMTypeRef field_types[num_fields];
 	for(GList *cur = g_list_first(methods);
 		cur != NULL;
 		cur = g_list_next(cur))
@@ -276,16 +282,14 @@ static LLVMTypeRef get_vtable_type(struct llvm_ctx *ctx, IDL_tree iface)
 					break;
 			}
 		}
+
+		field_types[f_offs++] = LLVMPointerType(
+			LLVMFunctionType(ctx->i32t, param_types, p_pos, 0), 0);
 	}
+	assert(f_offs == num_fields);
 	g_list_free(methods);
 
-	LLVMTypeRef assoc_fn_type = LLVMFunctionType(ctx->i32t, &ctx->i32t, 1, 0),
-		fn_types[] = {
-			LLVMPointerType(assoc_fn_type, 0),
-			LLVMPointerType(assoc_fn_type, 0),
-		};
-
-	return LLVMStructTypeInContext(ctx->ctx, fn_types, 2, 0);
+	return LLVMStructTypeInContext(ctx->ctx, field_types, num_fields, 0);
 }
 
 
