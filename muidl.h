@@ -126,7 +126,7 @@ struct llvm_ctx
 	LLVMValueRef utcb, from, mr1, mr2, tag;
 
 	/* dispatcher-specific things */
-	LLVMBasicBlockRef reply_bb, msgerr_bb;
+	LLVMBasicBlockRef reply_bb, msgerr_bb, wait_bb;
 	LLVMValueRef vtab_arg, reply_tag;
 };
 
