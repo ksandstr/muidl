@@ -610,20 +610,6 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 			decode_bb);
 	}
 
-#if !1
-	/* decode deassociate(). */
-	LLVMPositionBuilderAtEnd(ctx->builder, decode_deassoc_bb);
-	arg0 = mr1_phi;
-	fnptr = LLVMBuildLoad(ctx->builder,
-		LLVMBuildStructGEP(ctx->builder, vtab_arg, 1, "deassoc.offs"),
-		"deassoc.fnptr");
-	fncall = LLVMBuildCall(ctx->builder, fnptr, &arg0, 1, "deassoc.call");
-	ok_cond = LLVMBuildICmp(ctx->builder, LLVMIntSGE, fncall,
-		LLVMConstInt(ctx->i32t, 0, 1), "rcneg.cond");
-	LLVMAddIncoming(reply_tag_phi, &ctx->zero, &decode_deassoc_bb, 1);
-	LLVMBuildCondBr(ctx->builder, ok_cond, ctx->reply_bb, msgerr_bb);
-#endif
-
 	LLVMDisposeBuilder(ctx->builder);
 	ctx->builder = NULL;
 	g_list_foreach(methods, (GFunc)free_method_info, NULL);
