@@ -453,6 +453,7 @@ static LLVMBasicBlockRef build_op_decode(
 			tmp_f(pr, "%s.fnptr", opname));
 	LLVMValueRef fncall = LLVMBuildCall(ctx->builder, fnptr,
 		args, arg_pos, tmp_f(pr, "%s.call", opname));
+	LLVMAddIncoming(ctx->fncall_phi, &fncall, &bb, 1);
 
 	/* test for negative return value. */
 	LLVMValueRef ok_cond = LLVMBuildICmp(ctx->builder, LLVMIntSGE, fncall,
@@ -562,6 +563,18 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 	LLVMAddIncoming(ctx->tag, &ipc_tag, &ctx->reply_bb, 1);
 	LLVMBuildBr(ctx->builder, loop_bb);
 
+	/* send a MSG_ERROR. */
+	LLVMPositionBuilderAtEnd(ctx->builder, ctx->msgerr_bb);
+	ctx->fncall_phi = LLVMBuildPhi(ctx->builder, ctx->i32t, "fncall.phi");
+	LLVMValueRef msgerr_tag = LLVMBuildOr(ctx->builder,
+		LLVMConstInt(ctx->wordt, 1, 0), LLVMConstInt(ctx->wordt, 1 << 16, 0),
+		"msgerr.tag");
+	LLVMBuildStore(ctx->builder,
+		LLVMBuildNeg(ctx->builder, ctx->fncall_phi, "rcneg.val"),
+		build_utcb_address(ctx, ctx->utcb, 4));	/* mr0 on 32-bit systems */
+	LLVMAddIncoming(ctx->reply_tag, &msgerr_tag, &ctx->msgerr_bb, 1);
+	LLVMBuildBr(ctx->builder, ctx->reply_bb);
+
 	/* exit */
 	LLVMPositionBuilderAtEnd(ctx->builder, exit_bb);
 	LLVMValueRef retval = LLVMBuildPhi(ctx->builder, ctx->wordt, "retval");
@@ -610,14 +623,6 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 	LLVMAddIncoming(reply_tag_phi, &ctx->zero, &decode_deassoc_bb, 1);
 	LLVMBuildCondBr(ctx->builder, ok_cond, ctx->reply_bb, msgerr_bb);
 #endif
-
-	/* send a MSG_ERROR. */
-	LLVMPositionBuilderAtEnd(ctx->builder, ctx->msgerr_bb);
-	LLVMValueRef msgerr_tag = LLVMBuildOr(ctx->builder,
-		LLVMConstInt(ctx->wordt, 1, 0), LLVMConstInt(ctx->wordt, 1 << 16, 0),
-		"msgerr.tag");
-	LLVMAddIncoming(ctx->reply_tag, &msgerr_tag, &ctx->msgerr_bb, 1);
-	LLVMBuildBr(ctx->builder, ctx->reply_bb);
 
 	LLVMDisposeBuilder(ctx->builder);
 	ctx->builder = NULL;
