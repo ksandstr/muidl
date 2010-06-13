@@ -256,8 +256,8 @@ static LLVMValueRef build_read_ipc_parameter(
 			__func__);
 		abort();
 	} else {
-		/* generic bit-cast conversions are fine. */
-		return LLVMBuildBitCast(ctx->builder,
+		/* generic conversions are fine. */
+		return LLVMBuildTruncOrBitCast(ctx->builder,
 			build_ipc_input_val(ctx, first_mr),
 			llvm_value_type(ctx, ctyp), "shortparm");
 	}
@@ -271,7 +271,7 @@ static int build_write_ipc_parameter(
 	IDL_tree ctyp,
 	int first_mr)
 {
-	/* double-word types */
+	/* double-word types (TODO) */
 	if(IS_LONGLONG(ctyp)) {
 		abort();
 	} else if(IS_LONGDOUBLE(ctyp)) {

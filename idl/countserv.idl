@@ -15,6 +15,12 @@ interface Countserv
 
 	[Label(668)]
 	void read(out long value);
+
+	[Label(669)]
+	void read_modify_write(
+		in long change,
+		in short max_tries,
+		out long oldval);
 };
 
 
