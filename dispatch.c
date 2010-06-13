@@ -30,7 +30,9 @@
 
 /* FIXME: move to a header */
 #define IS_LONGLONG(t) (IDL_NODE_TYPE((t)) == IDLN_TYPE_INTEGER \
-	&& IDL_TYPE_INTEGER(t).f_type == IDL_INTEGER_TYPE_LONGLONG)
+	&& IDL_TYPE_INTEGER((t)).f_type == IDL_INTEGER_TYPE_LONGLONG)
+#define IS_LONGDOUBLE(t) (IDL_NODE_TYPE((t)) == IDLN_TYPE_FLOAT \
+	&& IDL_TYPE_FLOAT((t)).f_type == IDL_FLOAT_TYPE_LONGDOUBLE)
 
 
 static LLVMValueRef build_utcb_get(struct llvm_ctx *ctx)
@@ -152,10 +154,12 @@ static LLVMValueRef build_t_from_tag(
 #endif
 
 
-/* transforms a fundamental IDL type into a LLVM type that's compatible with
- * its C representation.
+/* returns a LLVM representation corresponding to the C translation of the
+ * given IDL type.
+ *
+ * FIXME: move this into a llvmutil.c or some such once µIDL gets a LLVM stub
+ * generator
  */
-/* FIXME: move this into a llvmutil.c or some such */
 static LLVMTypeRef llvm_value_type(
 	struct llvm_ctx *ctx,
 	IDL_tree type)
@@ -215,13 +219,48 @@ static LLVMTypeRef llvm_value_type(
 }
 
 
-static LLVMValueRef cast_from_word(
-	struct llvm_ctx *ctx,
-	LLVMValueRef wordval,
-	IDL_tree ctyp)
+static LLVMValueRef build_ipc_input_val(struct llvm_ctx *ctx, int mr)
 {
-	return LLVMBuildBitCast(ctx->builder, wordval,
-		llvm_value_type(ctx, ctyp), "exword");
+	if(mr == 0) return ctx->tag;
+	else if(mr == 1) return ctx->mr1;
+	else if(mr == 2) return ctx->mr2;
+	else {
+		return LLVMBuildLoad(ctx->builder,
+			build_utcb_address(ctx, ctx->utcb, mr * 4),
+			tmp_f(ctx->pr, "mr%d", mr));
+	}
+}
+
+
+static LLVMValueRef build_read_ipc_parameter(
+	struct llvm_ctx *ctx,
+	IDL_tree ctyp,
+	int first_mr)
+{
+	if(IS_LONGLONG(ctyp)) {
+		/* unpack a two-word parameter. */
+		LLVMValueRef low = build_ipc_input_val(ctx, first_mr),
+			high = build_ipc_input_val(ctx, first_mr + 1);
+		/* FIXME: stash this in the context */
+		LLVMTypeRef i64t = LLVMInt64TypeInContext(ctx->ctx);
+		low = LLVMBuildBitCast(ctx->builder, low, i64t,
+			"longparm.lo.cast");
+		high = LLVMBuildBitCast(ctx->builder, high, i64t,
+			"longparm.hi.cast");
+		return LLVMBuildOr(ctx->builder, low,
+				LLVMBuildShl(ctx->builder, high, LLVMConstInt(i64t, 32, 0),
+					"longparm.hi.shift"),
+				"longparm.value");
+	} else if(IS_LONGDOUBLE(ctyp)) {
+		fprintf(stderr, "%s: not defined for long double (yet)\n",
+			__func__);
+		abort();
+	} else {
+		/* generic bit-cast conversions are fine. */
+		return LLVMBuildBitCast(ctx->builder,
+			build_ipc_input_val(ctx, first_mr),
+			llvm_value_type(ctx, ctyp), "shortparm");
+	}
 }
 
 
@@ -361,19 +400,6 @@ static LLVMTypeRef get_vtable_type(struct llvm_ctx *ctx, IDL_tree iface)
 }
 
 
-static LLVMValueRef build_ipc_input_val(struct llvm_ctx *ctx, int mr)
-{
-	if(mr == 0) return ctx->tag;
-	else if(mr == 1) return ctx->mr1;
-	else if(mr == 2) return ctx->mr2;
-	else {
-		return LLVMBuildLoad(ctx->builder,
-			build_utcb_address(ctx, ctx->utcb, mr * 4),
-			tmp_f(ctx->pr, "mr%d", mr));
-	}
-}
-
-
 static struct untyped_param *find_untyped(
 	const struct message_info *msg,
 	IDL_tree node)
@@ -401,25 +427,8 @@ static void emit_in_param(
 	if(u != NULL) {
 		assert(IDL_NODE_TYPE(u->type) == IDLN_TYPE_INTEGER);
 		/* integer types. */
-		if(!IS_LONGLONG(u->type)) {
-			args[(*arg_pos_p)++] = cast_from_word(ctx,
-				build_ipc_input_val(ctx, u->first_reg), u->type);
-		} else {
-			/* unpack a two-word parameter. */
-			LLVMValueRef low = build_ipc_input_val(ctx, u->first_reg),
-				high = build_ipc_input_val(ctx, u->first_reg + 1);
-			assert(u->last_reg == u->first_reg + 1);
-			/* FIXME: stash this in the context */
-			LLVMTypeRef i64t = LLVMInt64TypeInContext(ctx->ctx);
-			low = LLVMBuildBitCast(ctx->builder, low, i64t,
-				"longparm.lo.cast");
-			high = LLVMBuildBitCast(ctx->builder, high, i64t,
-				"longparm.hi.cast");
-			args[(*arg_pos_p)++] = LLVMBuildOr(ctx->builder, low,
-				LLVMBuildShl(ctx->builder, high, LLVMConstInt(i64t, 32, 0),
-					"longparm.hi.shift"),
-				"longparm.value");
-		}
+		args[(*arg_pos_p)++] = build_read_ipc_parameter(ctx,
+			u->type, u->first_reg);
 		return;
 	}
 
