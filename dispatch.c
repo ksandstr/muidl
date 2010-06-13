@@ -589,15 +589,13 @@ static LLVMBasicBlockRef build_op_decode(
 	/* return value */
 	if(inf->return_type != NULL) {
 		LLVMValueRef val;
+		char *rv_name = tmp_f(pr, "%s.retval", opname);
 		if(rv_actual) {
-			/* FIXME: mask off i16, i8 values' upper bits from the actual
-			 * return value
-			 */
-			val = fncall;
+			val = LLVMBuildTruncOrBitCast(ctx->builder, fncall,
+				llvm_value_type(ctx, inf->return_type), rv_name);
 		} else {
 			assert(retvalptr != NULL);
-			val = LLVMBuildLoad(ctx->builder, retvalptr,
-				tmp_f(pr, "%s.retval", opname));
+			val = LLVMBuildLoad(ctx->builder, retvalptr, rv_name);
 		}
 		mr_pos += build_write_ipc_parameter(ctx, val,
 			inf->return_type, mr_pos);
