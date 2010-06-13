@@ -1621,6 +1621,7 @@ static LLVMModuleRef make_llvm_service_module(
 	const char *basename)
 {
 	LLVMModuleRef mod = LLVMModuleCreateWithNameInContext(basename, ctx->ctx);
+	LLVMSetTarget(mod, "i486-linux-gnu");
 	ctx->module = mod;
 
 	/* TODO: add extern functions */
