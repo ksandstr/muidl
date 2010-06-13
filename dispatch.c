@@ -28,6 +28,11 @@
 #include "muidl.h"
 
 
+/* FIXME: move to a header */
+#define IS_LONGLONG(t) (IDL_NODE_TYPE((t)) == IDLN_TYPE_INTEGER \
+	&& IDL_TYPE_INTEGER(t).f_type == IDL_INTEGER_TYPE_LONGLONG)
+
+
 static LLVMValueRef build_utcb_get(struct llvm_ctx *ctx)
 {
 	LLVMTypeRef fntype = LLVMFunctionType(ctx->voidptrt, NULL, 0, 0);
@@ -210,6 +215,60 @@ static LLVMTypeRef llvm_value_type(
 }
 
 
+static LLVMValueRef cast_from_word(
+	struct llvm_ctx *ctx,
+	LLVMValueRef wordval,
+	IDL_tree ctyp)
+{
+	return LLVMBuildBitCast(ctx->builder, wordval,
+		llvm_value_type(ctx, ctyp), "exword");
+}
+
+
+static LLVMValueRef cast_to_word(
+	struct llvm_ctx *ctx,
+	LLVMValueRef val,
+	IDL_tree typ)
+{
+	switch(IDL_NODE_TYPE(typ)) {
+		case IDLN_TYPE_INTEGER:
+			/* FIXME: handle long long! */
+			if(IDL_TYPE_INTEGER(typ).f_signed) {
+				return LLVMBuildSExtOrBitCast(ctx->builder, val,
+					ctx->wordt, "cast.word.s");
+			} else {
+				return LLVMBuildZExtOrBitCast(ctx->builder, val,
+					ctx->wordt, "cast.word.z");
+			}
+
+		case IDLN_NATIVE:
+			/* nothing to do! */
+			return val;
+
+		case IDLN_TYPE_BOOLEAN:
+		case IDLN_TYPE_OCTET:
+			return LLVMBuildZExtOrBitCast(ctx->builder, val,
+				LLVMInt8TypeInContext(ctx->ctx), "cast.bo.z");
+
+		case IDLN_TYPE_CHAR:
+			return LLVMBuildSExtOrBitCast(ctx->builder, val,
+				LLVMInt8TypeInContext(ctx->ctx), "cast.c.s");
+
+		case IDLN_TYPE_WIDE_CHAR:
+		case IDLN_TYPE_ENUM:
+			return LLVMBuildZExtOrBitCast(ctx->builder, val,
+				ctx->i32t, "cast.wce.z");
+
+		case IDLN_TYPE_FLOAT:
+			/* FIXME */
+			NOTDEFINED(typ);
+
+		default:
+			NOTDEFINED(typ);
+	}
+}
+
+
 /* dst should have two LLVMTypeRefs' worth of space to allow for sequences
  * (pointer + length) and split longlongs on 32-bit architectures (low half,
  * high half).
@@ -340,20 +399,11 @@ static void emit_in_param(
 	 */
 	struct untyped_param *u = find_untyped(inf->request, pdecl);
 	if(u != NULL) {
-		LLVMTypeRef typ = llvm_value_type(ctx, u->type);
-		assert(LLVMGetTypeKind(typ) == LLVMIntegerTypeKind);
+		assert(IDL_NODE_TYPE(u->type) == IDLN_TYPE_INTEGER);
 		/* integer types. */
-		if(LLVMGetIntTypeWidth(typ) <= LLVMGetIntTypeWidth(ctx->wordt)) {
-			LLVMValueRef reg = build_ipc_input_val(ctx, u->first_reg);
-			if(IDL_TYPE_INTEGER(u->type).f_signed) {
-				/* signed cast. */
-				reg = LLVMBuildIntCast(ctx->builder, reg, typ,
-					"intparm.cast.sign");
-			} else {
-				reg = LLVMBuildTruncOrBitCast(ctx->builder, reg, typ,
-					"bitparm.cast.nosign");
-			}
-			args[(*arg_pos_p)++] = reg;
+		if(!IS_LONGLONG(u->type)) {
+			args[(*arg_pos_p)++] = cast_from_word(ctx,
+				build_ipc_input_val(ctx, u->first_reg), u->type);
 		} else {
 			/* unpack a two-word parameter. */
 			LLVMValueRef low = build_ipc_input_val(ctx, u->first_reg),
@@ -391,49 +441,6 @@ static void emit_out_param(
 	} else {
 		printf("can't hack seq/long out-parameter\n");
 		abort();
-	}
-}
-
-
-static LLVMValueRef cast_to_word(
-	struct llvm_ctx *ctx,
-	LLVMValueRef val,
-	IDL_tree typ)
-{
-	switch(IDL_NODE_TYPE(typ)) {
-		case IDLN_TYPE_INTEGER:
-			if(IDL_TYPE_INTEGER(typ).f_signed) {
-				return LLVMBuildSExtOrBitCast(ctx->builder, val,
-					ctx->wordt, "cast.word.s");
-			} else {
-				return LLVMBuildZExtOrBitCast(ctx->builder, val,
-					ctx->wordt, "cast.word.z");
-			}
-
-		case IDLN_NATIVE:
-			/* nothing to do! */
-			return val;
-
-		case IDLN_TYPE_BOOLEAN:
-		case IDLN_TYPE_OCTET:
-			return LLVMBuildZExtOrBitCast(ctx->builder, val,
-				LLVMInt8TypeInContext(ctx->ctx), "cast.bo.z");
-
-		case IDLN_TYPE_CHAR:
-			return LLVMBuildSExtOrBitCast(ctx->builder, val,
-				LLVMInt8TypeInContext(ctx->ctx), "cast.c.s");
-
-		case IDLN_TYPE_WIDE_CHAR:
-		case IDLN_TYPE_ENUM:
-			return LLVMBuildZExtOrBitCast(ctx->builder, val,
-				ctx->i32t, "cast.wce.z");
-
-		case IDLN_TYPE_FLOAT:
-			/* FIXME */
-			NOTDEFINED(typ);
-
-		default:
-			NOTDEFINED(typ);
 	}
 }
 
