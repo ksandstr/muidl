@@ -518,10 +518,11 @@ static LLVMBasicBlockRef build_op_decode(
 	char *name = !IS_EXN_MSG(inf)
 		? decapsify(IDL_IDENT(IDL_OP_DCL(inf->node).ident).str)
 		: decapsify(IDL_IDENT(IDL_EXCEPT_DCL(inf->node).ident).str);
-	char *opname = g_strdup_printf("decode.%s", name);
+	char *opname = tmp_f(pr, "decode.%s", name);
 	LLVMBasicBlockRef bb = LLVMAppendBasicBlockInContext(ctx->ctx,
-			function, opname);
+		function, opname);
 	g_free(name);
+	opname = &opname[7];	/* skip "decode." for value names */
 
 	/* (TODO: we're allowed to do this, right?) */
 	LLVMPositionBuilderAtEnd(ctx->builder, bb);
