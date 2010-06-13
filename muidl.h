@@ -66,6 +66,13 @@
 	&& !IDL_TYPE_INTEGER((op_type)).f_signed \
 	&& IDL_TYPE_INTEGER((op_type)).f_type == IDL_INTEGER_TYPE_SHORT)
 
+#define IS_LONGLONG_TYPE(t) (IDL_NODE_TYPE((t)) == IDLN_TYPE_INTEGER \
+	&& IDL_TYPE_INTEGER((t)).f_type == IDL_INTEGER_TYPE_LONGLONG)
+#define IS_LONGDOUBLE_TYPE(t) (IDL_NODE_TYPE((t)) == IDLN_TYPE_FLOAT \
+	&& IDL_TYPE_FLOAT((t)).f_type == IDL_FLOAT_TYPE_LONGDOUBLE)
+
+#define IS_VOID_TYPEREF(t) (LLVMGetTypeKind((t)) == LLVMVoidTypeKind)
+
 
 /* is a <struct message_info *> a pointer to an exception message? */
 #define IS_EXN_MSG(msg) (IDL_NODE_TYPE((msg)->node) == IDLN_EXCEPT_DCL)

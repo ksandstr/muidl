@@ -28,15 +28,6 @@
 #include "muidl.h"
 
 
-/* FIXME: move to a header */
-#define IS_LONGLONG(t) (IDL_NODE_TYPE((t)) == IDLN_TYPE_INTEGER \
-	&& IDL_TYPE_INTEGER((t)).f_type == IDL_INTEGER_TYPE_LONGLONG)
-#define IS_LONGDOUBLE(t) (IDL_NODE_TYPE((t)) == IDLN_TYPE_FLOAT \
-	&& IDL_TYPE_FLOAT((t)).f_type == IDL_FLOAT_TYPE_LONGDOUBLE)
-
-#define IS_VOID_TYPEREF(t) (LLVMGetTypeKind((t)) == LLVMVoidTypeKind)
-
-
 /* returns ptr to data object */
 static LLVMValueRef build_local_storage(
 	struct llvm_ctx *ctx,
@@ -253,7 +244,7 @@ static LLVMValueRef build_read_ipc_parameter(
 	IDL_tree ctyp,
 	int first_mr)
 {
-	if(IS_LONGLONG(ctyp)) {
+	if(IS_LONGLONG_TYPE(ctyp)) {
 		/* unpack a two-word parameter. */
 		LLVMValueRef low = build_ipc_input_val(ctx, first_mr),
 			high = build_ipc_input_val(ctx, first_mr + 1);
@@ -267,7 +258,7 @@ static LLVMValueRef build_read_ipc_parameter(
 				LLVMBuildShl(ctx->builder, high, LLVMConstInt(i64t, 32, 0),
 					"longparm.hi.shift"),
 				"longparm.value");
-	} else if(IS_LONGDOUBLE(ctyp)) {
+	} else if(IS_LONGDOUBLE_TYPE(ctyp)) {
 		fprintf(stderr, "%s: not defined for long double (yet)\n",
 			__func__);
 		abort();
@@ -288,9 +279,9 @@ static int build_write_ipc_parameter(
 	int first_mr)
 {
 	/* double-word types (TODO) */
-	if(IS_LONGLONG(ctyp)) {
+	if(IS_LONGLONG_TYPE(ctyp)) {
 		abort();
-	} else if(IS_LONGDOUBLE(ctyp)) {
+	} else if(IS_LONGDOUBLE_TYPE(ctyp)) {
 		abort();
 	}
 
@@ -481,7 +472,7 @@ static LLVMBasicBlockRef build_op_decode(
 	const struct method_info *inf)
 {
 	struct print_ctx *pr = ctx->pr;
-	char *name = IDL_NODE_TYPE(inf->node) == IDLN_OP_DCL
+	char *name = !IS_EXN_MSG(inf)
 		? decapsify(IDL_IDENT(IDL_OP_DCL(inf->node).ident).str)
 		: decapsify(IDL_IDENT(IDL_EXCEPT_DCL(inf->node).ident).str);
 	char *opname = g_strdup_printf("decode.%s", name);
@@ -551,6 +542,8 @@ static LLVMBasicBlockRef build_op_decode(
 			function, tmp_f(pr, "%s.pack_reply", opname)),
 		ex_chain_bb = pr_bb;	/* exception chain, or result packer */
 
+	/* TODO: exceptions! */
+
 	IDL_tree n_ex = find_neg_exn(inf->node);
 	if(n_ex == NULL) LLVMBuildBr(ctx->builder, ex_chain_bb);
 	else {
@@ -565,14 +558,14 @@ static LLVMBasicBlockRef build_op_decode(
 	/* pack results from the non-exceptional return. */
 	LLVMPositionBuilderAtEnd(ctx->builder, pr_bb);
 	assert(inf->num_reply_msgs > 0);
-	assert(IDL_NODE_TYPE(inf->replies[0]->node) == IDLN_OP_DCL);
+	assert(!IS_EXN_MSG(inf->replies[0]));
 	int mr_pos = 1;
 	/* return value */
 	if(inf->return_type != NULL) {
 		LLVMValueRef val;
 		if(rv_actual) {
-			/* FIXME: mask off i16, i8 values' upper bits from the
-			 * actual return value
+			/* FIXME: mask off i16, i8 values' upper bits from the actual
+			 * return value
 			 */
 			val = fncall;
 		} else {
@@ -610,9 +603,6 @@ static LLVMBasicBlockRef build_op_decode(
 	LLVMValueRef tag = LLVMConstInt(ctx->wordt, mr_pos - 1, 0);
 	LLVMAddIncoming(ctx->reply_tag, &tag, &pr_bb, 1);
 	LLVMBuildBr(ctx->builder, ctx->reply_bb);
-
-
-	/* TODO: exceptions! */
 
 	return bb;
 }
