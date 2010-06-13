@@ -268,6 +268,15 @@ extern IDL_tree get_type_spec(IDL_tree node)
 /* is this IDLN_EXCEPT_DCL a NegativeReturn exception? */
 extern bool is_negs_exn(IDL_tree except_dcl);
 
+/* find the NegativeReturn exception, or return NULL */
+extern IDL_tree find_neg_exn(IDL_tree opdcl);
+
+/* whether the given type can be returned to a dispatcher without ambiguity
+ * even when a NegativeReturn exception is declared. (i.e. tests for octet and
+ * ushort.)
+ */
+extern bool is_real_nre_return_type(IDL_tree typ);
+
 extern void print_msg_encoder(
 	struct print_ctx *pr,
 	const struct message_info *msg,

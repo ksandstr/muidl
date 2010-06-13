@@ -505,13 +505,13 @@ struct method_info *analyse_op_dcl(
 	}
 
 	/* if a NegativeReturn exception is declared, check that the return type is
-	 * appropriate.
+	 * either void, unambiguously returnable (octet, ushort), or something we'd
+	 * return as an outparameter.
 	 */
 	if(nr_ex != NULL) {
-		bool valid_neg = (return_type == NULL	/* void is OK */
-			|| IS_USHORT_TYPE(return_type)		/* unsigned short, too */
-			|| IDL_NODE_TYPE(return_type) == IDLN_TYPE_OCTET	/* octet also */
-			|| !is_value_type(return_type));	/* types we'd outparm anyway */
+		const bool valid_neg = (return_type == NULL
+			|| is_real_nre_return_type(return_type)
+			|| !is_value_type(return_type));
 		if(!valid_neg) {
 			fprintf(stderr,
 				"return type for a NegativeReturn raising operation must be\n"

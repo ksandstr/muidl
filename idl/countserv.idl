@@ -2,6 +2,8 @@
 #ifndef SEEN_MUIDL_IDL_TRIVIAL_TEST
 #define SEEN_MUIDL_IDL_TRIVIAL_TEST
 
+#include <posix-base.idl>
+
 
 [StubPrefix(__countserv)]
 interface Countserv
@@ -21,6 +23,17 @@ interface Countserv
 		in long change,
 		in short max_tries,
 		out long oldval);
+
+	[Label(670)]
+	void may_fail(in short what, in long how, in octet when)
+		raises(Posix::Errno);
+
+	[Label(671)]
+	unsigned short may_fail_with_retval(
+		in short what,
+		in long how,
+		in octet when)
+			raises(Posix::Errno);
 };
 
 

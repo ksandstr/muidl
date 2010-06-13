@@ -204,7 +204,7 @@ bool is_negs_exn(IDL_tree exn)
 }
 
 
-static IDL_tree find_neg_exn(IDL_tree op)
+IDL_tree find_neg_exn(IDL_tree op)
 {
 	for(IDL_tree cur = IDL_OP_DCL(op).raises_expr;
 		cur != NULL;
@@ -215,6 +215,14 @@ static IDL_tree find_neg_exn(IDL_tree op)
 		if(is_negs_exn(e)) return e;
 	}
 	return NULL;
+}
+
+
+bool is_real_nre_return_type(IDL_tree typ)
+{
+	if(typ == NULL) return false;	/* "void" is not considered "real". */
+	return IS_USHORT_TYPE(typ)
+		|| IDL_NODE_TYPE(typ) == IDLN_TYPE_OCTET;
 }
 
 
@@ -515,7 +523,7 @@ char *return_type(
 
 	IDL_tree op_type = get_type_spec(IDL_OP_DCL(op).op_type_spec);
 	if(find_neg_exn(op) != NULL || (!for_vtable && has_timeouts(op))) {
-		*real_p = false;
+		*real_p = is_real_nre_return_type(op_type);
 		return g_strdup("int");
 	} else if(op_type == NULL || !is_value_type(op_type)) {
 		*real_p = false;

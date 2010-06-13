@@ -34,6 +34,8 @@
 #define IS_LONGDOUBLE(t) (IDL_NODE_TYPE((t)) == IDLN_TYPE_FLOAT \
 	&& IDL_TYPE_FLOAT((t)).f_type == IDL_FLOAT_TYPE_LONGDOUBLE)
 
+#define IS_VOID_TYPEREF(t) (LLVMGetTypeKind((t)) == LLVMVoidTypeKind)
+
 
 /* returns ptr to data object */
 static LLVMValueRef build_local_storage(
@@ -348,6 +350,23 @@ static void vtable_out_param_type(
 }
 
 
+static LLVMTypeRef vtable_return_type(
+	struct llvm_ctx *ctx,
+	IDL_tree op,
+	bool *actual_p)
+{
+	char *ctyp = return_type(ctx->ns, op, actual_p, true);
+	LLVMTypeRef t;
+	if(strcmp(ctyp, "int") == 0) t = ctx->i32t;
+	else if(strcmp(ctyp, "void") == 0) t = LLVMVoidTypeInContext(ctx->ctx);
+	else {
+		t = llvm_value_type(ctx, get_type_spec(IDL_OP_DCL(op).op_type_spec));
+	}
+	g_free(ctyp);
+	return t;
+}
+
+
 /* TODO: wrap this to cache things in @ctx, and move it into a llvmutil.c or
  * some such
  */
@@ -361,15 +380,17 @@ static LLVMTypeRef get_vtable_type(struct llvm_ctx *ctx, IDL_tree iface)
 		cur = g_list_next(cur))
 	{
 		IDL_tree op = cur->data,
-			rettyp = get_type_spec(IDL_OP_DCL(op).op_type_spec),
+			idl_rettyp = get_type_spec(IDL_OP_DCL(op).op_type_spec),
 			param_list = IDL_OP_DCL(op).parameter_dcls;
 		/* each can be an out sequence, the return value too */
 		const int n_params_max = IDL_list_length(param_list) * 2
-			+ (rettyp != NULL ? 2 : 0);
+			+ (idl_rettyp != NULL ? 2 : 0);
 		LLVMTypeRef param_types[n_params_max];
 		int p_pos = 0;
-		if(rettyp != NULL) {
-			vtable_out_param_type(ctx, param_types, &p_pos, rettyp);
+		bool ret_actual = false;
+		LLVMTypeRef rettyp = vtable_return_type(ctx, op, &ret_actual);
+		if(!ret_actual && idl_rettyp != NULL) {
+			vtable_out_param_type(ctx, param_types, &p_pos, idl_rettyp);
 		}
 		for(IDL_tree p_cur = param_list;
 			p_cur != NULL;
@@ -394,7 +415,7 @@ static LLVMTypeRef get_vtable_type(struct llvm_ctx *ctx, IDL_tree iface)
 		}
 
 		field_types[f_offs++] = LLVMPointerType(
-			LLVMFunctionType(ctx->i32t, param_types, p_pos, 0), 0);
+			LLVMFunctionType(rettyp, param_types, p_pos, 0), 0);
 	}
 	assert(f_offs == num_fields);
 	g_list_free(methods);
@@ -428,8 +449,6 @@ static void emit_in_param(
 	 */
 	struct untyped_param *u = find_untyped(inf->request, pdecl);
 	if(u != NULL) {
-		assert(IDL_NODE_TYPE(u->type) == IDLN_TYPE_INTEGER);
-		/* integer types. */
 		args[(*arg_pos_p)++] = build_read_ipc_parameter(ctx,
 			u->type, u->first_reg);
 		return;
@@ -475,11 +494,14 @@ static LLVMBasicBlockRef build_op_decode(
 
 	/* collection of arguments according to op decl. */
 	const struct message_info *req = inf->request;
+	bool rv_actual = false;
+	LLVMTypeRef rv_type = vtable_return_type(ctx, inf->node, &rv_actual);
+
 	const int num_args_max = 1 + req->num_untyped
 		+ req->num_inline_seq * 2 + req->num_long * 2;
 	LLVMValueRef args[num_args_max], retvalptr = NULL;
 	int arg_pos = 0;
-	if(inf->return_type != NULL) {
+	if(inf->return_type != NULL && !rv_actual) {
 		/* a parameter for the return value. */
 		emit_out_param(ctx, args, &arg_pos, inf->return_type);
 		if(arg_pos > 0) retvalptr = args[0];
@@ -517,62 +539,79 @@ static LLVMBasicBlockRef build_op_decode(
 		LLVMBuildStructGEP(ctx->builder, ctx->vtab_arg, inf->vtab_offset,
 				tmp_f(pr, "%s.offs", opname)),
 			tmp_f(pr, "%s.fnptr", opname));
-	LLVMValueRef fncall = LLVMBuildCall(ctx->builder, fnptr,
-		args, arg_pos, tmp_f(pr, "%s.call", opname));
-	LLVMAddIncoming(ctx->fncall_phi, &fncall, &bb, 1);
+	LLVMValueRef fncall = LLVMBuildCall(ctx->builder, fnptr, args, arg_pos,
+		IS_VOID_TYPEREF(rv_type) ? "" : tmp_f(pr, "%s.call", opname));
 
-	/* test for negative return value. */
-	LLVMValueRef ok_cond = LLVMBuildICmp(ctx->builder, LLVMIntSGE, fncall,
-		LLVMConstInt(ctx->i32t, 0, 1), "rcneg.cond");
-	if(inf->num_reply_msgs == 0) {
-		/* oneway void messages don't have a reply part. */
-		LLVMBuildCondBr(ctx->builder, ok_cond, ctx->wait_bb, ctx->msgerr_bb);
-		return bb;	/* also we're done! */
+	if(IDL_OP_DCL(inf->node).f_oneway) {
+		LLVMBuildBr(ctx->builder, ctx->wait_bb);
+		return bb;
 	}
 
-	if(inf->num_reply_msgs > 0
-		&& IDL_NODE_TYPE(inf->replies[0]->node) == IDLN_OP_DCL)
+	LLVMBasicBlockRef pr_bb = LLVMAppendBasicBlockInContext(ctx->ctx,
+			function, tmp_f(pr, "%s.pack_reply", opname)),
+		ex_chain_bb = pr_bb;	/* exception chain, or result packer */
+
+	IDL_tree n_ex = find_neg_exn(inf->node);
+	if(n_ex == NULL) LLVMBuildBr(ctx->builder, ex_chain_bb);
+	else {
+		/* examine NegativeReturn exception trigger */
+		LLVMValueRef ok_cond = LLVMBuildICmp(ctx->builder, LLVMIntSGE, fncall,
+			LLVMConstInt(ctx->i32t, 0, 1), "rcneg.cond");
+		LLVMAddIncoming(ctx->fncall_phi, &fncall, &bb, 1);
+		LLVMBuildCondBr(ctx->builder, ok_cond, ex_chain_bb,
+			ctx->msgerr_bb);
+	}
+
+	/* pack results from the non-exceptional return. */
+	LLVMPositionBuilderAtEnd(ctx->builder, pr_bb);
+	assert(inf->num_reply_msgs > 0);
+	assert(IDL_NODE_TYPE(inf->replies[0]->node) == IDLN_OP_DCL);
+	int mr_pos = 1;
+	/* return value */
+	if(inf->return_type != NULL) {
+		LLVMValueRef val;
+		if(rv_actual) {
+			/* FIXME: mask off i16, i8 values' upper bits from the
+			 * actual return value
+			 */
+			val = fncall;
+		} else {
+			assert(retvalptr != NULL);
+			val = LLVMBuildLoad(ctx->builder, retvalptr,
+				tmp_f(pr, "%s.retval", opname));
+		}
+		mr_pos += build_write_ipc_parameter(ctx, val,
+			inf->return_type, mr_pos);
+	}
+	/* out-parameters and out-halves of inout parameters
+	 *
+	 * NOTE: arg_ix is an inappropriate way to track parameters when
+	 * sequences are involved.
+	 */
+	const struct message_info *reply = inf->replies[0];
+	int arg_ix = 0;
+	for(IDL_tree cur = IDL_OP_DCL(reply->node).parameter_dcls;
+		cur != NULL;
+		cur = IDL_LIST(cur).next, arg_ix++)
 	{
-		/* return value, out-parameters, out-halves of inout parameters */
-		LLVMBasicBlockRef pr_bb = LLVMAppendBasicBlockInContext(ctx->ctx,
-			function, tmp_f(pr, "%s.packreply", opname));
-		LLVMBuildCondBr(ctx->builder, ok_cond, pr_bb, ctx->msgerr_bb);
-		LLVMPositionBuilderAtEnd(ctx->builder, pr_bb);
-		int mr_pos = 1;
-		if(retvalptr != NULL) {
-			LLVMValueRef val = LLVMBuildLoad(ctx->builder,
-				retvalptr, tmp_f(pr, "%s.retval", opname));
-			mr_pos += build_write_ipc_parameter(ctx, val,
-				inf->return_type, mr_pos);
+		IDL_tree p = IDL_LIST(cur).data;
+		if(IDL_PARAM_DCL(p).attr == IDL_PARAM_IN) continue;
+		IDL_tree typ = get_type_spec(IDL_PARAM_DCL(p).param_type_spec);
+		if(is_value_type(typ)) {
+			LLVMValueRef rval = LLVMBuildLoad(ctx->builder,
+				args[arg_ix], tmp_f(ctx->pr, "arg%d.raw", arg_ix));
+			mr_pos += build_write_ipc_parameter(ctx, rval, typ, mr_pos);
+		} else {
+			/* FIXME! */
+			NOTDEFINED(typ);
 		}
-		/* out and inout parameters
-		 *
-		 * NOTE: arg_ix is an inappropriate way to track parameters when
-		 * sequences are involved.
-		 */
-		const struct message_info *reply = inf->replies[0];
-		int arg_ix = 0;
-		for(IDL_tree cur = IDL_OP_DCL(reply->node).parameter_dcls;
-			cur != NULL;
-			cur = IDL_LIST(cur).next, arg_ix++)
-		{
-			IDL_tree p = IDL_LIST(cur).data;
-			if(IDL_PARAM_DCL(p).attr == IDL_PARAM_IN) continue;
-			IDL_tree typ = get_type_spec(IDL_PARAM_DCL(p).param_type_spec);
-			if(is_value_type(typ)) {
-				LLVMValueRef rval = LLVMBuildLoad(ctx->builder,
-					args[arg_ix], tmp_f(ctx->pr, "arg%d.raw", arg_ix));
-				mr_pos += build_write_ipc_parameter(ctx, rval, typ, mr_pos);
-			} else {
-				/* FIXME! */
-				NOTDEFINED(typ);
-			}
-		}
-		/* label 0, t 0, u = mr_pos - 1 */
-		LLVMValueRef tag = LLVMConstInt(ctx->wordt, mr_pos - 1, 0);
-		LLVMAddIncoming(ctx->reply_tag, &tag, &pr_bb, 1);
-		LLVMBuildBr(ctx->builder, ctx->reply_bb);
 	}
+	/* label 0, t 0, u = mr_pos - 1 */
+	LLVMValueRef tag = LLVMConstInt(ctx->wordt, mr_pos - 1, 0);
+	LLVMAddIncoming(ctx->reply_tag, &tag, &pr_bb, 1);
+	LLVMBuildBr(ctx->builder, ctx->reply_bb);
+
+
 	/* TODO: exceptions! */
 
 	return bb;
