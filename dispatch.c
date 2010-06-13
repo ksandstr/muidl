@@ -271,6 +271,31 @@ static LLVMValueRef build_read_ipc_parameter(
 }
 
 
+/* FIXME: move to util.c or types.c or somewhere */
+static bool is_integral_type(IDL_tree typ)
+{
+	switch(IDL_NODE_TYPE(typ)) {
+		case IDLN_TYPE_INTEGER:
+		case IDLN_TYPE_OCTET:
+		case IDLN_TYPE_BOOLEAN:
+			return true;
+
+		default:
+			return IS_WORD_TYPE(typ);
+	}
+}
+
+
+static bool is_signed(IDL_tree typ)
+{
+	assert(is_integral_type(typ));
+	return IDL_NODE_TYPE(typ) == IDLN_TYPE_CHAR
+		|| IDL_NODE_TYPE(typ) == IDLN_TYPE_WIDE_CHAR
+		|| (IDL_NODE_TYPE(typ) == IDLN_TYPE_INTEGER
+			&& IDL_TYPE_INTEGER(typ).f_signed);
+}
+
+
 /* returns # of MRs used. */
 static int build_write_ipc_parameter(
 	struct llvm_ctx *ctx,
@@ -287,8 +312,8 @@ static int build_write_ipc_parameter(
 
 	/* single-word types */
 	LLVMValueRef reg;
-	if(IDL_NODE_TYPE(ctyp) == IDLN_TYPE_INTEGER) {
-		if(IDL_TYPE_INTEGER(ctyp).f_signed) {
+	if(is_integral_type(ctyp)) {
+		if(is_signed(ctyp)) {
 			reg = LLVMBuildSExtOrBitCast(ctx->builder, val,
 				ctx->wordt, "cast.word.s");
 		} else {
@@ -296,7 +321,8 @@ static int build_write_ipc_parameter(
 				ctx->wordt, "cast.word.z");
 		}
 	} else {
-		reg = LLVMBuildBitCast(ctx->builder, val, ctx->wordt, "cast.word.b");
+		/* FIXME! */
+		NOTDEFINED(ctyp);
 	}
 	LLVMBuildStore(ctx->builder, reg,
 		build_utcb_address(ctx, ctx->utcb, first_mr * 4));

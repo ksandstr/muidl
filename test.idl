@@ -63,7 +63,7 @@ interface Example
 	[Label(0xfad1)]
 	void outsy_operation(in word foo, out word bar);
 
-
+#if 0
 	typedef sequence<octet, 64> byte_seq;
 	typedef sequence<short, 25> short_seq;
 	typedef sequence<long, MAX_LONGSEQ_LEN> long_seq;
@@ -83,6 +83,7 @@ interface Example
 	void two_strings(
 		in string<128> the_first,
 		in string<64> the_second);
+#endif
 
 /* TEST 1: oneway operation with non-void return type
  * expected: failure
