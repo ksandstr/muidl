@@ -35,6 +35,20 @@
 	&& IDL_TYPE_FLOAT((t)).f_type == IDL_FLOAT_TYPE_LONGDOUBLE)
 
 
+/* returns ptr to data object */
+static LLVMValueRef build_local_storage(
+	struct llvm_ctx *ctx,
+	LLVMTypeRef type,
+	const char *name)
+{
+	LLVMBuilderRef b = LLVMCreateBuilderInContext(ctx->ctx);
+	LLVMPositionBuilderAtEnd(b, ctx->alloc_bb);
+	LLVMValueRef ptr = LLVMBuildAlloca(b, type, name);
+	LLVMDisposeBuilder(b);
+	return ptr;
+}
+
+
 static LLVMValueRef build_utcb_get(struct llvm_ctx *ctx)
 {
 	LLVMTypeRef fntype = LLVMFunctionType(ctx->voidptrt, NULL, 0, 0);
@@ -433,9 +447,8 @@ static void emit_out_param(
 	IDL_tree ptyp)
 {
 	if(is_value_type(ptyp)) {
-		LLVMValueRef memptr = LLVMBuildAlloca(ctx->builder,
+		args[(*arg_pos_p)++] = build_local_storage(ctx,
 			llvm_value_type(ctx, ptyp), "outparam.mem");
-		args[(*arg_pos_p)++] = memptr;
 	} else {
 		printf("can't hack seq/long out-parameter\n");
 		abort();
@@ -598,7 +611,7 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 	LLVMBuildStore(ctx->builder, acceptor,
 		build_utcb_address(ctx, ctx->utcb, -64));
 	LLVMBuildStore(ctx->builder, stored_timeouts, xfer_timeouts_addr);
-	LLVMBuildBr(ctx->builder, ctx->wait_bb);
+	ctx->alloc_bb = bb;
 
 	LLVMPositionBuilderAtEnd(ctx->builder, ctx->wait_bb);
 	LLVMValueRef ipc_from, ipc_mr1, ipc_mr2,
@@ -681,6 +694,10 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 			LLVMConstInt(ctx->wordt, inf->request->label, 0),
 			decode_bb);
 	}
+
+	/* close off the alloc (entry) block. */
+	LLVMPositionBuilderAtEnd(ctx->builder, ctx->alloc_bb);
+	LLVMBuildBr(ctx->builder, ctx->wait_bb);
 
 	LLVMDisposeBuilder(ctx->builder);
 	ctx->builder = NULL;
