@@ -392,33 +392,32 @@ static LLVMTypeRef get_vtable_type(struct llvm_ctx *ctx, IDL_tree iface)
 	GList *methods = all_methods_of_iface(ctx->ns, iface);
 	int num_fields = g_list_length(methods), f_offs = 0;
 	LLVMTypeRef field_types[num_fields];
-	for(GList *cur = g_list_first(methods);
-		cur != NULL;
-		cur = g_list_next(cur))
-	{
+	GList *cur = g_list_first(methods);
+	while(f_offs < num_fields) {
+		assert(cur != NULL);
 		IDL_tree op = cur->data,
 			idl_rettyp = get_type_spec(IDL_OP_DCL(op).op_type_spec),
 			param_list = IDL_OP_DCL(op).parameter_dcls;
-		/* each can be an out sequence, the return value too */
-		const int n_params_max = IDL_list_length(param_list) * 2
-			+ (idl_rettyp != NULL ? 2 : 0);
-		LLVMTypeRef param_types[n_params_max];
-		int p_pos = 0;
+		/* each parameter can be a sequence */
+		const int n_args_max = IDL_list_length(param_list) * 2
+			+ (idl_rettyp != NULL ? 1 : 0);
+		LLVMTypeRef arg_types[n_args_max];
+		int arg_pos = 0;
 		bool ret_actual = false;
 		LLVMTypeRef rettyp = vtable_return_type(ctx, op, &ret_actual);
 		if(!ret_actual && idl_rettyp != NULL) {
-			vtable_out_param_type(ctx, param_types, &p_pos, idl_rettyp);
+			vtable_out_param_type(ctx, arg_types, &arg_pos, idl_rettyp);
 		}
 		for(IDL_tree p_cur = param_list;
 			p_cur != NULL;
 			p_cur = IDL_LIST(p_cur).next)
 		{
-			assert(p_pos < n_params_max);
+			assert(arg_pos < n_args_max);
 			IDL_tree pdecl = IDL_LIST(p_cur).data,
 				ptype = get_type_spec(IDL_PARAM_DCL(pdecl).param_type_spec);
 			switch(IDL_PARAM_DCL(pdecl).attr) {
 				case IDL_PARAM_IN:
-					vtable_in_param_type(ctx, param_types, &p_pos, ptype);
+					vtable_in_param_type(ctx, arg_types, &arg_pos, ptype);
 					break;
 
 				/* inout parameters are passed exactly like out-parameters, but
@@ -426,15 +425,16 @@ static LLVMTypeRef get_vtable_type(struct llvm_ctx *ctx, IDL_tree iface)
 				 */
 				case IDL_PARAM_OUT:
 				case IDL_PARAM_INOUT:
-					vtable_out_param_type(ctx, param_types, &p_pos, ptype);
+					vtable_out_param_type(ctx, arg_types, &arg_pos, ptype);
 					break;
 			}
 		}
 
+		cur = cur->next;
 		field_types[f_offs++] = LLVMPointerType(
-			LLVMFunctionType(rettyp, param_types, p_pos, 0), 0);
+			LLVMFunctionType(rettyp, arg_types, arg_pos, 0), 0);
 	}
-	assert(f_offs == num_fields);
+	assert(cur == NULL);
 	g_list_free(methods);
 
 	return LLVMStructTypeInContext(ctx->ctx, field_types, num_fields, 0);
