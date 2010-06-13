@@ -370,6 +370,7 @@ static void print_stubs_for_iface(struct print_ctx *pr, IDL_tree iface)
 
 		free_method_info(inf);
 	}
+	g_list_free(methods);
 }
 
 
