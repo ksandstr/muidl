@@ -621,10 +621,10 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 	ctx->mr1 = LLVMBuildPhi(ctx->builder, ctx->wordt, "mr1.phi");
 	ctx->mr2 = LLVMBuildPhi(ctx->builder, ctx->wordt, "mr2.phi");
 	ctx->tag = LLVMBuildPhi(ctx->builder, ctx->wordt, "tag.phi");
-	LLVMAddIncoming(ctx->from, &ipc_from, &bb, 1);
-	LLVMAddIncoming(ctx->mr1, &ipc_mr1, &bb, 1);
-	LLVMAddIncoming(ctx->mr2, &ipc_mr2, &bb, 1);
-	LLVMAddIncoming(ctx->tag, &ipc_tag, &bb, 1);
+	LLVMAddIncoming(ctx->from, &ipc_from, &ctx->wait_bb, 1);
+	LLVMAddIncoming(ctx->mr1, &ipc_mr1, &ctx->wait_bb, 1);
+	LLVMAddIncoming(ctx->mr2, &ipc_mr2, &ctx->wait_bb, 1);
+	LLVMAddIncoming(ctx->tag, &ipc_tag, &ctx->wait_bb, 1);
 	LLVMBuildCondBr(ctx->builder, build_ipcfailed_cond(ctx, ctx->tag),
 		ret_ec_bb, dispatch_bb);
 
