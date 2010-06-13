@@ -264,47 +264,36 @@ static LLVMValueRef build_read_ipc_parameter(
 }
 
 
-static LLVMValueRef cast_to_word(
+/* returns # of MRs used. */
+static int build_write_ipc_parameter(
 	struct llvm_ctx *ctx,
 	LLVMValueRef val,
-	IDL_tree typ)
+	IDL_tree ctyp,
+	int first_mr)
 {
-	switch(IDL_NODE_TYPE(typ)) {
-		case IDLN_TYPE_INTEGER:
-			/* FIXME: handle long long! */
-			if(IDL_TYPE_INTEGER(typ).f_signed) {
-				return LLVMBuildSExtOrBitCast(ctx->builder, val,
-					ctx->wordt, "cast.word.s");
-			} else {
-				return LLVMBuildZExtOrBitCast(ctx->builder, val,
-					ctx->wordt, "cast.word.z");
-			}
-
-		case IDLN_NATIVE:
-			/* nothing to do! */
-			return val;
-
-		case IDLN_TYPE_BOOLEAN:
-		case IDLN_TYPE_OCTET:
-			return LLVMBuildZExtOrBitCast(ctx->builder, val,
-				LLVMInt8TypeInContext(ctx->ctx), "cast.bo.z");
-
-		case IDLN_TYPE_CHAR:
-			return LLVMBuildSExtOrBitCast(ctx->builder, val,
-				LLVMInt8TypeInContext(ctx->ctx), "cast.c.s");
-
-		case IDLN_TYPE_WIDE_CHAR:
-		case IDLN_TYPE_ENUM:
-			return LLVMBuildZExtOrBitCast(ctx->builder, val,
-				ctx->i32t, "cast.wce.z");
-
-		case IDLN_TYPE_FLOAT:
-			/* FIXME */
-			NOTDEFINED(typ);
-
-		default:
-			NOTDEFINED(typ);
+	/* double-word types */
+	if(IS_LONGLONG(ctyp)) {
+		abort();
+	} else if(IS_LONGDOUBLE(ctyp)) {
+		abort();
 	}
+
+	/* single-word types */
+	LLVMValueRef reg;
+	if(IDL_NODE_TYPE(ctyp) == IDLN_TYPE_INTEGER) {
+		if(IDL_TYPE_INTEGER(ctyp).f_signed) {
+			reg = LLVMBuildSExtOrBitCast(ctx->builder, val,
+				ctx->wordt, "cast.word.s");
+		} else {
+			reg = LLVMBuildZExtOrBitCast(ctx->builder, val,
+				ctx->wordt, "cast.word.z");
+		}
+	} else {
+		reg = LLVMBuildBitCast(ctx->builder, val, ctx->wordt, "cast.word.b");
+	}
+	LLVMBuildStore(ctx->builder, reg,
+		build_utcb_address(ctx, ctx->utcb, first_mr * 4));
+	return 1;
 }
 
 
@@ -540,11 +529,8 @@ static LLVMBasicBlockRef build_op_decode(
 		if(retvalptr != NULL) {
 			LLVMValueRef val = LLVMBuildLoad(ctx->builder,
 				retvalptr, tmp_f(pr, "%s.retval", opname));
-			val = LLVMBuildBitCast(ctx->builder, val, ctx->wordt,
-				tmp_f(pr, "%s.retval.word", opname));
-			LLVMBuildStore(ctx->builder, val,
-				build_utcb_address(ctx, ctx->utcb, mr_pos * 4));
-			mr_pos++;
+			mr_pos += build_write_ipc_parameter(ctx, val,
+				inf->return_type, mr_pos);
 		}
 		/* out and inout parameters
 		 *
@@ -563,10 +549,7 @@ static LLVMBasicBlockRef build_op_decode(
 			if(is_value_type(typ)) {
 				LLVMValueRef rval = LLVMBuildLoad(ctx->builder,
 					args[arg_ix], tmp_f(ctx->pr, "arg%d.raw", arg_ix));
-				rval = cast_to_word(ctx, rval, typ);
-				LLVMBuildStore(ctx->builder, rval,
-					build_utcb_address(ctx, ctx->utcb, mr_pos * 4));
-				mr_pos++;
+				mr_pos += build_write_ipc_parameter(ctx, rval, typ, mr_pos);
 			} else {
 				/* FIXME! */
 				NOTDEFINED(typ);
