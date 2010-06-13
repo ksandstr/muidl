@@ -239,8 +239,15 @@ static LLVMValueRef build_ipc_input_val(struct llvm_ctx *ctx, int mr)
 }
 
 
-static LLVMValueRef build_read_ipc_parameter(
+/* when @ctyp is a value type, @dst[0] is assigned to the value.
+ * when @ctyp is a rigid type, @dst[0] must be a pointer to the appropriate
+ * type.
+ * otherwise, @dst[0] must point to the first element of a buffer of sufficient
+ * maximum size, and @dst[1] will be assigned to the length value (i32).
+ */
+static void build_read_ipc_parameter(
 	struct llvm_ctx *ctx,
+	LLVMValueRef *dst,
 	IDL_tree ctyp,
 	int first_mr)
 {
@@ -254,7 +261,7 @@ static LLVMValueRef build_read_ipc_parameter(
 			"longparm.lo.cast");
 		high = LLVMBuildBitCast(ctx->builder, high, i64t,
 			"longparm.hi.cast");
-		return LLVMBuildOr(ctx->builder, low,
+		dst[0] = LLVMBuildOr(ctx->builder, low,
 				LLVMBuildShl(ctx->builder, high, LLVMConstInt(i64t, 32, 0),
 					"longparm.hi.shift"),
 				"longparm.value");
@@ -262,11 +269,15 @@ static LLVMValueRef build_read_ipc_parameter(
 		fprintf(stderr, "%s: not defined for long double (yet)\n",
 			__func__);
 		abort();
-	} else {
-		/* generic conversions are fine. */
-		return LLVMBuildTruncOrBitCast(ctx->builder,
+	} else if(is_value_type(ctyp)) {
+		/* appropriate for all value types. */
+		dst[0] = LLVMBuildTruncOrBitCast(ctx->builder,
 			build_ipc_input_val(ctx, first_mr),
 			llvm_value_type(ctx, ctyp), "shortparm");
+	} else if(is_rigid_type(ctx->ns, ctyp)) {
+		NOTDEFINED(ctyp);
+	} else {
+		NOTDEFINED(ctyp);
 	}
 }
 
@@ -296,10 +307,16 @@ static bool is_signed(IDL_tree typ)
 }
 
 
-/* returns # of MRs used. */
+/* returns # of MRs used.
+ *
+ * when is_value_type(ctyp), @val[0] is a C representation of @ctyp.
+ * when is_rigid_type(..., ctyp), @val[0] is a pointer to the same.
+ * otherwise, @val[0] is a pointer to the first element, and @val[1] is the
+ * number of elements as i32.
+ */
 static int build_write_ipc_parameter(
 	struct llvm_ctx *ctx,
-	LLVMValueRef val,
+	const LLVMValueRef *val,
 	IDL_tree ctyp,
 	int first_mr)
 {
@@ -314,10 +331,10 @@ static int build_write_ipc_parameter(
 	LLVMValueRef reg;
 	if(is_integral_type(ctyp)) {
 		if(is_signed(ctyp)) {
-			reg = LLVMBuildSExtOrBitCast(ctx->builder, val,
+			reg = LLVMBuildSExtOrBitCast(ctx->builder, val[0],
 				ctx->wordt, "cast.word.s");
 		} else {
-			reg = LLVMBuildZExtOrBitCast(ctx->builder, val,
+			reg = LLVMBuildZExtOrBitCast(ctx->builder, val[0],
 				ctx->wordt, "cast.word.z");
 		}
 	} else {
@@ -466,7 +483,7 @@ static void emit_in_param(
 	 */
 	struct untyped_param *u = find_untyped(inf->request, pdecl);
 	if(u != NULL) {
-		args[(*arg_pos_p)++] = build_read_ipc_parameter(ctx,
+		build_read_ipc_parameter(ctx, &args[(*arg_pos_p)++],
 			u->type, u->first_reg);
 		return;
 	}
@@ -585,6 +602,7 @@ static LLVMBasicBlockRef build_op_decode(
 	LLVMPositionBuilderAtEnd(ctx->builder, pr_bb);
 	assert(inf->num_reply_msgs > 0);
 	assert(!IS_EXN_MSG(inf->replies[0]));
+	const struct message_info *reply = inf->replies[0];
 	int mr_pos = 1;
 	/* return value */
 	if(inf->return_type != NULL) {
@@ -597,15 +615,12 @@ static LLVMBasicBlockRef build_op_decode(
 			assert(retvalptr != NULL);
 			val = LLVMBuildLoad(ctx->builder, retvalptr, rv_name);
 		}
-		mr_pos += build_write_ipc_parameter(ctx, val,
+		mr_pos += build_write_ipc_parameter(ctx, &val,
 			inf->return_type, mr_pos);
 	}
-	/* out-parameters and out-halves of inout parameters
-	 *
-	 * NOTE: arg_ix is an inappropriate way to track parameters when
-	 * sequences are involved.
+	/* those out-parameters and out-halves of inout parameters which are
+	 * encoded as untyped words.
 	 */
-	const struct message_info *reply = inf->replies[0];
 	int arg_ix = 0;
 	for(IDL_tree cur = IDL_OP_DCL(reply->node).parameter_dcls;
 		cur != NULL;
@@ -614,15 +629,24 @@ static LLVMBasicBlockRef build_op_decode(
 		IDL_tree p = IDL_LIST(cur).data;
 		if(IDL_PARAM_DCL(p).attr == IDL_PARAM_IN) continue;
 		IDL_tree typ = get_type_spec(IDL_PARAM_DCL(p).param_type_spec);
+		/* TODO: mapgrantitems are currently always typed (so we skip them
+		 * here), but this should really depend on whether there's a [map]
+		 * attribute in the parameter declaration.
+		 */
+		if(IS_MAPGRANT_TYPE(typ)) continue;
 		if(is_value_type(typ)) {
 			LLVMValueRef rval = LLVMBuildLoad(ctx->builder,
 				args[arg_ix], tmp_f(ctx->pr, "arg%d.raw", arg_ix));
-			mr_pos += build_write_ipc_parameter(ctx, rval, typ, mr_pos);
-		} else {
-			/* FIXME! */
-			NOTDEFINED(typ);
+			mr_pos += build_write_ipc_parameter(ctx, &rval, typ, mr_pos);
+		} else if(is_rigid_type(ctx->ns, typ)) {
+			/* TODO: distinguish between inline rigid types and those passed as
+			 * string items due to size or content or something
+			 */
+			mr_pos += build_write_ipc_parameter(ctx, &args[arg_ix], typ,
+				mr_pos);
 		}
 	}
+	/* TODO: encode typed words */
 	/* label 0, t 0, u = mr_pos - 1 */
 	LLVMValueRef tag = LLVMConstInt(ctx->wordt, mr_pos - 1, 0);
 	LLVMAddIncoming(ctx->reply_tag, &tag, &pr_bb, 1);
