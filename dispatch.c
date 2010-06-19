@@ -592,14 +592,21 @@ static void emit_in_param(
 		 * function in the same order as they were in IDL. if not,
 		 * inline_seq_pos will be wrong.
 		 */
-		LLVMValueRef seq_words;
-		/* FIXME: compute seq_end_elem here also */
+		LLVMValueRef seq_words, seq_end_elem;
 		if(seq != req->seq[req->num_inline_seq - 1]
 			|| seq->bits_per_elem < BITS_PER_WORD)
 		{
 			/* not subject to trickery; take a length word. */
-			seq_words = build_mr_load(ctx, ctx->inline_seq_pos,
-				"inlseq.len.explicit");
+			seq_end_elem = build_mr_load(ctx, ctx->inline_seq_pos,
+				"inlseq.len.mr");
+			seq_end_elem = LLVMBuildTruncOrBitCast(ctx->builder,
+				seq_end_elem, ctx->i32t, "inlseq.len.explicit");
+			if(seq->elems_per_word == 1) seq_words = seq_end_elem;
+			else {
+				seq_words = LLVMBuildUDiv(ctx->builder, seq_end_elem,
+					LLVMConstInt(ctx->i32t, seq->elems_per_word, 0),
+					"inlseq.len.int");
+			}
 			ctx->inline_seq_pos = LLVMBuildAdd(ctx->builder,
 				ctx->inline_seq_pos, LLVMConstInt(ctx->i32t, 1, 0),
 				"inlseq.pos.bump");
@@ -608,14 +615,9 @@ static void emit_in_param(
 			LLVMValueRef u = build_u_from_tag(ctx, ctx->tag);
 			seq_words = LLVMBuildSub(ctx->builder, u,
 				ctx->inline_seq_pos, "inlseq.len.implicit");
-		}
-		seq_words = LLVMBuildTruncOrBitCast(ctx->builder, seq_words,
-			ctx->i32t, "inlseq.len.int");
-		LLVMValueRef seq_end_elem = seq_words;
-		if(seq->elems_per_word > 1) {
-			seq_end_elem = LLVMBuildMul(ctx->builder, seq_words,
-				LLVMConstInt(ctx->i32t, seq->elems_per_word, 0),
-				"inlseq.end.elem");
+			seq_words = LLVMBuildTruncOrBitCast(ctx->builder, seq_words,
+				ctx->i32t, "inlseq.len.int");
+			seq_end_elem = seq_words;
 		}
 
 		LLVMBasicBlockRef before_bb = LLVMGetInsertBlock(ctx->builder);
