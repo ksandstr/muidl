@@ -42,7 +42,9 @@ interface Countserv
 	void with_inline_sequence(in something hurr);
 
 	[Label(673)]
-	void with_packed_inline_sequence(in packed_something durr);
+	void with_packed_inline_sequence(
+		in packed_something durr,
+		in something derrrp);
 };
 
 
