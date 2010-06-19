@@ -28,15 +28,23 @@
 #include "muidl.h"
 
 
-/* returns ptr to data object */
+/* returns ptr to data object.
+ *
+ * TODO: callsites to this here thing should recycle compatible chunks of
+ * memory, rather than allocating their own for each. this is a low-hanging
+ * space optimization.
+ */
 static LLVMValueRef build_local_storage(
 	struct llvm_ctx *ctx,
 	LLVMTypeRef type,
+	LLVMValueRef count,
 	const char *name)
 {
 	LLVMBuilderRef b = LLVMCreateBuilderInContext(ctx->ctx);
 	LLVMPositionBuilderAtEnd(b, ctx->alloc_bb);
-	LLVMValueRef ptr = LLVMBuildAlloca(b, type, name);
+	LLVMValueRef ptr;
+	if(count == NULL) ptr = LLVMBuildAlloca(b, type, name);
+	else ptr = LLVMBuildArrayAlloca(b, type, count, name);
 	LLVMDisposeBuilder(b);
 	return ptr;
 }
@@ -606,11 +614,8 @@ static void emit_in_param(
 				"inlseq.end.elem");
 		}
 		LLVMTypeRef seq_type = llvm_value_type(ctx, seq->elem_type);
-		/* TODO: alloca() these by maximum size at top of dispatcher!
-		 * right now, they'll consume stack for each iteration.
-		 */
-		LLVMValueRef seq_mem = LLVMBuildArrayAlloca(ctx->builder,
-			seq_type, seq_end_elem, "inlseq.mem");
+		LLVMValueRef seq_mem = build_local_storage(ctx, seq_type,
+			LLVMConstInt(ctx->i32t, seq->max_elems, 0), "inlseq.mem");
 		LLVMBasicBlockRef before_bb = LLVMGetInsertBlock(ctx->builder),
 			loop_bb, after_loop_bb;
 		LLVMValueRef fn = LLVMGetBasicBlockParent(before_bb);
@@ -686,7 +691,7 @@ static void emit_out_param(
 {
 	if(is_value_type(ptyp)) {
 		args[(*arg_pos_p)++] = build_local_storage(ctx,
-			llvm_value_type(ctx, ptyp), "outparam.mem");
+			llvm_value_type(ctx, ptyp), NULL, "outparam.mem");
 	} else {
 		printf("can't hack seq/long out-parameter\n");
 		abort();
