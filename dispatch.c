@@ -95,21 +95,23 @@ static LLVMValueRef build_l4_ipc_call(
 }
 
 
+static LLVMValueRef build_utcb_address_ixval(
+	struct llvm_ctx *ctx,
+	LLVMValueRef offset)
+{
+	return LLVMBuildPointerCast(ctx->builder,
+		LLVMBuildGEP(ctx->builder, ctx->utcb, &offset, 1, "utcb.addr"),
+		LLVMPointerType(ctx->wordt, 0), "utcb.addr.wordptr");
+}
+
+
 static LLVMValueRef build_utcb_address(
 	struct llvm_ctx *ctx,
-	LLVMValueRef utcb,
 	int offset)
 {
 	LLVMValueRef off = LLVMConstInt(ctx->wordt, abs(offset), 0);
-	char trail[16], offname[32], addrname[32], wordptrname[32];
-	snprintf(trail, sizeof(trail), ".%c%d", offset < 0 ? 'm' : 'p', abs(offset));
-	snprintf(offname, sizeof(offname), "utcb.offset%s", trail);
-	snprintf(addrname, sizeof(addrname), "utcb.addr%s", trail);
-	snprintf(wordptrname, sizeof(wordptrname), "utcb.addr.wordptr%s", trail);
-	if(offset < 0) off = LLVMBuildNeg(ctx->builder, off, offname);
-	return LLVMBuildPointerCast(ctx->builder,
-			LLVMBuildGEP(ctx->builder, utcb, &off, 1, addrname),
-			LLVMPointerType(ctx->wordt, 0), wordptrname);
+	if(offset < 0) off = LLVMBuildNeg(ctx->builder, off, "utcboffset");
+	return build_utcb_address_ixval(ctx, off);
 }
 
 
@@ -137,7 +139,6 @@ static LLVMValueRef build_label_from_tag(
 }
 
 
-#if 0
 static LLVMValueRef build_u_from_tag(
 	struct llvm_ctx *ctx,
 	LLVMValueRef mr0)
@@ -147,6 +148,7 @@ static LLVMValueRef build_u_from_tag(
 }
 
 
+#if 0
 static LLVMValueRef build_t_from_tag(
 	LLVMBuilderRef builder,
 	LLVMTypeRef wordtype,
@@ -233,9 +235,31 @@ static LLVMValueRef build_ipc_input_val(struct llvm_ctx *ctx, int mr)
 	else if(mr == 2) return ctx->mr2;
 	else {
 		return LLVMBuildLoad(ctx->builder,
-			build_utcb_address(ctx, ctx->utcb, mr * 4),
+			build_utcb_address(ctx, mr * 4),
 			tmp_f(ctx->pr, "mr%d", mr));
 	}
+}
+
+
+/* ix is a valueref to an utcb index; not message register index. */
+static LLVMValueRef build_utcb_load(
+	struct llvm_ctx *ctx,
+	LLVMValueRef ix,
+	const char *name)
+{
+	return LLVMBuildLoad(ctx->builder,
+		build_utcb_address_ixval(ctx, ix), name);
+}
+
+
+static LLVMValueRef build_mr_load(
+	struct llvm_ctx *ctx,
+	LLVMValueRef mrnum,
+	const char *name)
+{
+	LLVMValueRef offset = LLVMBuildMul(ctx->builder, mrnum,
+		LLVMConstInt(ctx->i32t, 4, 0), tmp_f(ctx->pr, "%s.offset", name));
+	return build_utcb_load(ctx, offset, name);
 }
 
 
@@ -244,6 +268,9 @@ static LLVMValueRef build_ipc_input_val(struct llvm_ctx *ctx, int mr)
  * type.
  * otherwise, @dst[0] must point to the first element of a buffer of sufficient
  * maximum size, and @dst[1] will be assigned to the length value (i32).
+ *
+ * this function should be called build_read_ipc_argument() instead; parameters
+ * are always translated according to direction attribute anyhow.
  */
 static void build_read_ipc_parameter(
 	struct llvm_ctx *ctx,
@@ -277,6 +304,49 @@ static void build_read_ipc_parameter(
 	} else if(is_rigid_type(ctx->ns, ctyp)) {
 		NOTDEFINED(ctyp);
 	} else {
+		/* genuinely not defined */
+		NOTDEFINED(ctyp);
+	}
+}
+
+
+/* see comment in sister function above */
+static void build_read_ipc_parameter_ixval(
+	struct llvm_ctx *ctx,
+	LLVMValueRef *dst,
+	IDL_tree ctyp,
+	LLVMValueRef first_mr)
+{
+	if(IS_LONGLONG_TYPE(ctyp)) {
+		/* unpack a two-word parameter. */
+		LLVMValueRef low = build_mr_load(ctx, first_mr, "longparm.lo.mr"),
+			high = build_mr_load(ctx,
+				LLVMBuildAdd(ctx->builder, first_mr,
+					LLVMConstInt(ctx->i32t, 1, 0), "longparm.hi.mr.ix"),
+				"longparm.hi.mr");
+		/* TODO: stash this in the context */
+		LLVMTypeRef i64t = LLVMInt64TypeInContext(ctx->ctx);
+		low = LLVMBuildBitCast(ctx->builder, low, i64t,
+			"longparm.lo.cast");
+		high = LLVMBuildBitCast(ctx->builder, high, i64t,
+			"longparm.hi.cast");
+		dst[0] = LLVMBuildOr(ctx->builder, low,
+				LLVMBuildShl(ctx->builder, high, LLVMConstInt(i64t, 32, 0),
+					"longparm.hi.shift"),
+				"longparm.value");
+	} else if(IS_LONGDOUBLE_TYPE(ctyp)) {
+		fprintf(stderr, "%s: not defined for long double (yet)\n",
+			__func__);
+		abort();
+	} else if(is_value_type(ctyp)) {
+		/* appropriate for all value types. */
+		dst[0] = LLVMBuildTruncOrBitCast(ctx->builder,
+			build_mr_load(ctx, first_mr, "shortparm.mr"),
+			llvm_value_type(ctx, ctyp), "shortparm");
+	} else if(is_rigid_type(ctx->ns, ctyp)) {
+		NOTDEFINED(ctyp);
+	} else {
+		/* genuinely not defined */
 		NOTDEFINED(ctyp);
 	}
 }
@@ -342,14 +412,13 @@ static int build_write_ipc_parameter(
 		NOTDEFINED(ctyp);
 	}
 	LLVMBuildStore(ctx->builder, reg,
-		build_utcb_address(ctx, ctx->utcb, first_mr * 4));
+		build_utcb_address(ctx, first_mr * 4));
 	return 1;
 }
 
 
 /* dst should have two LLVMTypeRefs' worth of space to allow for sequences
- * (pointer + length) and split longlongs on 32-bit architectures (low half,
- * high half).
+ * (pointer + length).
  */
 static void vtable_in_param_type(
 	struct llvm_ctx *ctx,
@@ -357,13 +426,19 @@ static void vtable_in_param_type(
 	int *pos_p,
 	IDL_tree type)
 {
+	/* FIXME: handle long long, long double types */
 	if(is_value_type(type)) {
 		dst[(*pos_p)++] = llvm_value_type(ctx, type);
 	} else if(is_rigid_type(ctx->ns, type)) {
 		/* FIXME: handle structs, arrays, unions */
 		NOTDEFINED(type);
+	} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
+		IDL_tree seqtype = get_type_spec(
+			IDL_TYPE_SEQUENCE(type).simple_type_spec);
+		dst[(*pos_p)++] = LLVMPointerType(llvm_value_type(ctx, seqtype), 0);
+		dst[(*pos_p)++] = ctx->i32t;
 	} else {
-		/* FIXME: handle sequences, strings, wide strings */
+		/* FIXME: handle strings and wide strings */
 		NOTDEFINED(type);
 	}
 }
@@ -377,6 +452,11 @@ static void vtable_out_param_type(
 {
 	if(is_value_type(type)) {
 		dst[(*pos_p)++] = LLVMPointerType(llvm_value_type(ctx, type), 0);
+	} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
+		IDL_tree seqtype = get_type_spec(
+			IDL_TYPE_SEQUENCE(type).simple_type_spec);
+		dst[(*pos_p)++] = LLVMPointerType(llvm_value_type(ctx, seqtype), 0);
+		dst[(*pos_p)++] = LLVMPointerType(ctx->i32t, 0);
 	} else {
 		printf("warning: not emitting llvm out-parameter for <%s>\n",
 			IDL_NODE_TYPE_NAME(type));
@@ -478,17 +558,122 @@ static void emit_in_param(
 	const struct method_info *inf,
 	IDL_tree pdecl)
 {
+	const struct message_info *req = inf->request;
+
 	/* FIXME: repair the untyped/seq/long param thing; they should not
 	 * be flattened out by kind like that.
 	 */
-	struct untyped_param *u = find_untyped(inf->request, pdecl);
+	struct untyped_param *u = find_untyped(req, pdecl);
 	if(u != NULL) {
 		build_read_ipc_parameter(ctx, &args[(*arg_pos_p)++],
 			u->type, u->first_reg);
 		return;
 	}
 
-	printf("can't hack seq/long in-parameter\n");
+	/* inline sequence? */
+	const struct seq_param *seq = NULL;
+	for(int i=0; i < req->num_inline_seq; i++) {
+		if(req->seq[i]->param_dcl == pdecl) {
+			seq = req->seq[i];
+			break;
+		}
+	}
+	if(seq != NULL) {
+		/* this only works if inline sequences appear as parameters to this
+		 * function in the same order as they were in IDL. if not,
+		 * inline_seq_pos will be wrong.
+		 */
+		LLVMValueRef seq_words;
+		if(seq != req->seq[req->num_inline_seq - 1]) {
+			/* not last; take a length word. */
+			seq_words = build_mr_load(ctx, ctx->inline_seq_pos,
+				"inlseq.len.explicit");
+			ctx->inline_seq_pos = LLVMBuildAdd(ctx->builder,
+				ctx->inline_seq_pos, LLVMConstInt(ctx->i32t, 1, 0),
+				"inlseq.pos.bump");
+		} else {
+			/* compute from "u". */
+			LLVMValueRef u = build_u_from_tag(ctx, ctx->tag);
+			seq_words = LLVMBuildSub(ctx->builder, u,
+				ctx->inline_seq_pos, "inlseq.len.implicit");
+		}
+		seq_words = LLVMBuildTruncOrBitCast(ctx->builder, seq_words,
+			ctx->i32t, "inlseq.len.int");
+		LLVMValueRef seq_end_elem = seq_words;
+		if(seq->elems_per_word > 1) {
+			seq_end_elem = LLVMBuildMul(ctx->builder, seq_words,
+				LLVMConstInt(ctx->i32t, seq->elems_per_word, 0),
+				"inlseq.end.elem");
+		}
+		LLVMTypeRef seq_type = llvm_value_type(ctx, seq->elem_type);
+		/* TODO: alloca() these by maximum size at top of dispatcher!
+		 * right now, they'll consume stack for each iteration.
+		 */
+		LLVMValueRef seq_mem = LLVMBuildArrayAlloca(ctx->builder,
+			seq_type, seq_end_elem, "inlseq.mem");
+		LLVMBasicBlockRef before_bb = LLVMGetInsertBlock(ctx->builder),
+			loop_bb, after_loop_bb;
+		LLVMValueRef fn = LLVMGetBasicBlockParent(before_bb);
+		loop_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "inlseq.loop");
+		after_loop_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn,
+			"inlseq.loop.after");
+		LLVMBuildBr(ctx->builder, loop_bb);
+
+		/* the copy loop. */
+		LLVMPositionBuilderAtEnd(ctx->builder, loop_bb);
+		LLVMValueRef seq_pos, counter;
+		seq_pos = LLVMBuildPhi(ctx->builder, ctx->i32t, "loop.seqpos");
+		counter = LLVMBuildPhi(ctx->builder, ctx->i32t, "loop.ctr");
+		LLVMAddIncoming(seq_pos, &ctx->inline_seq_pos, &before_bb, 1);
+		LLVMAddIncoming(counter, &ctx->zero, &before_bb, 1);
+
+		if(seq->bits_per_elem == BITS_PER_WORD) {
+			/* full word case */
+			LLVMValueRef item;
+			build_read_ipc_parameter_ixval(ctx, &item, seq->elem_type,
+				seq_pos);
+			LLVMBuildStore(ctx->builder, item,
+				LLVMBuildGEP(ctx->builder, seq_mem, &counter, 1,
+					"seq.mem.at"));
+		} else {
+			/* many-per-word case */
+			LLVMValueRef word = build_mr_load(ctx, seq_pos, "seq.limb");
+			for(int i=0; i<seq->elems_per_word; i++) {
+				LLVMValueRef item = LLVMBuildTrunc(ctx->builder,
+					i == 0 ? word : LLVMBuildLShr(ctx->builder, word,
+						LLVMConstInt(ctx->i32t, seq->bits_per_elem * i, 0),
+						"seq.limb.shifted"),
+					seq_type, "seq.limb.trunc");
+				LLVMValueRef ix = LLVMBuildAdd(ctx->builder, counter,
+					LLVMConstInt(ctx->i32t, i, 0), "seq.limb.ix");
+				LLVMBuildStore(ctx->builder, item,
+					LLVMBuildGEP(ctx->builder, seq_mem, &ix, 1,
+						"seq.limb.at"));
+			}
+		}
+
+		LLVMValueRef next_counter, next_sp;
+		next_counter = LLVMBuildAdd(ctx->builder, counter,
+			LLVMConstInt(ctx->i32t, seq->elems_per_word, 0),
+			"loop.ctr.next");
+		next_sp = LLVMBuildAdd(ctx->builder, seq_pos,
+			LLVMConstInt(ctx->i32t, 1, 0), "loop.seqpos.next");
+		LLVMBasicBlockRef this_bb = LLVMGetInsertBlock(ctx->builder);
+		LLVMAddIncoming(counter, &next_counter, &this_bb, 1);
+		LLVMAddIncoming(seq_pos, &next_sp, &this_bb, 1);
+		LLVMValueRef exit_cond = LLVMBuildICmp(ctx->builder,
+			LLVMIntULT, next_counter, seq_end_elem, "loop.nextp");
+		LLVMBuildCondBr(ctx->builder, exit_cond, loop_bb, after_loop_bb);
+		LLVMPositionBuilderAtEnd(ctx->builder, after_loop_bb);
+
+		args[(*arg_pos_p)++] = seq_mem;
+		args[(*arg_pos_p)++] = seq_end_elem;
+		ctx->inline_seq_pos = next_sp;
+
+		return;
+	}
+
+	fprintf(stderr, "can't hax this in-parameter\n");
 	abort();
 }
 
@@ -532,6 +717,8 @@ static LLVMBasicBlockRef build_op_decode(
 	bool rv_actual = false;
 	LLVMTypeRef rv_type = vtable_return_type(ctx, inf->node, &rv_actual);
 
+	ctx->inline_seq_pos = LLVMConstInt(ctx->i32t,
+		inf->request->untyped_words, 0);
 	const int num_args_max = 1 + req->num_untyped
 		+ req->num_inline_seq * 2 + req->num_long * 2;
 	LLVMValueRef args[num_args_max], retvalptr = NULL;
@@ -682,12 +869,11 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 
 	LLVMPositionBuilderAtEnd(ctx->builder, bb);
 	ctx->utcb = build_utcb_get(ctx);
-	LLVMValueRef xfer_timeouts_addr = build_utcb_address(ctx, ctx->utcb, -32),
+	LLVMValueRef xfer_timeouts_addr = build_utcb_address(ctx, -32),
 		stored_timeouts = LLVMBuildLoad(ctx->builder,
 			xfer_timeouts_addr, "stored_timeouts"),
 		acceptor = LLVMConstInt(ctx->i32t, 0, 0);
-	LLVMBuildStore(ctx->builder, acceptor,
-		build_utcb_address(ctx, ctx->utcb, -64));
+	LLVMBuildStore(ctx->builder, acceptor, build_utcb_address(ctx, -64));
 	LLVMBuildStore(ctx->builder, stored_timeouts, xfer_timeouts_addr);
 	ctx->alloc_bb = bb;
 
@@ -734,7 +920,7 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 		"msgerr.tag");
 	LLVMBuildStore(ctx->builder,
 		LLVMBuildNeg(ctx->builder, ctx->fncall_phi, "rcneg.val"),
-		build_utcb_address(ctx, ctx->utcb, 4));	/* mr0 on 32-bit systems */
+		build_utcb_address(ctx, 4));	/* mr0 on 32-bit systems */
 	LLVMAddIncoming(ctx->reply_tag, &msgerr_tag, &ctx->msgerr_bb, 1);
 	LLVMBuildBr(ctx->builder, ctx->reply_bb);
 
@@ -746,7 +932,7 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 	/* return L4_ErrorCode(); */
 	LLVMPositionBuilderAtEnd(ctx->builder, ret_ec_bb);
 	LLVMValueRef errorcode = LLVMBuildLoad(ctx->builder,
-		build_utcb_address(ctx, ctx->utcb, -36), "errcode");
+		build_utcb_address(ctx, -36), "errcode");
 	LLVMAddIncoming(retval, &errorcode, &ret_ec_bb, 1);
 	LLVMBuildBr(ctx->builder, exit_bb);
 
