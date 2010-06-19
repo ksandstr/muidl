@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <errno.h>
 
 #include <llvm-c/Core.h>
 #include <libIDL/IDL.h>
@@ -592,15 +593,18 @@ static void emit_in_param(
 		 * inline_seq_pos will be wrong.
 		 */
 		LLVMValueRef seq_words;
-		if(seq != req->seq[req->num_inline_seq - 1]) {
-			/* not last; take a length word. */
+		/* FIXME: compute seq_end_elem here also */
+		if(seq != req->seq[req->num_inline_seq - 1]
+			|| seq->bits_per_elem < BITS_PER_WORD)
+		{
+			/* not subject to trickery; take a length word. */
 			seq_words = build_mr_load(ctx, ctx->inline_seq_pos,
 				"inlseq.len.explicit");
 			ctx->inline_seq_pos = LLVMBuildAdd(ctx->builder,
 				ctx->inline_seq_pos, LLVMConstInt(ctx->i32t, 1, 0),
 				"inlseq.pos.bump");
 		} else {
-			/* compute from "u". */
+			/* last sequence of word-length items; compute length from "u". */
 			LLVMValueRef u = build_u_from_tag(ctx, ctx->tag);
 			seq_words = LLVMBuildSub(ctx->builder, u,
 				ctx->inline_seq_pos, "inlseq.len.implicit");
@@ -613,19 +617,30 @@ static void emit_in_param(
 				LLVMConstInt(ctx->i32t, seq->elems_per_word, 0),
 				"inlseq.end.elem");
 		}
-		LLVMTypeRef seq_type = llvm_value_type(ctx, seq->elem_type);
-		LLVMValueRef seq_mem = build_local_storage(ctx, seq_type,
-			LLVMConstInt(ctx->i32t, seq->max_elems, 0), "inlseq.mem");
-		LLVMBasicBlockRef before_bb = LLVMGetInsertBlock(ctx->builder),
-			loop_bb, after_loop_bb;
+
+		LLVMBasicBlockRef before_bb = LLVMGetInsertBlock(ctx->builder);
 		LLVMValueRef fn = LLVMGetBasicBlockParent(before_bb);
+		LLVMBasicBlockRef loop_bb, after_loop_bb;
 		loop_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "inlseq.loop");
 		after_loop_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn,
 			"inlseq.loop.after");
-		LLVMBuildBr(ctx->builder, loop_bb);
+
+		/* guard against maximum size violations */
+		/* FIXME: get EINVAL from µiX headers */
+		LLVMValueRef einval = LLVMConstInt(ctx->i32t, -EINVAL, 1);
+		LLVMAddIncoming(ctx->fncall_phi, &einval, &before_bb, 1);
+		LLVMValueRef einval_cond = LLVMBuildICmp(ctx->builder,
+			LLVMIntULT, seq_end_elem,
+			LLVMConstInt(ctx->i32t, seq->max_elems, 0),
+			"inlseq.len.cond");
+		LLVMBuildCondBr(ctx->builder, einval_cond, loop_bb,
+			ctx->msgerr_bb);
 
 		/* the copy loop. */
 		LLVMPositionBuilderAtEnd(ctx->builder, loop_bb);
+		LLVMTypeRef seq_type = llvm_value_type(ctx, seq->elem_type);
+		LLVMValueRef seq_mem = build_local_storage(ctx, seq_type,
+			LLVMConstInt(ctx->i32t, seq->max_elems, 0), "inlseq.mem");
 		LLVMValueRef seq_pos, counter;
 		seq_pos = LLVMBuildPhi(ctx->builder, ctx->i32t, "loop.seqpos");
 		counter = LLVMBuildPhi(ctx->builder, ctx->i32t, "loop.ctr");
@@ -925,7 +940,7 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 		"msgerr.tag");
 	LLVMBuildStore(ctx->builder,
 		LLVMBuildNeg(ctx->builder, ctx->fncall_phi, "rcneg.val"),
-		build_utcb_address(ctx, 4));	/* mr0 on 32-bit systems */
+		build_utcb_address(ctx, 4));	/* mr1 on ia32 */
 	LLVMAddIncoming(ctx->reply_tag, &msgerr_tag, &ctx->msgerr_bb, 1);
 	LLVMBuildBr(ctx->builder, ctx->reply_bb);
 
