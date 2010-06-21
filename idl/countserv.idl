@@ -48,7 +48,8 @@ interface Countserv
 
 	[Label(674)]
 	void with_output_sequence(
-		out something delivery_for_mr_claus);
+		out something delivery_for_mr_claus,
+		out something surely_something_good);
 };
 
 

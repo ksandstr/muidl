@@ -964,9 +964,15 @@ static LLVMBasicBlockRef build_op_decode(
 	/* TODO: encode typed words (long & complex sequences, strings, wide
 	 * strings)
 	 */
-	/* label 0, t 0, u = mr_pos - 1 */
+
+	/* epilogue */
 	LLVMBasicBlockRef current = LLVMGetInsertBlock(ctx->builder);
-	LLVMValueRef tag = LLVMConstInt(ctx->wordt, mr_pos - 1, 0);
+	/* flags = 0, u = inline_seq_pos - 1, label = 0, t = 0 */
+	LLVMValueRef u_val = LLVMBuildSub(ctx->builder, ctx->inline_seq_pos,
+			LLVMConstInt(ctx->i32t, 1, 0),
+			tmp_f(ctx->pr, "%s.reply.u", opname)),
+		tag = LLVMBuildZExtOrBitCast(ctx->builder, u_val,
+			ctx->wordt, tmp_f(ctx->pr, "%s.replytag", opname));
 	LLVMAddIncoming(ctx->reply_tag, &tag, &current, 1);
 	LLVMBuildBr(ctx->builder, ctx->reply_bb);
 
