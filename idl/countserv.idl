@@ -45,6 +45,10 @@ interface Countserv
 	void with_packed_inline_sequence(
 		in packed_something durr,
 		in something derrrp);
+
+	[Label(674)]
+	void with_output_sequence(
+		out something delivery_for_mr_claus);
 };
 
 

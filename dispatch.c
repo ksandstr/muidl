@@ -311,6 +311,7 @@ static void build_read_ipc_parameter(
 			build_ipc_input_val(ctx, first_mr),
 			llvm_value_type(ctx, ctyp), "shortparm");
 	} else if(is_rigid_type(ctx->ns, ctyp)) {
+		/* TODO */
 		NOTDEFINED(ctyp);
 	} else {
 		/* genuinely not defined */
@@ -709,10 +710,38 @@ static void emit_out_param(
 	if(is_value_type(ptyp)) {
 		args[(*arg_pos_p)++] = build_local_storage(ctx,
 			llvm_value_type(ctx, ptyp), NULL, "outparam.mem");
+	} else if(IDL_NODE_TYPE(ptyp) == IDLN_TYPE_SEQUENCE) {
+		IDL_tree seqtype = get_type_spec(
+			IDL_TYPE_SEQUENCE(ptyp).simple_type_spec);
+		int max_size = IDL_INTEGER(
+			IDL_TYPE_SEQUENCE(ptyp).positive_int_const).value;
+		args[(*arg_pos_p)++] = build_local_storage(ctx,
+			llvm_value_type(ctx, seqtype),
+			LLVMConstInt(ctx->i32t, max_size, 0),
+			"outparam.seq.mem");
+		args[(*arg_pos_p)++] = build_local_storage(ctx,
+			ctx->i32t, NULL, "outparam.seq.len.mem");
 	} else {
 		printf("can't hack seq/long out-parameter\n");
 		abort();
 	}
+}
+
+
+static int first_arg_index(IDL_tree op, IDL_tree pdecl)
+{
+	int ix = 0;
+	for(IDL_tree cur = IDL_OP_DCL(op).parameter_dcls;
+		cur != NULL;
+		cur = IDL_LIST(cur).next)
+	{
+		IDL_tree p = IDL_LIST(cur).data;
+		if(p == pdecl) return ix;
+		IDL_tree type = get_type_spec(IDL_PARAM_DCL(p).param_type_spec);
+		/* sequences are 2 args. everything else is just one. */
+		ix += IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE ? 2 : 1;
+	}
+	return -1;
 }
 
 
@@ -740,7 +769,7 @@ static LLVMBasicBlockRef build_op_decode(
 	LLVMTypeRef rv_type = vtable_return_type(ctx, inf->node, &rv_actual);
 
 	ctx->inline_seq_pos = LLVMConstInt(ctx->i32t,
-		inf->request->untyped_words, 0);
+		inf->request->untyped_words + 1, 0);
 	const int num_args_max = 1 + req->num_untyped
 		+ req->num_inline_seq * 2 + req->num_long * 2;
 	LLVMValueRef args[num_args_max], retvalptr = NULL;
@@ -829,7 +858,7 @@ static LLVMBasicBlockRef build_op_decode(
 			inf->return_type, mr_pos);
 	}
 	/* those out-parameters and out-halves of inout parameters which are
-	 * encoded as untyped words.
+	 * either value or rigid types, i.e. a fixed number of words each.
 	 */
 	int arg_ix = 0;
 	for(IDL_tree cur = IDL_OP_DCL(reply->node).parameter_dcls;
@@ -856,10 +885,89 @@ static LLVMBasicBlockRef build_op_decode(
 				mr_pos);
 		}
 	}
-	/* TODO: encode typed words */
+
+	/* inline sequences */
+	/* FIXME: make sure reply->untyped_words + 1 == mr_pos; otherwise
+	 * cruel overwriting will occur
+	 */
+	ctx->inline_seq_pos = LLVMConstInt(ctx->i32t,
+		reply->untyped_words + 1, 0);
+	for(int seq_i=0; seq_i < reply->num_inline_seq; seq_i++) {
+		const struct seq_param *seq = reply->seq[seq_i];
+		int first_arg = first_arg_index(reply->node, seq->param_dcl);
+		assert(first_arg >= 0);
+		LLVMValueRef mem = args[first_arg], lenptr = args[first_arg + 1];
+		LLVMValueRef num_items = LLVMBuildLoad(ctx->builder,
+			lenptr, "inlseq.len");
+		if(seq->elems_per_word > 1 || seq_i + 1 < reply->num_inline_seq) {
+			/* not simple && last; emit an item-count word. */
+			LLVMBuildStore(ctx->builder,
+				LLVMBuildZExtOrBitCast(ctx->builder, num_items,
+					ctx->wordt, "inlseq.len.word"),
+				build_utcb_address_ixval(ctx,
+					LLVMBuildMul(ctx->builder, ctx->inline_seq_pos,
+						LLVMConstInt(ctx->i32t, 4, 0), "inlseq.len.word.offs")));
+			ctx->inline_seq_pos = LLVMBuildAdd(ctx->builder,
+				ctx->inline_seq_pos, LLVMConstInt(ctx->i32t, 1, 0),
+				"inlseq.pos.bump");
+		}
+
+		/* loop per word. */
+		LLVMBasicBlockRef before_bb = LLVMGetInsertBlock(ctx->builder);
+		LLVMValueRef fn = LLVMGetBasicBlockParent(before_bb);
+		LLVMBasicBlockRef loop_bb = LLVMAppendBasicBlockInContext(
+				ctx->ctx, fn, "inlseq.out.loop"),
+			loop_after_bb = LLVMAppendBasicBlockInContext(
+				ctx->ctx, fn, "inlseq.out.loop.after");
+		LLVMBuildBr(ctx->builder, loop_bb);
+
+		LLVMPositionBuilderAtEnd(ctx->builder, loop_bb);
+		LLVMValueRef pos = LLVMBuildPhi(ctx->builder, ctx->i32t,
+				"inlseq.out.pos"),
+			word_ix = LLVMBuildPhi(ctx->builder, ctx->i32t,
+				"inlseq.out.word_ix");
+		LLVMAddIncoming(pos, &ctx->zero, &before_bb, 1);
+		LLVMAddIncoming(word_ix, &ctx->inline_seq_pos, &before_bb, 1);
+		LLVMValueRef wordval = LLVMBuildLoad(ctx->builder,
+			LLVMBuildGEP(ctx->builder, mem, &pos, 1, "item.ptr"),
+			"item.wordval");
+		if(seq->elems_per_word == 1) {
+			LLVMBuildStore(ctx->builder, wordval,
+				build_utcb_address_ixval(ctx,
+					LLVMBuildMul(ctx->builder, word_ix,
+						LLVMConstInt(ctx->i32t, 4, 0), "word_ix.offs")));
+		} else {
+			/* FIXME */
+			fprintf(stderr, "fasdkjfhaskjdhfakjshfjsa\n");
+		}
+		LLVMValueRef next_pos = LLVMBuildAdd(ctx->builder, pos,
+				LLVMConstInt(ctx->i32t, seq->elems_per_word, 0),
+				"inlseq.out.pos.next"),
+			next_word = LLVMBuildAdd(ctx->builder, word_ix,
+				LLVMConstInt(ctx->i32t, 1, 0), "inlseq.out.word_ix.next");
+		LLVMBasicBlockRef current = LLVMGetInsertBlock(ctx->builder);
+		LLVMAddIncoming(pos, &next_pos, &current, 1);
+		LLVMAddIncoming(word_ix, &next_word, &current, 1);
+		LLVMValueRef exit_cond = LLVMBuildICmp(ctx->builder,
+			LLVMIntULT, next_pos, num_items, "exit.cond");
+		LLVMBuildCondBr(ctx->builder, exit_cond, loop_bb, loop_after_bb);
+
+		LLVMPositionBuilderAtEnd(ctx->builder, loop_after_bb);
+		if(seq->elems_per_word > 1) {
+			/* FIXME: make loop for trailing elements */
+			fprintf(stderr, "fasdjfashdfkjahlskjhlkjhkjhlkjhlkjhlkjh!!!!\n");
+		}
+
+		ctx->inline_seq_pos = next_word;
+	}
+
+	/* TODO: encode typed words (long & complex sequences, strings, wide
+	 * strings)
+	 */
 	/* label 0, t 0, u = mr_pos - 1 */
+	LLVMBasicBlockRef current = LLVMGetInsertBlock(ctx->builder);
 	LLVMValueRef tag = LLVMConstInt(ctx->wordt, mr_pos - 1, 0);
-	LLVMAddIncoming(ctx->reply_tag, &tag, &pr_bb, 1);
+	LLVMAddIncoming(ctx->reply_tag, &tag, &current, 1);
 	LLVMBuildBr(ctx->builder, ctx->reply_bb);
 
 	return bb;
