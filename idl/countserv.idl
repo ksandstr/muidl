@@ -37,6 +37,7 @@ interface Countserv
 
 	typedef sequence<long, 20> something;
 	typedef sequence<short, 20> packed_something;
+	typedef sequence<octet, 32> fiddly_something;
 
 	[Label(672)]
 	void with_inline_sequence(in something hurr);
@@ -49,7 +50,11 @@ interface Countserv
 	[Label(674)]
 	void with_output_sequence(
 		out something delivery_for_mr_claus,
-		out something surely_something_good);
+		out packed_something surely_something_good);
+
+	[Label(675)]
+	void widdly_scuds(
+		out fiddly_something cheese_fries);
 };
 
 
