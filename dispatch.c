@@ -936,21 +936,26 @@ static LLVMBasicBlockRef build_op_decode(
 		}
 
 		/* loop per word. */
-		LLVMBasicBlockRef before_bb = LLVMGetInsertBlock(ctx->builder);
-		LLVMValueRef fn = LLVMGetBasicBlockParent(before_bb);
+		LLVMBasicBlockRef before_loop_bb = LLVMGetInsertBlock(ctx->builder);
+		LLVMValueRef fn = LLVMGetBasicBlockParent(before_loop_bb);
 		LLVMBasicBlockRef loop_bb = LLVMAppendBasicBlockInContext(
 				ctx->ctx, fn, "inlseq.out.loop"),
 			loop_after_bb = LLVMAppendBasicBlockInContext(
 				ctx->ctx, fn, "inlseq.out.loop.after");
-		LLVMBuildBr(ctx->builder, loop_bb);
+		LLVMBuildCondBr(ctx->builder,
+			LLVMBuildICmp(ctx->builder, LLVMIntUGE, num_items,
+				LLVMConstInt(ctx->i32t, seq->elems_per_word, 0),
+				"inlseq.out.loop.entrycond"),
+			loop_bb, loop_after_bb);
+		LLVMValueRef isp_before_loop = ctx->inline_seq_pos;
 
 		LLVMPositionBuilderAtEnd(ctx->builder, loop_bb);
 		LLVMValueRef pos = LLVMBuildPhi(ctx->builder, ctx->i32t,
 				"inlseq.out.pos"),
 			word_ix = LLVMBuildPhi(ctx->builder, ctx->i32t,
 				"inlseq.out.word_ix");
-		LLVMAddIncoming(pos, &ctx->zero, &before_bb, 1);
-		LLVMAddIncoming(word_ix, &ctx->inline_seq_pos, &before_bb, 1);
+		LLVMAddIncoming(pos, &ctx->zero, &before_loop_bb, 1);
+		LLVMAddIncoming(word_ix, &ctx->inline_seq_pos, &before_loop_bb, 1);
 		LLVMValueRef wordval;
 		if(seq->elems_per_word == 1) {
 			wordval = LLVMBuildZExtOrBitCast(ctx->builder,
@@ -982,18 +987,34 @@ static LLVMBasicBlockRef build_op_decode(
 		LLVMBasicBlockRef current = LLVMGetInsertBlock(ctx->builder);
 		LLVMAddIncoming(pos, &next_pos, &current, 1);
 		LLVMAddIncoming(word_ix, &next_word, &current, 1);
-		/* FIXME: this is wrong. we should stop when there are fewer than
-		 * seq->elems_per_word left for the next iteration; the rest will be
-		 * picked up by mr. shake-hands-man below.
+		/* the fancy seq->elems_per_word conditional there is to make sure that
+		 * the loop is only executed while there are as many or more than
+		 * seq->elems_per_word items left.
 		 */
-		LLVMValueRef exit_cond = LLVMBuildICmp(ctx->builder,
-			LLVMIntULT, next_pos, num_items, "exit.cond");
+		LLVMValueRef exit_cond = LLVMBuildICmp(ctx->builder, LLVMIntULT,
+			seq->elems_per_word == 1
+				? next_pos
+				: LLVMBuildAdd(ctx->builder, next_pos,
+					LLVMConstInt(ctx->i32t, seq->elems_per_word - 1, 0),
+					"inlseq.out.pos.next.test"),
+			num_items, "exit.cond");
 		LLVMBuildCondBr(ctx->builder, exit_cond, loop_bb, loop_after_bb);
 
 		LLVMPositionBuilderAtEnd(ctx->builder, loop_after_bb);
 		if(seq->elems_per_word > 1) {
 			LLVMBasicBlockRef after_bb = LLVMAppendBasicBlockInContext(
 				ctx->ctx, fn, tmp_f(ctx->pr, "%s.inlseq.odd.after", opname));
+
+			LLVMValueRef pos_phi = LLVMBuildPhi(ctx->builder, ctx->i32t,
+					"inlseq.out.pos.phi"),
+				next_word_phi = LLVMBuildPhi(ctx->builder, ctx->i32t,
+					"inlseq.out.nextword.phi");
+			LLVMAddIncoming(pos_phi, &ctx->zero, &before_loop_bb, 1);
+			LLVMAddIncoming(next_word_phi, &isp_before_loop, &before_loop_bb, 1);
+			LLVMAddIncoming(pos_phi, &pos, &loop_bb, 1);
+			LLVMAddIncoming(next_word_phi, &next_word, &loop_bb, 1);
+			pos = pos_phi;
+			next_word = next_word_phi;
 
 			/* one-round duff's device for trailing elements. not
 			 * pretty, nor too compact, but gets the job done.
