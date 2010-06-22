@@ -1021,10 +1021,13 @@ static LLVMBasicBlockRef build_op_decode(
 				if(prev != loop_after_bb) LLVMBuildBr(ctx->builder, b);
 				LLVMAddCase(sel, LLVMConstInt(ctx->i32t, i, 0), b);
 				LLVMPositionBuilderAtEnd(ctx->builder, b);
-				LLVMValueRef word_phi = LLVMBuildPhi(ctx->builder, ctx->wordt,
-					tmp_f(ctx->pr, "%s.inlseq.odd.wordval.p%d", opname, i));
-				LLVMAddIncoming(word_phi, &ctx->zero, &loop_after_bb, 1);
-				if(prev != loop_after_bb) {
+				LLVMValueRef word_phi;
+				if(prev == loop_after_bb) word_phi = ctx->zero;
+				else {
+					word_phi = LLVMBuildPhi(ctx->builder, ctx->wordt,
+						tmp_f(ctx->pr, "%s.inlseq.odd.wordval.p%d",
+							opname, i));
+					LLVMAddIncoming(word_phi, &ctx->zero, &loop_after_bb, 1);
 					LLVMAddIncoming(word_phi, &wordval, &prev, 1);
 				}
 				wordval = LLVMBuildOr(ctx->builder, word_phi,
