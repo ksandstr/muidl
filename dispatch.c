@@ -1197,16 +1197,45 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 	/* FIXME: support for tag-mask labelled operations, such as for the L4.X2
 	 * pager protocol
 	 */
+	int top_label = -1;
+	LLVMValueRef sublabelswitch = NULL;
 	for(GList *cur = g_list_first(methods);
 		cur != NULL;
 		cur = g_list_next(cur))
 	{
 		struct method_info *inf = cur->data;
-		/* FIXME: handle sublabels! */
-		LLVMBasicBlockRef decode_bb = build_op_decode(ctx, fn, inf);
-		LLVMAddCase(labelswitch,
-			LLVMConstInt(ctx->wordt, inf->request->label, 0),
-			decode_bb);
+		if(inf->request->sublabel == NO_SUBLABEL) {
+			LLVMBasicBlockRef decode_bb = build_op_decode(ctx, fn, inf);
+			LLVMAddCase(labelswitch,
+				LLVMConstInt(ctx->wordt, inf->request->label, 0),
+				decode_bb);
+		} else {
+			if(top_label != -1 && top_label != inf->request->label) {
+				/* restore pre-first state */
+				top_label = -1;
+				sublabelswitch = NULL;
+			}
+			if(top_label == -1) {
+				/* begin a new sub-switch. */
+				assert(sublabelswitch == NULL);
+				top_label = inf->request->label;
+				LLVMBasicBlockRef sub_bb = LLVMAppendBasicBlockInContext(
+					ctx->ctx, fn, tmp_f(ctx->pr, "sub%04x.dispatch",
+						(unsigned)top_label));
+				LLVMPositionBuilderAtEnd(ctx->builder, sub_bb);
+				/* FIXME: get the correct value for "2" */
+				sublabelswitch = LLVMBuildSwitch(ctx->builder,
+					ctx->mr1, exit_bb, 2);
+				LLVMAddIncoming(retval, &unknownlabel, &sub_bb, 1);
+				LLVMAddCase(labelswitch,
+					LLVMConstInt(ctx->wordt, top_label, 0), sub_bb);
+			}
+			assert(sublabelswitch != NULL);
+			assert(top_label == inf->request->label);
+			LLVMAddCase(sublabelswitch,
+				LLVMConstInt(ctx->wordt, inf->request->sublabel, 0),
+				build_op_decode(ctx, fn, inf));
+		}
 	}
 
 	/* close off the alloc (entry) block. */

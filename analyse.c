@@ -538,6 +538,8 @@ static int method_info_by_label_cmp(gconstpointer ap, gconstpointer bp)
 	const struct message_info *a = amsg->request, *b = bmsg->request;
 	if(a->label < b->label) return -1;
 	else if(a->label > b->label) return 1;
+	else if(a->sublabel < b->sublabel) return -1;
+	else if(a->sublabel > b->sublabel) return 1;
 	else return 0;
 }
 
