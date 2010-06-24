@@ -855,7 +855,8 @@ static LLVMBasicBlockRef build_op_decode(
 		/* examine NegativeReturn exception trigger */
 		LLVMValueRef ok_cond = LLVMBuildICmp(ctx->builder, LLVMIntSGE, fncall,
 			LLVMConstInt(ctx->i32t, 0, 1), "rcneg.cond");
-		LLVMAddIncoming(ctx->fncall_phi, &fncall, &bb, 1);
+		LLVMBasicBlockRef current_bb = LLVMGetInsertBlock(ctx->builder);
+		LLVMAddIncoming(ctx->fncall_phi, &fncall, &current_bb, 1);
 		LLVMBuildCondBr(ctx->builder, ok_cond, ex_chain_bb,
 			ctx->msgerr_bb);
 	}
