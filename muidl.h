@@ -130,7 +130,8 @@ struct llvm_ctx
 	LLVMValueRef zero;
 
 	/* used by dispatcher building etc; common L4 IPC stuff */
-	LLVMValueRef utcb, from, mr1, mr2, tag;
+	LLVMValueRef utcb;		/* address of UTCB; <L4_Word_t *> */
+	LLVMValueRef from, mr1, mr2, tag;	/* IPC receive regs */
 
 	/* dispatcher-specific things */
 	LLVMBasicBlockRef reply_bb, msgerr_bb, wait_bb, alloc_bb;
@@ -393,5 +394,19 @@ extern LLVMValueRef build_dispatcher_function(
 /* returned valueref is a <L4_Word_t *> of the UTCB address. */
 extern LLVMValueRef build_utcb_get(struct llvm_ctx *ctx);
 
+/* returned valueref is L4_Word_t mr0 (message tag).
+ *
+ * never overwrites the from, mr1, mr2 valuerefs in *ctx; if you want that,
+ * give their pointers as the out-values.
+ */
+extern LLVMValueRef build_l4_ipc_call(
+	struct llvm_ctx *ctx,
+	LLVMValueRef arg_to,
+	LLVMValueRef arg_timeouts,
+	LLVMValueRef arg_fromspec,
+	LLVMValueRef arg_mr0,
+	LLVMValueRef *from_p,		/* may be NULL */
+	LLVMValueRef *mr1_p,
+	LLVMValueRef *mr2_p);
 
 #endif

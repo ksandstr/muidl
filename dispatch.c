@@ -51,48 +51,6 @@ static LLVMValueRef build_local_storage(
 }
 
 
-/* return node is L4_Word_t mr0 (i.e. message tag). */
-static LLVMValueRef build_l4_ipc_call(
-	struct llvm_ctx *ctx,
-	LLVMValueRef arg_to,
-	LLVMValueRef arg_timeouts,
-	LLVMValueRef arg_fromspec,
-	LLVMValueRef arg_mr0,
-	LLVMValueRef *from_p,
-	LLVMValueRef *mr1_p,
-	LLVMValueRef *mr2_p)
-{
-	LLVMTypeRef params[5];
-	for(int i=0; i<5; i++) params[i] = ctx->wordt;
-	LLVMTypeRef ipc_result_type = LLVMStructTypeInContext(ctx->ctx,
-		params, 4, 0);
-	LLVMTypeRef ipc_type = LLVMFunctionType(ipc_result_type,
-		params, 5, 0);
-	LLVMValueRef fn = LLVMConstInlineAsm(ipc_type,
-		"call __L4_Ipc\n",
-		"={ax},={si},={bx},={bp},{ax},{cx},{dx},{si},{di},~{dirflag},~{fpsr},~{flags}",
-		1, 0);
-	LLVMValueRef args[5] = {
-		arg_to, arg_timeouts, arg_fromspec, arg_mr0,
-		LLVMBuildPtrToInt(ctx->builder, ctx->utcb, ctx->wordt,
-			"l4ipc.utcb"),
-	};
-	LLVMValueRef result = LLVMBuildCall(ctx->builder, fn, args, 5, "l4ipc");
-	LLVMSetTailCall(result, 1);
-
-	if(from_p != NULL) {
-		*from_p = LLVMBuildExtractValue(ctx->builder, result, 0, "from");
-	}
-	if(mr1_p != NULL) {
-		*mr1_p = LLVMBuildExtractValue(ctx->builder, result, 2, "mr1");
-	}
-	if(mr2_p != NULL) {
-		*mr2_p = LLVMBuildExtractValue(ctx->builder, result, 3, "mr2");
-	}
-	return LLVMBuildExtractValue(ctx->builder, result, 1, "mr0");
-}
-
-
 /* NOTE: offset is in _words_, since that's the unit the UTCB is addressed
  * with.
  */
