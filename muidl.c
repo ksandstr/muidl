@@ -1637,13 +1637,6 @@ static LLVMModuleRef make_llvm_service_module(
 
 	IDL_tree_walk_in_order(ctx->pr->tree, &iter_emit_dispatchers, ctx);
 
-	char *outmsg = NULL;
-	if(LLVMVerifyModule(mod, LLVMPrintMessageAction, &outmsg)) {
-		fprintf(stderr, "LLVM module verifier complained!\n");
-		abort();
-		LLVMDisposeMessage(outmsg);
-	}
-
 	ctx->module = NULL;
 	return mod;
 }
@@ -1719,6 +1712,12 @@ bool do_idl_file(const char *cppopts, const char *filename)
 	lc.mapgrant = LLVMStructTypeInContext(lc.ctx, mapgrant_fields, 2, 1);
 	LLVMModuleRef mod = make_llvm_service_module(&lc, basename);
 	LLVMDumpModule(mod);
+	char *outmsg = NULL;
+	if(LLVMVerifyModule(mod, LLVMPrintMessageAction, &outmsg)) {
+		fprintf(stderr, "LLVM module verifier complained!\n");
+		abort();
+		LLVMDisposeMessage(outmsg);
+	}
 	LLVMDisposeModule(mod);
 
 	g_string_chunk_free(print_ctx.tmpstrchunk);
