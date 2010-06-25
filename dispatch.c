@@ -1121,6 +1121,15 @@ static LLVMBasicBlockRef build_op_decode(
 }
 
 
+static gint method_by_tagmask_cmp(gconstpointer ap, gconstpointer bp)
+{
+	const struct method_info *a = ap, *b = bp;
+	if(a->request->tagmask < b->request->tagmask) return -1;
+	else if(a->request->tagmask > b->request->tagmask) return 1;
+	else return 0;
+}
+
+
 LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 {
 	GList *tagmask_list = NULL,
@@ -1200,17 +1209,77 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 	LLVMAddIncoming(retval, &errorcode, &ret_ec_bb, 1);
 	LLVMBuildBr(ctx->builder, exit_bb);
 
+	/* recognize interfaces that've got tag-mask dispatching. */
+	GList *tm_list = NULL;
+	for(GList *cur = g_list_first(methods);
+		cur != NULL;
+		cur = g_list_next(cur))
+	{
+		struct method_info *inf = cur->data;
+		if(inf->request->tagmask != NO_TAGMASK) {
+			assert(inf->request->sublabel == NO_SUBLABEL);
+			tm_list = g_list_prepend(tm_list, inf);
+		}
+	}
+	tm_list = g_list_reverse(tm_list);
+	LLVMBasicBlockRef tm_dispatch_bb = NULL;
+	if(tm_list != NULL) {
+		tm_dispatch_bb = LLVMAppendBasicBlockInContext(ctx->ctx,
+			fn, "tagmask.dispatch");
+	}
+
 	/* dispatch according to ctx->tag. */
 	LLVMPositionBuilderAtEnd(ctx->builder, dispatch_bb);
-	/* FIXME: get the correct value */
+	/* TODO: get the correct value */
 	LLVMValueRef labelswitch = LLVMBuildSwitch(ctx->builder,
-		build_label_from_tag(ctx, ctx->tag), exit_bb, 2);
-	LLVMValueRef unknownlabel = LLVMConstInt(ctx->wordt, 42666, 0);
-	LLVMAddIncoming(retval, &unknownlabel, &dispatch_bb, 1);
+		build_label_from_tag(ctx, ctx->tag),
+		tm_list != NULL ? tm_dispatch_bb : exit_bb, 2);
 
-	/* FIXME: support for tag-mask labelled operations, such as for the L4.X2
-	 * pager protocol
-	 */
+	/* tag-mask dispatching. */
+	if(tm_list != NULL) {
+		LLVMPositionBuilderAtEnd(ctx->builder, tm_dispatch_bb);
+		tm_list = g_list_sort(tm_list, &method_by_tagmask_cmp);
+		uint32_t prior = NO_TAGMASK;
+		LLVMValueRef mask_switch = NULL;
+		for(GList *cur = g_list_first(tm_list);
+			cur != NULL;
+			cur = g_list_next(cur))
+		{
+			const struct method_info *inf = cur->data;
+			if(prior != inf->request->tagmask) {
+				/* chain start. */
+				prior = inf->request->tagmask;
+				tm_dispatch_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn,
+					tmp_f(ctx->pr, "tagmask.%x.next", prior));
+				/* TODO: compute the right number of branches? */
+				LLVMValueRef masked_label = LLVMBuildLShr(ctx->builder,
+					LLVMBuildAnd(ctx->builder, ctx->tag,
+						LLVMConstInt(ctx->wordt, prior, 0),
+						"tag.masked"),
+					LLVMConstInt(ctx->i32t, 16, 0),
+					"label.masked");
+				mask_switch = LLVMBuildSwitch(ctx->builder,
+					masked_label, tm_dispatch_bb, 2);
+				LLVMPositionBuilderAtEnd(ctx->builder, tm_dispatch_bb);
+			}
+
+			/* chain member. */
+			LLVMAddCase(mask_switch,
+				LLVMConstInt(ctx->wordt, inf->request->label, 0),
+				build_op_decode(ctx, fn, inf));
+		}
+		g_list_free(tm_list);
+	}
+
+	/* return 42666 (a µIDL special value) on unrecognized label. */
+	if(tm_dispatch_bb != NULL) {
+		LLVMPositionBuilderAtEnd(ctx->builder, tm_dispatch_bb);
+	}
+	LLVMBasicBlockRef current = LLVMGetInsertBlock(ctx->builder);
+	LLVMValueRef unknownlabel = LLVMConstInt(ctx->wordt, 42666, 0);
+	LLVMAddIncoming(retval, &unknownlabel, &current, 1);
+	LLVMBuildBr(ctx->builder, exit_bb);
+
 	int top_label = -1;
 	LLVMValueRef sublabelswitch = NULL;
 	for(GList *cur = g_list_first(methods);
@@ -1218,6 +1287,8 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 		cur = g_list_next(cur))
 	{
 		struct method_info *inf = cur->data;
+		/* tag-mask dispatching is handled above */
+		if(inf->request->tagmask != NO_TAGMASK) continue;
 		if(inf->request->sublabel == NO_SUBLABEL) {
 			LLVMBasicBlockRef decode_bb = build_op_decode(ctx, fn, inf);
 			LLVMAddCase(labelswitch,
@@ -1237,7 +1308,7 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 					ctx->ctx, fn, tmp_f(ctx->pr, "sub%04x.dispatch",
 						(unsigned)top_label));
 				LLVMPositionBuilderAtEnd(ctx->builder, sub_bb);
-				/* FIXME: get the correct value for "2" */
+				/* TODO: get the correct value for "2" */
 				sublabelswitch = LLVMBuildSwitch(ctx->builder,
 					ctx->mr1, exit_bb, 2);
 				LLVMAddIncoming(retval, &unknownlabel, &sub_bb, 1);
