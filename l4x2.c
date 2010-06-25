@@ -74,3 +74,38 @@ LLVMValueRef build_l4_ipc_call(
 	}
 	return LLVMBuildExtractValue(ctx->builder, result, 1, "mr0");
 }
+
+
+LLVMValueRef build_utcb_load(
+	struct llvm_ctx *ctx,
+	LLVMValueRef ix,
+	const char *name)
+{
+	return LLVMBuildLoad(ctx->builder,
+		LLVMBuildGEP(ctx->builder, ctx->utcb, &ix, 1, "utcb.addr.in"),
+		name);
+}
+
+
+LLVMValueRef build_u_from_tag(
+	struct llvm_ctx *ctx,
+	LLVMValueRef mr0)
+{
+	return LLVMBuildAnd(ctx->builder, mr0,
+		LLVMConstInt(ctx->wordt, 0x3f, 0), "tag.u");
+}
+
+
+#if 0
+static LLVMValueRef build_t_from_tag(
+	LLVMBuilderRef builder,
+	LLVMTypeRef wordtype,
+	LLVMValueRef mr0)
+{
+	return LLVMBuildAnd(builder,
+			LLVMConstInt(wordtype, 0x3f, 0),
+			LLVMBuildLShr(builder, mr0, LLVMConstInt(wordtype, 6, 0),
+				"tag.u.raw"),
+			"tag.u");
+}
+#endif

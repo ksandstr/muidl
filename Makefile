@@ -31,8 +31,8 @@ check:
 	./autotest.pl $(AUTOTEST_FILES)
 
 
-muidl: muidl.o util.o analyse.o verify.o dispatch.o l4x2.o \
-		gen-common.o gen-stubs.o
+muidl: muidl.o util.o analyse.o verify.o dispatch.o l4x2.o sequence.o \
+		types.o gen-common.o gen-stubs.o
 	$(CXX) -o $@ $^ $(CFLAGS) $(LIBS)
 
 
@@ -52,4 +52,6 @@ gen-stubs.o: gen-stubs.c muidl.h
 analyse.o: analyse.c muidl.h
 verify.o: verify.c muidl.h
 dispatch.o: dispatch.c muidl.h
+sequence.o: sequence.c muidl.h
+types.o: types.c muidl.h
 l4x2.o: l4x2.c muidl.h

@@ -23,6 +23,7 @@
 #include <stdarg.h>
 #include <stdint.h>
 #include <string.h>
+#include <llvm-c/Core.h>
 
 #include "muidl.h"
 
@@ -128,4 +129,24 @@ const char *seq_len_lvalue(
 	bool ptr = attr != IDL_PARAM_IN && !for_dispatcher;
 	return tmp_f(pr, "%s%s%s_len%s", ptr ? "*" : "", var_prefix, name,
 		ptr ? "_ptr" : "");
+}
+
+ 
+/* TODO: callsites to this here thing should recycle compatible chunks of
+ * memory, rather than allocating their own for each. this is a low-hanging
+ * space optimization.
+ */
+LLVMValueRef build_local_storage(
+	struct llvm_ctx *ctx,
+	LLVMTypeRef type,
+	LLVMValueRef count,
+	const char *name)
+{
+	LLVMBuilderRef b = LLVMCreateBuilderInContext(ctx->ctx);
+	LLVMPositionBuilderAtEnd(b, ctx->alloc_bb);
+	LLVMValueRef ptr;
+	if(count == NULL) ptr = LLVMBuildAlloca(b, type, name);
+	else ptr = LLVMBuildArrayAlloca(b, type, count, name);
+	LLVMDisposeBuilder(b);
+	return ptr;
 }

@@ -332,6 +332,13 @@ extern const char *seq_len_lvalue(
 	const char *name,
 	bool for_dispatcher);
 
+/* returns ptr to data object. */
+extern LLVMValueRef build_local_storage(
+	struct llvm_ctx *ctx,
+	LLVMTypeRef type,
+	LLVMValueRef count,
+	const char *name);
+
 
 /* from analyse.c */
 
@@ -408,5 +415,47 @@ extern LLVMValueRef build_l4_ipc_call(
 	LLVMValueRef *from_p,		/* may be NULL */
 	LLVMValueRef *mr1_p,
 	LLVMValueRef *mr2_p);
+
+/* ix is an utcb index, i.e. when positive, MR index. */
+extern LLVMValueRef build_utcb_load(
+	struct llvm_ctx *ctx,
+	LLVMValueRef ix,
+	const char *name);
+
+extern LLVMValueRef build_u_from_tag(struct llvm_ctx *ctx, LLVMValueRef tag);
+
+
+/* from sequence.c */
+
+/* return valueref is the position of the next unclaimed u-word (if valid). */
+extern LLVMValueRef build_decode_inline_sequence(
+	struct llvm_ctx *ctx,
+	LLVMValueRef *dst,
+	int *dst_pos_p,
+	const struct seq_param *seq,
+	LLVMValueRef upos,		/* i32 # of first unclaimed u-word */
+	bool is_last,
+	LLVMValueRef errval_phi,	/* adds incoming of -errno */
+	LLVMBasicBlockRef err_bb);	/* ... and branches here to pop error */
+
+
+/* from types.c */
+
+extern LLVMTypeRef llvm_value_type(struct llvm_ctx *ctx, IDL_tree type);
+
+/* when @ctyp is a value type, @dst[0] is assigned to the value.
+ * when @ctyp is a rigid type, @dst[0] must be a pointer to the appropriate
+ * type.
+ * otherwise, @dst[0] must point to the first element of a buffer of sufficient
+ * maximum size, and @dst[1] will be assigned to the length value (i32).
+ *
+ * this function should be called build_read_ipc_argument() instead; parameters
+ * are always translated according to direction attribute anyhow.
+ */
+extern void build_read_ipc_parameter_ixval(
+	struct llvm_ctx *ctx,
+	LLVMValueRef *dst,
+	IDL_tree ctyp,
+	LLVMValueRef first_mr);
 
 #endif
