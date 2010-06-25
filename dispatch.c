@@ -116,7 +116,7 @@ static LLVMValueRef build_t_from_tag(
 /* returns a LLVM representation corresponding to the C translation of the
  * given IDL type.
  *
- * FIXME: move this into a llvmutil.c or some such once µIDL gets a LLVM stub
+ * TODO: move this into a llvmutil.c or some such once µIDL gets a LLVM stub
  * generator
  */
 static LLVMTypeRef llvm_value_type(
@@ -222,7 +222,6 @@ static void build_read_ipc_parameter(
 		/* unpack a two-word parameter. */
 		LLVMValueRef low = build_ipc_input_val(ctx, first_mr),
 			high = build_ipc_input_val(ctx, first_mr + 1);
-		/* FIXME: stash this in the context */
 		LLVMTypeRef i64t = LLVMInt64TypeInContext(ctx->ctx);
 		low = LLVMBuildBitCast(ctx->builder, low, i64t,
 			"longparm.lo.cast");
@@ -360,7 +359,7 @@ static int build_write_ipc_parameter(
 				ctx->wordt, "cast.word.z");
 		}
 	} else {
-		/* FIXME! */
+		/* TODO! */
 		NOTDEFINED(ctyp);
 	}
 	LLVMBuildStore(ctx->builder, reg,
@@ -378,11 +377,11 @@ static void vtable_in_param_type(
 	int *pos_p,
 	IDL_tree type)
 {
-	/* FIXME: handle long long, long double types */
+	/* TODO: handle long long, long double types */
 	if(is_value_type(type)) {
 		dst[(*pos_p)++] = llvm_value_type(ctx, type);
 	} else if(is_rigid_type(ctx->ns, type)) {
-		/* FIXME: handle structs, arrays, unions */
+		/* TODO: handle structs, arrays, unions */
 		NOTDEFINED(type);
 	} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
 		IDL_tree seqtype = get_type_spec(
@@ -390,7 +389,7 @@ static void vtable_in_param_type(
 		dst[(*pos_p)++] = LLVMPointerType(llvm_value_type(ctx, seqtype), 0);
 		dst[(*pos_p)++] = ctx->i32t;
 	} else {
-		/* FIXME: handle strings and wide strings */
+		/* TODO: handle strings and wide strings */
 		NOTDEFINED(type);
 	}
 }
