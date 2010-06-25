@@ -126,7 +126,7 @@ struct llvm_ctx
 	LLVMContextRef ctx;
 	LLVMModuleRef module;
 	LLVMBuilderRef builder;
-	LLVMTypeRef wordt, i32t, voidptrt;
+	LLVMTypeRef wordt, i32t, voidptrt, mapgrant;
 	LLVMValueRef zero;
 
 	/* used by dispatcher building etc; common L4 IPC stuff */

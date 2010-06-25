@@ -390,7 +390,8 @@ static bool is_signed(IDL_tree typ)
 /* returns # of MRs used.
  *
  * when is_value_type(ctyp), @val[0] is a C representation of @ctyp.
- * when is_rigid_type(..., ctyp), @val[0] is a pointer to the same.
+ * when is_rigid_type(..., ctyp) || IS_MAPGRANT_TYPE(ctyp), @val[0] is a
+ * pointer to the same.
  * otherwise, @val[0] is a pointer to the first element, and @val[1] is the
  * number of elements as i32.
  */
@@ -405,6 +406,16 @@ static int build_write_ipc_parameter(
 		abort();
 	} else if(IS_LONGDOUBLE_TYPE(ctyp)) {
 		abort();
+	} else if(IS_MAPGRANT_TYPE(ctyp)) {
+		for(int i=0; i<2; i++) {
+			LLVMBuildStore(ctx->builder,
+				LLVMBuildLoad(ctx->builder,
+					LLVMBuildStructGEP(ctx->builder, val[0], i,
+						tmp_f(ctx->pr, "mg.field%d.ptr", i)),
+					tmp_f(ctx->pr, "mg.field%d.val", i)),
+				build_utcb_address(ctx, (first_mr + i) * 4));
+		}
+		return 2;
 	}
 
 	/* single-word types */
@@ -467,6 +478,8 @@ static void vtable_out_param_type(
 			IDL_TYPE_SEQUENCE(type).simple_type_spec);
 		dst[(*pos_p)++] = LLVMPointerType(llvm_value_type(ctx, seqtype), 0);
 		dst[(*pos_p)++] = LLVMPointerType(ctx->i32t, 0);
+	} else if(IS_MAPGRANT_TYPE(type)) {
+		dst[(*pos_p)++] = LLVMPointerType(ctx->mapgrant, 0);
 	} else {
 		printf("warning: not emitting llvm out-parameter for <%s>\n",
 			IDL_NODE_TYPE_NAME(type));
@@ -748,6 +761,10 @@ static void emit_out_param(
 			"outparam.seq.mem");
 		args[(*arg_pos_p)++] = build_local_storage(ctx,
 			ctx->i32t, NULL, "outparam.seq.len.mem");
+	} else if(IS_MAPGRANT_TYPE(ptyp)) {
+		/* this is just a pointer to a struct of 2 words. */
+		args[(*arg_pos_p)++] = build_local_storage(ctx,
+			ctx->mapgrant, NULL, "outparam.mapgrant.mem");
 	} else {
 		printf("can't hack seq/long out-parameter\n");
 		abort();
@@ -896,16 +913,25 @@ static LLVMBasicBlockRef build_op_decode(
 	int mr_pos = 1;
 	/* return value */
 	if(inf->return_type != NULL) {
-		LLVMValueRef val;
+		LLVMValueRef val[2];
 		char *rv_name = tmp_f(pr, "%s.retval", opname);
-		if(rv_actual) {
-			val = LLVMBuildTruncOrBitCast(ctx->builder, fncall,
-				llvm_value_type(ctx, inf->return_type), rv_name);
+		if(is_value_type(inf->return_type)) {
+			if(rv_actual) {
+				val[0] = LLVMBuildTruncOrBitCast(ctx->builder, fncall,
+					llvm_value_type(ctx, inf->return_type), rv_name);
+			} else {
+				assert(retvalptr != NULL);
+				val[0] = LLVMBuildLoad(ctx->builder, retvalptr, rv_name);
+			}
+		} else if(IS_MAPGRANT_TYPE(inf->return_type)
+			|| is_rigid_type(ctx->ns, inf->return_type))
+		{
+			val[0] = retvalptr;
 		} else {
-			assert(retvalptr != NULL);
-			val = LLVMBuildLoad(ctx->builder, retvalptr, rv_name);
+			/* TODO: add the other types */
+			NOTDEFINED(inf->return_type);
 		}
-		mr_pos += build_write_ipc_parameter(ctx, &val,
+		mr_pos += build_write_ipc_parameter(ctx, val,
 			inf->return_type, mr_pos);
 	}
 	/* those out-parameters and out-halves of inout parameters which are
@@ -928,7 +954,7 @@ static LLVMBasicBlockRef build_op_decode(
 			LLVMValueRef rval = LLVMBuildLoad(ctx->builder,
 				args[arg_ix], tmp_f(ctx->pr, "arg%d.raw", arg_ix));
 			mr_pos += build_write_ipc_parameter(ctx, &rval, typ, mr_pos);
-		} else if(is_rigid_type(ctx->ns, typ)) {
+		} else if(IS_MAPGRANT_TYPE(typ) || is_rigid_type(ctx->ns, typ)) {
 			/* TODO: distinguish between inline rigid types and those passed as
 			 * string items due to size or content or something
 			 */

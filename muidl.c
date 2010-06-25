@@ -1707,6 +1707,8 @@ bool do_idl_file(const char *cppopts, const char *filename)
 	lc.wordt = lc.i32t;
 	lc.voidptrt = LLVMPointerType(LLVMInt8TypeInContext(lc.ctx), 0);
 	lc.zero = LLVMConstInt(lc.i32t, 0, 0);
+	LLVMTypeRef mapgrant_fields[] = { lc.wordt, lc.wordt };
+	lc.mapgrant = LLVMStructTypeInContext(lc.ctx, mapgrant_fields, 2, 1);
 	LLVMModuleRef mod = make_llvm_service_module(&lc, basename);
 	LLVMDumpModule(mod);
 	LLVMDisposeModule(mod);
