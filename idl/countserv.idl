@@ -48,17 +48,22 @@ interface Countserv
 	[Label(674)]
 	void fiddly(in fiddly_something herpaderp);
 
-#if 0
 	[Label(675)]
+	long two_at_once(
+		in packed_something hlerp,
+		in fiddly_something glerp);
+
+#if 0
+	[Label(676)]
 	void with_output_sequence(
 		out something delivery_for_mr_claus,
 		out packed_something surely_something_good);
 
-	[Label(676)]
+	[Label(677)]
 	void widdly_scuds(
 		out fiddly_something cheese_fries);
 
-	[Label(677)]
+	[Label(678)]
 	oneway void raise_alarm_or_dont(in long yes_yes_what_what);
 #endif
 };

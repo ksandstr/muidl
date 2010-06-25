@@ -605,8 +605,14 @@ static LLVMValueRef build_decode_inline_sequence(
 		LLVMBuildCondBr(ctx->builder, cond, odd_tail_bb, loop_bb);
 	}
 
-	/* the copy loop. */
 	LLVMBasicBlockRef before_loop = LLVMGetInsertBlock(ctx->builder);
+
+	/* after decoding, outputs are just the new seqpos. */
+	LLVMPositionBuilderAtEnd(ctx->builder, exit_bb);
+	LLVMValueRef ret = LLVMBuildPhi(ctx->builder, ctx->i32t,
+		"inlseq.final.sp");
+
+	/* the copy loop. */
 	LLVMPositionBuilderAtEnd(ctx->builder, loop_bb);
 	LLVMTypeRef seq_type = llvm_value_type(ctx, seq->elem_type);
 	LLVMValueRef seq_mem = build_local_storage(ctx, seq_type,
@@ -652,6 +658,9 @@ static LLVMValueRef build_decode_inline_sequence(
 	LLVMBasicBlockRef this_bb = LLVMGetInsertBlock(ctx->builder);
 	LLVMAddIncoming(counter, &next_counter, &this_bb, 1);
 	LLVMAddIncoming(seq_pos, &next_sp, &this_bb, 1);
+	if(seq->elems_per_word == 1) {
+		LLVMAddIncoming(ret, &next_sp, &this_bb, 1);
+	}
 	LLVMValueRef exit_cond = LLVMBuildICmp(ctx->builder,
 		LLVMIntULT, next_counter, seq_len, "loop.nextp");
 	LLVMBuildCondBr(ctx->builder, exit_cond, loop_bb,
@@ -661,9 +670,13 @@ static LLVMValueRef build_decode_inline_sequence(
 		/* tail of a packed sequence. */
 		LLVMPositionBuilderAtEnd(ctx->builder, odd_tail_bb);
 		LLVMValueRef odd_offs = LLVMBuildPhi(ctx->builder, ctx->i32t, "odd.off"),
-			wordval = build_utcb_load(ctx, upos, "tail.word");
+			odd_seqpos = LLVMBuildPhi(ctx->builder, ctx->i32t, "odd.sp"),
+			wordval = build_utcb_load(ctx, odd_seqpos, "tail.word");
 		LLVMAddIncoming(odd_offs, &ctx->zero, &skip_loop_bb, 1);
+		LLVMAddIncoming(odd_seqpos, &upos, &skip_loop_bb, 1);
 		LLVMAddIncoming(odd_offs, &next_counter, &loop_bb, 1);
+		LLVMAddIncoming(odd_seqpos, &next_sp, &loop_bb, 1);
+		LLVMAddIncoming(ret, &odd_seqpos, &odd_tail_bb, 1);
 		LLVMValueRef sw = LLVMBuildSwitch(ctx->builder,
 			LLVMBuildAnd(ctx->builder, seq_len,
 				LLVMConstInt(ctx->i32t, seq->elems_per_word - 1, 0),
@@ -688,6 +701,10 @@ static LLVMValueRef build_decode_inline_sequence(
 					"odd.limb.ptr"));
 		}
 
+		LLVMValueRef sp_bump = LLVMBuildAdd(ctx->builder, odd_seqpos,
+			LLVMConstInt(ctx->i32t, 1, 0), "odd.sp.bump");
+		LLVMBasicBlockRef bb = LLVMGetInsertBlock(ctx->builder);
+		LLVMAddIncoming(ret, &sp_bump, &bb, 1);
 		LLVMBuildBr(ctx->builder, exit_bb);
 	}
 
@@ -696,7 +713,7 @@ static LLVMValueRef build_decode_inline_sequence(
 	args[(*arg_pos_p)++] = seq_mem;
 	args[(*arg_pos_p)++] = seq_len;
 
-	return next_sp;
+	return ret;
 }
 
 
