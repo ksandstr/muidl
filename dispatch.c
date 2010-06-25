@@ -532,6 +532,116 @@ static struct untyped_param *find_untyped(
 }
 
 
+/* return valueref is the position of the next unclaimed u-word (if valid). */
+/* TODO: this function will likely be used by the stub generator also. move it
+ * into a sequence.c file or some such.
+ */
+static LLVMValueRef build_decode_inline_sequence(
+	struct llvm_ctx *ctx,
+	LLVMValueRef *args,
+	int *arg_pos_p,
+	const struct seq_param *seq,
+	LLVMValueRef upos,
+	bool is_last)
+{
+	LLVMValueRef seq_words, seq_len;
+	if(!is_last || seq->bits_per_elem < BITS_PER_WORD) {
+		/* not subject to trickery; take a length word. */
+		seq_len = LLVMBuildTruncOrBitCast(ctx->builder,
+			build_utcb_load(ctx, upos, "inlseq.len.mr"),
+			ctx->i32t, "inlseq.len.explicit");
+		if(seq->elems_per_word == 1) seq_words = seq_len;
+		else {
+			seq_words = LLVMBuildUDiv(ctx->builder, seq_len,
+				LLVMConstInt(ctx->i32t, seq->elems_per_word, 0),
+				"inlseq.len.int");
+		}
+		upos = LLVMBuildAdd(ctx->builder, upos,
+			LLVMConstInt(ctx->i32t, 1, 0), "inlseq.pos.bump");
+	} else {
+		/* last sequence of word-length items; compute length from "u". */
+		LLVMValueRef u = build_u_from_tag(ctx, ctx->tag);
+		seq_words = LLVMBuildSub(ctx->builder, u, upos,
+			"inlseq.len.implicit");
+		seq_words = LLVMBuildTruncOrBitCast(ctx->builder, seq_words,
+			ctx->i32t, "inlseq.len.int");
+		seq_len = seq_words;
+	}
+
+	LLVMBasicBlockRef before_bb = LLVMGetInsertBlock(ctx->builder);
+	LLVMValueRef fn = LLVMGetBasicBlockParent(before_bb);
+	LLVMBasicBlockRef loop_bb, after_loop_bb;
+	loop_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "inlseq.loop");
+	after_loop_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn,
+		"inlseq.loop.after");
+
+	/* guard against maximum size violations */
+	/* FIXME: get EINVAL from µiX headers */
+	LLVMValueRef einval = LLVMConstInt(ctx->i32t, -EINVAL, 1);
+	LLVMBasicBlockRef msgerr_bb = get_msgerr_bb(ctx);
+	LLVMAddIncoming(ctx->fncall_phi, &einval, &before_bb, 1);
+	LLVMValueRef einval_cond = LLVMBuildICmp(ctx->builder, LLVMIntULT,
+		seq_len, LLVMConstInt(ctx->i32t, seq->max_elems, 0),
+		"inlseq.len.cond");
+	LLVMBuildCondBr(ctx->builder, einval_cond, loop_bb, msgerr_bb);
+
+	/* the copy loop. */
+	LLVMPositionBuilderAtEnd(ctx->builder, loop_bb);
+	LLVMTypeRef seq_type = llvm_value_type(ctx, seq->elem_type);
+	LLVMValueRef seq_mem = build_local_storage(ctx, seq_type,
+		LLVMConstInt(ctx->i32t, seq->max_elems, 0), "inlseq.mem");
+	LLVMValueRef seq_pos, counter;
+	seq_pos = LLVMBuildPhi(ctx->builder, ctx->i32t, "loop.seqpos");
+	counter = LLVMBuildPhi(ctx->builder, ctx->i32t, "loop.ctr");
+	LLVMAddIncoming(seq_pos, &upos, &before_bb, 1);
+	LLVMAddIncoming(counter, &ctx->zero, &before_bb, 1);
+
+	if(seq->bits_per_elem == BITS_PER_WORD) {
+		/* full word case */
+		LLVMValueRef item;
+		build_read_ipc_parameter_ixval(ctx, &item, seq->elem_type,
+			seq_pos);
+		LLVMBuildStore(ctx->builder, item,
+			LLVMBuildGEP(ctx->builder, seq_mem, &counter, 1,
+				"seq.mem.at"));
+	} else {
+		/* many-per-word case */
+		LLVMValueRef word = build_utcb_load(ctx, seq_pos, "seq.limb");
+		for(int i=0; i<seq->elems_per_word; i++) {
+			LLVMValueRef item = LLVMBuildTrunc(ctx->builder,
+				i == 0 ? word : LLVMBuildLShr(ctx->builder, word,
+					LLVMConstInt(ctx->i32t, seq->bits_per_elem * i, 0),
+					"seq.limb.shifted"),
+				seq_type, "seq.limb.trunc");
+			LLVMValueRef ix = LLVMBuildAdd(ctx->builder, counter,
+				LLVMConstInt(ctx->i32t, i, 0), "seq.limb.ix");
+			LLVMBuildStore(ctx->builder, item,
+				LLVMBuildGEP(ctx->builder, seq_mem, &ix, 1,
+					"seq.limb.at"));
+		}
+	}
+
+	LLVMValueRef next_counter, next_sp;
+	next_counter = LLVMBuildAdd(ctx->builder, counter,
+		LLVMConstInt(ctx->i32t, seq->elems_per_word, 0),
+		"loop.ctr.next");
+	next_sp = LLVMBuildAdd(ctx->builder, seq_pos,
+		LLVMConstInt(ctx->i32t, 1, 0), "loop.seqpos.next");
+	LLVMBasicBlockRef this_bb = LLVMGetInsertBlock(ctx->builder);
+	LLVMAddIncoming(counter, &next_counter, &this_bb, 1);
+	LLVMAddIncoming(seq_pos, &next_sp, &this_bb, 1);
+	LLVMValueRef exit_cond = LLVMBuildICmp(ctx->builder,
+		LLVMIntULT, next_counter, seq_len, "loop.nextp");
+	LLVMBuildCondBr(ctx->builder, exit_cond, loop_bb, after_loop_bb);
+	LLVMPositionBuilderAtEnd(ctx->builder, after_loop_bb);
+
+	args[(*arg_pos_p)++] = seq_mem;
+	args[(*arg_pos_p)++] = seq_len;
+
+	return next_sp;
+}
+
+
 static void emit_in_param(
 	struct llvm_ctx *ctx,
 	LLVMValueRef *args,
@@ -564,106 +674,10 @@ static void emit_in_param(
 		 * function in the same order as they were in IDL. if not,
 		 * inline_seq_pos will be wrong.
 		 */
-		LLVMValueRef seq_words, seq_end_elem;
-		if(seq != req->seq[req->num_inline_seq - 1]
-			|| seq->bits_per_elem < BITS_PER_WORD)
-		{
-			/* not subject to trickery; take a length word. */
-			seq_end_elem = build_utcb_load(ctx, ctx->inline_seq_pos,
-				"inlseq.len.mr");
-			seq_end_elem = LLVMBuildTruncOrBitCast(ctx->builder,
-				seq_end_elem, ctx->i32t, "inlseq.len.explicit");
-			if(seq->elems_per_word == 1) seq_words = seq_end_elem;
-			else {
-				seq_words = LLVMBuildUDiv(ctx->builder, seq_end_elem,
-					LLVMConstInt(ctx->i32t, seq->elems_per_word, 0),
-					"inlseq.len.int");
-			}
-			ctx->inline_seq_pos = LLVMBuildAdd(ctx->builder,
-				ctx->inline_seq_pos, LLVMConstInt(ctx->i32t, 1, 0),
-				"inlseq.pos.bump");
-		} else {
-			/* last sequence of word-length items; compute length from "u". */
-			LLVMValueRef u = build_u_from_tag(ctx, ctx->tag);
-			seq_words = LLVMBuildSub(ctx->builder, u,
-				ctx->inline_seq_pos, "inlseq.len.implicit");
-			seq_words = LLVMBuildTruncOrBitCast(ctx->builder, seq_words,
-				ctx->i32t, "inlseq.len.int");
-			seq_end_elem = seq_words;
-		}
-
-		LLVMBasicBlockRef before_bb = LLVMGetInsertBlock(ctx->builder);
-		LLVMValueRef fn = LLVMGetBasicBlockParent(before_bb);
-		LLVMBasicBlockRef loop_bb, after_loop_bb;
-		loop_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "inlseq.loop");
-		after_loop_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn,
-			"inlseq.loop.after");
-
-		/* guard against maximum size violations */
-		/* FIXME: get EINVAL from µiX headers */
-		LLVMValueRef einval = LLVMConstInt(ctx->i32t, -EINVAL, 1);
-		LLVMBasicBlockRef msgerr_bb = get_msgerr_bb(ctx);
-		LLVMAddIncoming(ctx->fncall_phi, &einval, &before_bb, 1);
-		LLVMValueRef einval_cond = LLVMBuildICmp(ctx->builder,
-			LLVMIntULT, seq_end_elem,
-			LLVMConstInt(ctx->i32t, seq->max_elems, 0),
-			"inlseq.len.cond");
-		LLVMBuildCondBr(ctx->builder, einval_cond, loop_bb, msgerr_bb);
-
-		/* the copy loop. */
-		LLVMPositionBuilderAtEnd(ctx->builder, loop_bb);
-		LLVMTypeRef seq_type = llvm_value_type(ctx, seq->elem_type);
-		LLVMValueRef seq_mem = build_local_storage(ctx, seq_type,
-			LLVMConstInt(ctx->i32t, seq->max_elems, 0), "inlseq.mem");
-		LLVMValueRef seq_pos, counter;
-		seq_pos = LLVMBuildPhi(ctx->builder, ctx->i32t, "loop.seqpos");
-		counter = LLVMBuildPhi(ctx->builder, ctx->i32t, "loop.ctr");
-		LLVMAddIncoming(seq_pos, &ctx->inline_seq_pos, &before_bb, 1);
-		LLVMAddIncoming(counter, &ctx->zero, &before_bb, 1);
-
-		if(seq->bits_per_elem == BITS_PER_WORD) {
-			/* full word case */
-			LLVMValueRef item;
-			build_read_ipc_parameter_ixval(ctx, &item, seq->elem_type,
-				seq_pos);
-			LLVMBuildStore(ctx->builder, item,
-				LLVMBuildGEP(ctx->builder, seq_mem, &counter, 1,
-					"seq.mem.at"));
-		} else {
-			/* many-per-word case */
-			LLVMValueRef word = build_utcb_load(ctx, seq_pos, "seq.limb");
-			for(int i=0; i<seq->elems_per_word; i++) {
-				LLVMValueRef item = LLVMBuildTrunc(ctx->builder,
-					i == 0 ? word : LLVMBuildLShr(ctx->builder, word,
-						LLVMConstInt(ctx->i32t, seq->bits_per_elem * i, 0),
-						"seq.limb.shifted"),
-					seq_type, "seq.limb.trunc");
-				LLVMValueRef ix = LLVMBuildAdd(ctx->builder, counter,
-					LLVMConstInt(ctx->i32t, i, 0), "seq.limb.ix");
-				LLVMBuildStore(ctx->builder, item,
-					LLVMBuildGEP(ctx->builder, seq_mem, &ix, 1,
-						"seq.limb.at"));
-			}
-		}
-
-		LLVMValueRef next_counter, next_sp;
-		next_counter = LLVMBuildAdd(ctx->builder, counter,
-			LLVMConstInt(ctx->i32t, seq->elems_per_word, 0),
-			"loop.ctr.next");
-		next_sp = LLVMBuildAdd(ctx->builder, seq_pos,
-			LLVMConstInt(ctx->i32t, 1, 0), "loop.seqpos.next");
-		LLVMBasicBlockRef this_bb = LLVMGetInsertBlock(ctx->builder);
-		LLVMAddIncoming(counter, &next_counter, &this_bb, 1);
-		LLVMAddIncoming(seq_pos, &next_sp, &this_bb, 1);
-		LLVMValueRef exit_cond = LLVMBuildICmp(ctx->builder,
-			LLVMIntULT, next_counter, seq_end_elem, "loop.nextp");
-		LLVMBuildCondBr(ctx->builder, exit_cond, loop_bb, after_loop_bb);
-		LLVMPositionBuilderAtEnd(ctx->builder, after_loop_bb);
-
-		args[(*arg_pos_p)++] = seq_mem;
-		args[(*arg_pos_p)++] = seq_end_elem;
-		ctx->inline_seq_pos = next_sp;
-
+		LLVMValueRef new_upos = build_decode_inline_sequence(ctx,
+			args, arg_pos_p, seq, ctx->inline_seq_pos,
+			seq == req->seq[req->num_inline_seq - 1]);
+		ctx->inline_seq_pos = new_upos;
 		return;
 	}
 
