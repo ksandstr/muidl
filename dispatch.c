@@ -561,6 +561,7 @@ static LLVMTypeRef get_vtable_type(struct llvm_ctx *ctx, IDL_tree iface)
 }
 
 
+/* NOTE: this function must be called before referencing ctx->fncall_phi! */
 static LLVMBasicBlockRef get_msgerr_bb(struct llvm_ctx *ctx)
 {
 	if(ctx->msgerr_bb == NULL) {
@@ -671,13 +672,13 @@ static void emit_in_param(
 		/* guard against maximum size violations */
 		/* FIXME: get EINVAL from µiX headers */
 		LLVMValueRef einval = LLVMConstInt(ctx->i32t, -EINVAL, 1);
+		LLVMBasicBlockRef msgerr_bb = get_msgerr_bb(ctx);
 		LLVMAddIncoming(ctx->fncall_phi, &einval, &before_bb, 1);
 		LLVMValueRef einval_cond = LLVMBuildICmp(ctx->builder,
 			LLVMIntULT, seq_end_elem,
 			LLVMConstInt(ctx->i32t, seq->max_elems, 0),
 			"inlseq.len.cond");
-		LLVMBuildCondBr(ctx->builder, einval_cond, loop_bb,
-			get_msgerr_bb(ctx));
+		LLVMBuildCondBr(ctx->builder, einval_cond, loop_bb, msgerr_bb);
 
 		/* the copy loop. */
 		LLVMPositionBuilderAtEnd(ctx->builder, loop_bb);
@@ -899,10 +900,10 @@ static LLVMBasicBlockRef build_op_decode(
 		/* examine NegativeReturn exception trigger */
 		LLVMValueRef ok_cond = LLVMBuildICmp(ctx->builder, LLVMIntSGE, fncall,
 			LLVMConstInt(ctx->i32t, 0, 1), "rcneg.cond");
-		LLVMBasicBlockRef current_bb = LLVMGetInsertBlock(ctx->builder);
+		LLVMBasicBlockRef current_bb = LLVMGetInsertBlock(ctx->builder),
+			msgerr_bb = get_msgerr_bb(ctx);
 		LLVMAddIncoming(ctx->fncall_phi, &fncall, &current_bb, 1);
-		LLVMBuildCondBr(ctx->builder, ok_cond, ex_chain_bb,
-			get_msgerr_bb(ctx));
+		LLVMBuildCondBr(ctx->builder, ok_cond, ex_chain_bb, msgerr_bb);
 	}
 
 	/* pack results from the non-exceptional return. */
