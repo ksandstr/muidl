@@ -69,7 +69,6 @@ static LLVMValueRef build_utcb_get(struct llvm_ctx *ctx)
 /* return node is L4_Word_t mr0 (i.e. message tag). */
 static LLVMValueRef build_l4_ipc_call(
 	struct llvm_ctx *ctx,
-	LLVMValueRef utcb_ptr,
 	LLVMValueRef arg_to,
 	LLVMValueRef arg_timeouts,
 	LLVMValueRef arg_fromspec,
@@ -78,9 +77,8 @@ static LLVMValueRef build_l4_ipc_call(
 	LLVMValueRef *mr1_p,
 	LLVMValueRef *mr2_p)
 {
-	/* FIXME: get word type from target somehow */
-	LLVMTypeRef params[5], wordtype = LLVMInt32TypeInContext(ctx->ctx);
-	for(int i=0; i<5; i++) params[i] = wordtype;
+	LLVMTypeRef params[5];
+	for(int i=0; i<5; i++) params[i] = ctx->wordt;
 	LLVMTypeRef ipc_result_type = LLVMStructTypeInContext(ctx->ctx,
 		params, 4, 0);
 	LLVMTypeRef ipc_type = LLVMFunctionType(ipc_result_type,
@@ -90,7 +88,9 @@ static LLVMValueRef build_l4_ipc_call(
 		"={ax},={si},={bx},={bp},{ax},{cx},{dx},{si},{di},~{dirflag},~{fpsr},~{flags}",
 		1, 0);
 	LLVMValueRef args[5] = {
-		arg_to, arg_timeouts, arg_fromspec, arg_mr0, utcb_ptr
+		arg_to, arg_timeouts, arg_fromspec, arg_mr0,
+		LLVMBuildPtrToInt(ctx->builder, ctx->utcb, ctx->wordt,
+			"l4ipc.utcb"),
 	};
 	LLVMValueRef result = LLVMBuildCall(ctx->builder, fn, args, 5, "l4ipc");
 	LLVMSetTailCall(result, 1);
@@ -1195,7 +1195,7 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 
 	LLVMPositionBuilderAtEnd(ctx->builder, ctx->wait_bb);
 	LLVMValueRef ipc_from, ipc_mr1, ipc_mr2,
-		ipc_tag = build_l4_ipc_call(ctx, ctx->utcb,
+		ipc_tag = build_l4_ipc_call(ctx,
 			ctx->zero, LLVMConstNot(ctx->zero), LLVMConstNot(ctx->zero), ctx->zero,
 			&ipc_from, &ipc_mr1, &ipc_mr2);
 	LLVMBuildBr(ctx->builder, loop_bb);
@@ -1219,7 +1219,7 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 	 */
 	LLVMPositionBuilderAtEnd(ctx->builder, ctx->reply_bb);
 	ctx->reply_tag = LLVMBuildPhi(ctx->builder, ctx->wordt, "replytag.phi");
-	ipc_tag = build_l4_ipc_call(ctx, ctx->utcb,
+	ipc_tag = build_l4_ipc_call(ctx,
 		ctx->from, LLVMConstNot(ctx->zero), LLVMConstNot(ctx->zero),
 		ctx->reply_tag, &ipc_from, &ipc_mr1, &ipc_mr2);
 	LLVMAddIncoming(ctx->from, &ipc_from, &ctx->reply_bb, 1);
