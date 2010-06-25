@@ -548,6 +548,33 @@ static LLVMTypeRef get_vtable_type(struct llvm_ctx *ctx, IDL_tree iface)
 }
 
 
+static LLVMBasicBlockRef get_msgerr_bb(struct llvm_ctx *ctx)
+{
+	if(ctx->msgerr_bb == NULL) {
+		LLVMBasicBlockRef prior = LLVMGetInsertBlock(ctx->builder);
+		LLVMValueRef fn = LLVMGetBasicBlockParent(prior);
+		ctx->msgerr_bb = LLVMAppendBasicBlockInContext(ctx->ctx,
+			fn, "msgerr");
+
+		LLVMPositionBuilderAtEnd(ctx->builder, ctx->msgerr_bb);
+		ctx->fncall_phi = LLVMBuildPhi(ctx->builder, ctx->i32t, "fncall.phi");
+		LLVMValueRef msgerr_tag = LLVMBuildOr(ctx->builder,
+			LLVMConstInt(ctx->wordt, 1, 0),
+			LLVMConstInt(ctx->wordt, 1 << 16, 0),
+			"msgerr.tag");
+		LLVMBuildStore(ctx->builder,
+			LLVMBuildNeg(ctx->builder, ctx->fncall_phi, "rcneg.val"),
+			build_utcb_address(ctx, 4));	/* mr1 on ia32 */
+		LLVMAddIncoming(ctx->reply_tag, &msgerr_tag, &ctx->msgerr_bb, 1);
+		LLVMBuildBr(ctx->builder, ctx->reply_bb);
+
+		LLVMPositionBuilderAtEnd(ctx->builder, prior);
+	}
+
+	return ctx->msgerr_bb;
+}
+
+
 static struct untyped_param *find_untyped(
 	const struct message_info *msg,
 	IDL_tree node)
@@ -637,7 +664,7 @@ static void emit_in_param(
 			LLVMConstInt(ctx->i32t, seq->max_elems, 0),
 			"inlseq.len.cond");
 		LLVMBuildCondBr(ctx->builder, einval_cond, loop_bb,
-			ctx->msgerr_bb);
+			get_msgerr_bb(ctx));
 
 		/* the copy loop. */
 		LLVMPositionBuilderAtEnd(ctx->builder, loop_bb);
@@ -858,7 +885,7 @@ static LLVMBasicBlockRef build_op_decode(
 		LLVMBasicBlockRef current_bb = LLVMGetInsertBlock(ctx->builder);
 		LLVMAddIncoming(ctx->fncall_phi, &fncall, &current_bb, 1);
 		LLVMBuildCondBr(ctx->builder, ok_cond, ex_chain_bb,
-			ctx->msgerr_bb);
+			get_msgerr_bb(ctx));
 	}
 
 	/* pack results from the non-exceptional return. */
@@ -1115,7 +1142,6 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 		dispatch_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "dispatch");
 	ctx->wait_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "wait");
 	ctx->reply_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "reply");
-	ctx->msgerr_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "msgerr");
 
 	LLVMPositionBuilderAtEnd(ctx->builder, bb);
 	ctx->utcb = build_utcb_get(ctx);
@@ -1161,18 +1187,6 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 	LLVMAddIncoming(ctx->mr2, &ipc_mr2, &ctx->reply_bb, 1);
 	LLVMAddIncoming(ctx->tag, &ipc_tag, &ctx->reply_bb, 1);
 	LLVMBuildBr(ctx->builder, loop_bb);
-
-	/* send a MSG_ERROR. */
-	LLVMPositionBuilderAtEnd(ctx->builder, ctx->msgerr_bb);
-	ctx->fncall_phi = LLVMBuildPhi(ctx->builder, ctx->i32t, "fncall.phi");
-	LLVMValueRef msgerr_tag = LLVMBuildOr(ctx->builder,
-		LLVMConstInt(ctx->wordt, 1, 0), LLVMConstInt(ctx->wordt, 1 << 16, 0),
-		"msgerr.tag");
-	LLVMBuildStore(ctx->builder,
-		LLVMBuildNeg(ctx->builder, ctx->fncall_phi, "rcneg.val"),
-		build_utcb_address(ctx, 4));	/* mr1 on ia32 */
-	LLVMAddIncoming(ctx->reply_tag, &msgerr_tag, &ctx->msgerr_bb, 1);
-	LLVMBuildBr(ctx->builder, ctx->reply_bb);
 
 	/* exit */
 	LLVMPositionBuilderAtEnd(ctx->builder, exit_bb);
