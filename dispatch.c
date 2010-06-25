@@ -626,12 +626,13 @@ static LLVMValueRef build_decode_inline_sequence(
 			LLVMBuildGEP(ctx->builder, seq_mem, &counter, 1,
 				"seq.mem.at"));
 	} else {
-		/* many-per-word case */
+		/* many-per-word (packed) case. */
 		LLVMValueRef word = build_utcb_load(ctx, seq_pos, "seq.limb");
 		for(int i=0; i<seq->elems_per_word; i++) {
+			int downshift = seq->bits_per_elem * i;
 			LLVMValueRef item = LLVMBuildTrunc(ctx->builder,
 				i == 0 ? word : LLVMBuildLShr(ctx->builder, word,
-					LLVMConstInt(ctx->i32t, seq->bits_per_elem * i, 0),
+					LLVMConstInt(ctx->i32t, downshift, 0),
 					"seq.limb.shifted"),
 				seq_type, "seq.limb.trunc");
 			LLVMValueRef ix = LLVMBuildAdd(ctx->builder, counter,
@@ -657,6 +658,7 @@ static LLVMValueRef build_decode_inline_sequence(
 		seq->elems_per_word > 1 ? odd_tail_bb : exit_bb);
 
 	if(seq->elems_per_word > 1) {
+		/* tail of a packed sequence. */
 		LLVMPositionBuilderAtEnd(ctx->builder, odd_tail_bb);
 		LLVMValueRef odd_offs = LLVMBuildPhi(ctx->builder, ctx->i32t, "odd.off"),
 			wordval = build_utcb_load(ctx, upos, "tail.word");
@@ -676,7 +678,7 @@ static LLVMValueRef build_decode_inline_sequence(
 			LLVMAddCase(sw, LLVMConstInt(ctx->i32t, i, 0), bb);
 			LLVMValueRef limb = LLVMBuildTrunc(ctx->builder,
 				LLVMBuildLShr(ctx->builder, wordval,
-					LLVMConstInt(ctx->i32t, i * seq->bits_per_elem, 0),
+					LLVMConstInt(ctx->i32t, (i - 1) * seq->bits_per_elem, 0),
 					tmp_f(ctx->pr, "odd.c%d.shifted", i)),
 				seq_type, tmp_f(ctx->pr, "odd.c%d.limb", i));
 			LLVMValueRef offs = LLVMBuildAdd(ctx->builder, odd_offs,
