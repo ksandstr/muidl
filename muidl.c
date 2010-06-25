@@ -31,6 +31,7 @@
 #include <ctype.h>
 #include <glib.h>
 #include <libIDL/IDL.h>
+#include <llvm-c/Analysis.h>
 
 #include "muidl.h"
 
@@ -1635,6 +1636,13 @@ static LLVMModuleRef make_llvm_service_module(
 	/* TODO: add extern functions */
 
 	IDL_tree_walk_in_order(ctx->pr->tree, &iter_emit_dispatchers, ctx);
+
+	char *outmsg = NULL;
+	if(LLVMVerifyModule(mod, LLVMPrintMessageAction, &outmsg)) {
+		fprintf(stderr, "LLVM module verifier complained!\n");
+		abort();
+		LLVMDisposeMessage(outmsg);
+	}
 
 	ctx->module = NULL;
 	return mod;
