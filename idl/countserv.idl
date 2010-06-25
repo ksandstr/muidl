@@ -43,21 +43,24 @@ interface Countserv
 	void with_inline_sequence(in something hurr);
 
 	[Label(673)]
-	void with_packed_inline_sequence(
-		in packed_something durr,
-		in something derrrp);
+	void with_packed_inline_sequence(in packed_something durr);
 
 	[Label(674)]
+	void fiddly(in fiddly_something herpaderp);
+
+#if 0
+	[Label(675)]
 	void with_output_sequence(
 		out something delivery_for_mr_claus,
 		out packed_something surely_something_good);
 
-	[Label(675)]
+	[Label(676)]
 	void widdly_scuds(
 		out fiddly_something cheese_fries);
 
-	[Label(676)]
+	[Label(677)]
 	oneway void raise_alarm_or_dont(in long yes_yes_what_what);
+#endif
 };
 
 
