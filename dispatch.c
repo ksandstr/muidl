@@ -51,21 +51,6 @@ static LLVMValueRef build_local_storage(
 }
 
 
-/* TODO: shouldn't this return a word pointer, instead? everything interesting
- * under the UTCB is accessed as words in any case.
- */
-static LLVMValueRef build_utcb_get(struct llvm_ctx *ctx)
-{
-	LLVMTypeRef fntype = LLVMFunctionType(ctx->wordt, NULL, 0, 0);
-	LLVMValueRef func = LLVMConstInlineAsm(fntype, "movl %gs:0,$0\n",
-			"=r,~{dirflag},~{fpsr},~{flags}", 0, 0);
-	LLVMValueRef call = LLVMBuildCall(ctx->builder, func, NULL, 0, "utcbget");
-	LLVMSetTailCall(call, 1);
-	return LLVMBuildIntToPtr(ctx->builder, call, ctx->voidptrt,
-		"utcb.voidp");
-}
-
-
 /* return node is L4_Word_t mr0 (i.e. message tag). */
 static LLVMValueRef build_l4_ipc_call(
 	struct llvm_ctx *ctx,

@@ -387,4 +387,11 @@ extern LLVMValueRef build_dispatcher_function(
 	struct llvm_ctx *ctx,
 	IDL_tree iface);
 
+
+/* from l4x2.c */
+
+/* returned valueref is a <L4_Word_t *> of the UTCB address. */
+extern LLVMValueRef build_utcb_get(struct llvm_ctx *ctx);
+
+
 #endif
