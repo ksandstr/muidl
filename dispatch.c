@@ -1305,7 +1305,12 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 	LLVMBasicBlockRef current = LLVMGetInsertBlock(ctx->builder);
 	LLVMValueRef unknownlabel = LLVMConstInt(ctx->wordt, 42666, 0);
 	LLVMAddIncoming(retval, &unknownlabel, &current, 1);
-	LLVMBuildBr(ctx->builder, exit_bb);
+	if(tm_dispatch_bb != NULL) {
+		/* must branch explicitly. the non-bb path exits from the switch
+		 * instruction.
+		 */
+		LLVMBuildBr(ctx->builder, exit_bb);
+	}
 
 	int top_label = -1;
 	LLVMValueRef sublabelswitch = NULL;

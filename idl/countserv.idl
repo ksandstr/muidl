@@ -55,6 +55,9 @@ interface Countserv
 	[Label(675)]
 	void widdly_scuds(
 		out fiddly_something cheese_fries);
+
+	[Label(676)]
+	oneway void raise_alarm_or_dont(in long yes_yes_what_what);
 };
 
 
