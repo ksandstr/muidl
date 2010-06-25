@@ -93,23 +93,17 @@ static LLVMValueRef build_l4_ipc_call(
 }
 
 
-static LLVMValueRef build_utcb_address_ixval(
-	struct llvm_ctx *ctx,
-	LLVMValueRef offset)
-{
-	return LLVMBuildPointerCast(ctx->builder,
-		LLVMBuildGEP(ctx->builder, ctx->utcb, &offset, 1, "utcb.addr"),
-		LLVMPointerType(ctx->wordt, 0), "utcb.addr.wordptr");
-}
-
-
+/* NOTE: offset is in _words_, since that's the unit the UTCB is addressed
+ * with.
+ */
 static LLVMValueRef build_utcb_address(
 	struct llvm_ctx *ctx,
-	int offset)
+	int offset,
+	const char *name)
 {
 	LLVMValueRef off = LLVMConstInt(ctx->wordt, abs(offset), 0);
 	if(offset < 0) off = LLVMBuildNeg(ctx->builder, off, "utcboffset");
-	return build_utcb_address_ixval(ctx, off);
+	return LLVMBuildGEP(ctx->builder, ctx->utcb, &off, 1, name);
 }
 
 
@@ -233,7 +227,7 @@ static LLVMValueRef build_ipc_input_val(struct llvm_ctx *ctx, int mr)
 	else if(mr == 2) return ctx->mr2;
 	else {
 		return LLVMBuildLoad(ctx->builder,
-			build_utcb_address(ctx, mr * 4),
+			build_utcb_address(ctx, mr, "mr.addr"),
 			tmp_f(ctx->pr, "mr%d", mr));
 	}
 }
@@ -246,18 +240,8 @@ static LLVMValueRef build_utcb_load(
 	const char *name)
 {
 	return LLVMBuildLoad(ctx->builder,
-		build_utcb_address_ixval(ctx, ix), name);
-}
-
-
-static LLVMValueRef build_mr_load(
-	struct llvm_ctx *ctx,
-	LLVMValueRef mrnum,
-	const char *name)
-{
-	LLVMValueRef offset = LLVMBuildMul(ctx->builder, mrnum,
-		LLVMConstInt(ctx->i32t, 4, 0), tmp_f(ctx->pr, "%s.offset", name));
-	return build_utcb_load(ctx, offset, name);
+		LLVMBuildGEP(ctx->builder, ctx->utcb, &ix, 1, "utcb.addr.in"),
+		name);
 }
 
 
@@ -318,8 +302,8 @@ static void build_read_ipc_parameter_ixval(
 {
 	if(IS_LONGLONG_TYPE(ctyp)) {
 		/* unpack a two-word parameter. */
-		LLVMValueRef low = build_mr_load(ctx, first_mr, "longparm.lo.mr"),
-			high = build_mr_load(ctx,
+		LLVMValueRef low = build_utcb_load(ctx, first_mr, "longparm.lo.mr"),
+			high = build_utcb_load(ctx,
 				LLVMBuildAdd(ctx->builder, first_mr,
 					LLVMConstInt(ctx->i32t, 1, 0), "longparm.hi.mr.ix"),
 				"longparm.hi.mr");
@@ -340,7 +324,7 @@ static void build_read_ipc_parameter_ixval(
 	} else if(is_value_type(ctyp)) {
 		/* appropriate for all value types. */
 		dst[0] = LLVMBuildTruncOrBitCast(ctx->builder,
-			build_mr_load(ctx, first_mr, "shortparm.mr"),
+			build_utcb_load(ctx, first_mr, "shortparm.mr"),
 			llvm_value_type(ctx, ctyp), "shortparm");
 	} else if(is_rigid_type(ctx->ns, ctyp)) {
 		NOTDEFINED(ctyp);
@@ -402,7 +386,7 @@ static int build_write_ipc_parameter(
 					LLVMBuildStructGEP(ctx->builder, val[0], i,
 						tmp_f(ctx->pr, "mg.field%d.ptr", i)),
 					tmp_f(ctx->pr, "mg.field%d.val", i)),
-				build_utcb_address(ctx, (first_mr + i) * 4));
+				build_utcb_address(ctx, first_mr + i, "mg.store.addr"));
 		}
 		return 2;
 	}
@@ -422,7 +406,7 @@ static int build_write_ipc_parameter(
 		NOTDEFINED(ctyp);
 	}
 	LLVMBuildStore(ctx->builder, reg,
-		build_utcb_address(ctx, first_mr * 4));
+		build_utcb_address(ctx, first_mr, "store.mr.addr"));
 	return 1;
 }
 
@@ -567,7 +551,7 @@ static LLVMBasicBlockRef get_msgerr_bb(struct llvm_ctx *ctx)
 			"msgerr.tag");
 		LLVMBuildStore(ctx->builder,
 			LLVMBuildNeg(ctx->builder, ctx->fncall_phi, "rcneg.val"),
-			build_utcb_address(ctx, 4));	/* mr1 on ia32 */
+			build_utcb_address(ctx, 1, "mr1.addr"));
 		LLVMAddIncoming(ctx->reply_tag, &msgerr_tag, &ctx->msgerr_bb, 1);
 		LLVMBuildBr(ctx->builder, ctx->reply_bb);
 
@@ -628,7 +612,7 @@ static void emit_in_param(
 			|| seq->bits_per_elem < BITS_PER_WORD)
 		{
 			/* not subject to trickery; take a length word. */
-			seq_end_elem = build_mr_load(ctx, ctx->inline_seq_pos,
+			seq_end_elem = build_utcb_load(ctx, ctx->inline_seq_pos,
 				"inlseq.len.mr");
 			seq_end_elem = LLVMBuildTruncOrBitCast(ctx->builder,
 				seq_end_elem, ctx->i32t, "inlseq.len.explicit");
@@ -690,7 +674,7 @@ static void emit_in_param(
 					"seq.mem.at"));
 		} else {
 			/* many-per-word case */
-			LLVMValueRef word = build_mr_load(ctx, seq_pos, "seq.limb");
+			LLVMValueRef word = build_utcb_load(ctx, seq_pos, "seq.limb");
 			for(int i=0; i<seq->elems_per_word; i++) {
 				LLVMValueRef item = LLVMBuildTrunc(ctx->builder,
 					i == 0 ? word : LLVMBuildLShr(ctx->builder, word,
@@ -971,9 +955,8 @@ static LLVMBasicBlockRef build_op_decode(
 			LLVMBuildStore(ctx->builder,
 				LLVMBuildZExtOrBitCast(ctx->builder, num_items,
 					ctx->wordt, "inlseq.len.word"),
-				build_utcb_address_ixval(ctx,
-					LLVMBuildMul(ctx->builder, ctx->inline_seq_pos,
-						LLVMConstInt(ctx->i32t, 4, 0), "inlseq.len.word.offs")));
+				LLVMBuildGEP(ctx->builder, ctx->utcb,
+					&ctx->inline_seq_pos, 1, "inlseq.len.word.offs"));
 			ctx->inline_seq_pos = LLVMBuildAdd(ctx->builder,
 				ctx->inline_seq_pos, LLVMConstInt(ctx->i32t, 1, 0),
 				"inlseq.pos.bump");
@@ -1020,9 +1003,7 @@ static LLVMBasicBlockRef build_op_decode(
 			}
 		}
 		LLVMBuildStore(ctx->builder, wordval,
-			build_utcb_address_ixval(ctx,
-				LLVMBuildMul(ctx->builder, word_ix,
-					LLVMConstInt(ctx->i32t, 4, 0), "word_ix.offs")));
+			LLVMBuildGEP(ctx->builder, ctx->utcb, &word_ix, 1, "word_ix.ptr"));
 		LLVMValueRef next_pos = LLVMBuildAdd(ctx->builder, pos,
 				LLVMConstInt(ctx->i32t, seq->elems_per_word, 0),
 				"inlseq.out.pos.next"),
@@ -1106,10 +1087,8 @@ static LLVMBasicBlockRef build_op_decode(
 
 			LLVMPositionBuilderAtEnd(ctx->builder, store_bb);
 			LLVMBuildStore(ctx->builder, wordval,
-				build_utcb_address_ixval(ctx,
-					LLVMBuildMul(ctx->builder, store_word,
-						LLVMConstInt(ctx->i32t, 4, 0),
-						"inlseq.len.word.offs")));
+				LLVMBuildGEP(ctx->builder, ctx->utcb, &store_word, 1,
+					"inlseq.len.ptr"));
 			LLVMBuildBr(ctx->builder, after_bb);
 
 			LLVMPositionBuilderAtEnd(ctx->builder, after_bb);
@@ -1170,11 +1149,12 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 
 	LLVMPositionBuilderAtEnd(ctx->builder, bb);
 	ctx->utcb = build_utcb_get(ctx);
-	LLVMValueRef xfer_timeouts_addr = build_utcb_address(ctx, -32),
+	LLVMValueRef xfer_timeouts_addr = build_utcb_address(ctx, -8, "xferto.addr"),
 		stored_timeouts = LLVMBuildLoad(ctx->builder,
 			xfer_timeouts_addr, "stored_timeouts"),
 		acceptor = LLVMConstInt(ctx->i32t, 0, 0);
-	LLVMBuildStore(ctx->builder, acceptor, build_utcb_address(ctx, -64));
+	LLVMBuildStore(ctx->builder, acceptor,
+		build_utcb_address(ctx, -16, "acceptor.addr"));
 	LLVMBuildStore(ctx->builder, stored_timeouts, xfer_timeouts_addr);
 	ctx->alloc_bb = bb;
 
@@ -1221,7 +1201,7 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 	/* return L4_ErrorCode(); */
 	LLVMPositionBuilderAtEnd(ctx->builder, ret_ec_bb);
 	LLVMValueRef errorcode = LLVMBuildLoad(ctx->builder,
-		build_utcb_address(ctx, -36), "errcode");
+		build_utcb_address(ctx, -9, "errcode.addr"), "errcode");
 	LLVMAddIncoming(retval, &errorcode, &ret_ec_bb, 1);
 	LLVMBuildBr(ctx->builder, exit_bb);
 
