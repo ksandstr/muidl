@@ -221,15 +221,19 @@ static LLVMValueRef build_load_subval_and_shift(
 				"dstitem.sub.ptr"),
 			"dstitem.sub.val"),
 		ctx->wordt, "dstitem.sub.val.word");
-	/* fill from right to left, i.e. big end first. */
-	int upshift = (seq->elems_per_word - 1 - ix) * seq->bits_per_elem;
+	/* fill from left to right, in little-endian order. this optimizes the
+	 * one-odd tail case while not penalizing any other.
+	 */
+	int upshift = seq->bits_per_elem * ix;
 	return LLVMBuildShl(ctx->builder, subval,
 		LLVMConstInt(ctx->i32t, upshift, 0),
 		"dstitem.sub.val.shifted");
 }
 
 
-/* returns new upos. */
+/* this code is a bit of a mess with the basic block names and other stuff.
+ * wouldn't be a surprise if it made the verifier scream for bread one day.
+ */
 LLVMValueRef build_encode_inline_sequence(
 	struct llvm_ctx *ctx,
 	LLVMValueRef mem,
