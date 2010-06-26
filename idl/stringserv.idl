@@ -1,0 +1,15 @@
+
+#ifndef SEEN_MUIDL_STRINGSERV_IDL
+#define SEEN_MUIDL_STRINGSERV_IDL
+
+#include <posix-base.idl>
+
+[StubPrefix(__stringserv)]
+interface Stringserv
+{
+	[Label(5)]
+	void print_string(in string<128> boring_message);
+};
+
+
+#endif

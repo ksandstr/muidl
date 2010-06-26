@@ -150,3 +150,21 @@ LLVMValueRef build_local_storage(
 	LLVMDisposeBuilder(b);
 	return ptr;
 }
+
+
+/* free(2)'d at end of function. */
+LLVMValueRef build_malloc_storage(
+	struct llvm_ctx *ctx,
+	LLVMTypeRef type,
+	LLVMValueRef count,
+	const char *name)
+{
+	LLVMBuilderRef b = LLVMCreateBuilderInContext(ctx->ctx);
+	LLVMPositionBuilderAtEnd(b, ctx->alloc_bb);
+	LLVMValueRef ptr;
+	if(count == NULL) ptr = LLVMBuildMalloc(b, type, name);
+	else ptr = LLVMBuildArrayMalloc(b, type, count, name);
+	LLVMDisposeBuilder(b);
+	ctx->malloc_ptrs = g_list_prepend(ctx->malloc_ptrs, ptr);
+	return ptr;
+}

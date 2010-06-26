@@ -109,3 +109,23 @@ static LLVMValueRef build_t_from_tag(
 			"tag.u");
 }
 #endif
+
+
+void build_simple_string_item(
+	struct llvm_ctx *ctx,
+	LLVMValueRef *dest,
+	LLVMValueRef data_ptr,
+	LLVMValueRef data_len,
+	LLVMValueRef cache_hint)
+{
+	if(cache_hint == NULL) cache_hint = ctx->zero;
+
+	dest[0] = LLVMBuildPtrToInt(ctx->builder, data_ptr, ctx->wordt,
+		"stritem.simple.ptr");
+	dest[1] = LLVMBuildOr(ctx->builder,
+		LLVMBuildShl(ctx->builder, data_len,
+			LLVMConstInt(ctx->i32t, 10, 0), "stritem.simple.len.shl"),
+		LLVMBuildShl(ctx->builder, cache_hint,
+			LLVMConstInt(ctx->i32t, 1, 0), "stritem.simple.ch.shl"),
+		"stritem.simple.info");
+}

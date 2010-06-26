@@ -128,6 +128,7 @@ struct llvm_ctx
 	LLVMBuilderRef builder;
 	LLVMTypeRef wordt, i32t, voidptrt, mapgrant;
 	LLVMValueRef zero;
+	GList *malloc_ptrs;		/* LLVM free insns emitted at fn end */
 
 	/* used by dispatcher building etc; common L4 IPC stuff */
 	LLVMValueRef utcb;		/* address of UTCB; <L4_Word_t *> */
@@ -211,8 +212,11 @@ struct method_info
 struct stritem_info
 {
 	int length;			/* < 0 = terminator */
-	int offset;			/* not filled in by dispatcher_stritems() */
 	bool stringlike;	/* '\0' terminated? (not included in length.) */
+
+	/* these aren't filled in by dispatcher_stritems() */
+	int offset;
+	LLVMValueRef memptr;	/* memory in dispatcher; always <i8 *> */
 };
 
 
@@ -339,6 +343,13 @@ extern LLVMValueRef build_local_storage(
 	LLVMValueRef count,
 	const char *name);
 
+/* returns ptr to data object. memory is free(2)'d at end of function. */
+extern LLVMValueRef build_malloc_storage(
+	struct llvm_ctx *ctx,
+	LLVMTypeRef type,
+	LLVMValueRef count,
+	const char *name);
+
 
 /* from analyse.c */
 
@@ -423,6 +434,14 @@ extern LLVMValueRef build_utcb_load(
 	const char *name);
 
 extern LLVMValueRef build_u_from_tag(struct llvm_ctx *ctx, LLVMValueRef tag);
+
+/* after return, dest[0] is the first word, dest[1] is the second word */
+extern void build_simple_string_item(
+	struct llvm_ctx *ctx,
+	LLVMValueRef *dest,
+	LLVMValueRef data_ptr,
+	LLVMValueRef data_len,		/* in bytes */
+	LLVMValueRef cache_hint);	/* NULL = default policy */
 
 
 /* from sequence.c */

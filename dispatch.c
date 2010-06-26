@@ -204,19 +204,30 @@ static void vtable_in_param_type(
 	int *pos_p,
 	IDL_tree type)
 {
-	/* TODO: handle long long, long double types */
 	if(is_value_type(type)) {
 		dst[(*pos_p)++] = llvm_value_type(ctx, type);
 	} else if(is_rigid_type(ctx->ns, type)) {
-		/* TODO: handle structs, arrays, unions */
-		NOTDEFINED(type);
+		LLVMTypeRef item_type;
+		switch(IDL_NODE_TYPE(type)) {
+			case IDLN_TYPE_STRING:
+				item_type = LLVMInt8TypeInContext(ctx->ctx);
+				break;
+			case IDLN_TYPE_WIDE_STRING:
+				/* FIXME: get wchar_t size from ABI! */
+				item_type = ctx->i32t;
+				break;
+			default:
+				/* TODO: handle structs, arrays, unions */
+				NOTDEFINED(type);
+		}
+		dst[(*pos_p)++] = LLVMPointerType(item_type, 0);
 	} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
 		IDL_tree seqtype = get_type_spec(
 			IDL_TYPE_SEQUENCE(type).simple_type_spec);
 		dst[(*pos_p)++] = LLVMPointerType(llvm_value_type(ctx, seqtype), 0);
 		dst[(*pos_p)++] = ctx->i32t;
 	} else {
-		/* TODO: handle strings and wide strings */
+		/* should not be reached, either. something fell out. */
 		NOTDEFINED(type);
 	}
 }
@@ -364,6 +375,7 @@ static void emit_in_param(
 	LLVMValueRef *args,
 	int *arg_pos_p,
 	const struct method_info *inf,
+	const struct stritem_info *stritems,
 	IDL_tree pdecl)
 {
 	const struct message_info *req = inf->request;
@@ -396,6 +408,52 @@ static void emit_in_param(
 			seq == req->seq[req->num_inline_seq - 1],
 			ctx->fncall_phi, get_msgerr_bb(ctx));
 		ctx->inline_seq_pos = new_upos;
+		return;
+	}
+
+	/* long parameter? */
+	const struct long_param *lp = NULL;
+	int lp_offset;
+	for(int i=0; i < req->num_long; i++) {
+		if(req->long_params[i]->param_dcl == pdecl) {
+			lp = req->long_params[i];
+			lp_offset = i;
+			break;
+		}
+	}
+	if(lp != NULL) {
+		assert(stritems != NULL);
+		switch(IDL_NODE_TYPE(lp->type)) {
+			case IDLN_TYPE_STRING: {
+				/* <i8 *> is exactly what we need. */
+				args[(*arg_pos_p)++] = stritems[lp_offset].memptr;
+				/* null-terminate it, though. */
+				IDL_tree pic = IDL_TYPE_STRING(lp->type).positive_int_const;
+				assert(pic != NULL);
+				LLVMValueRef nullpos = LLVMConstInt(ctx->i32t,
+					IDL_INTEGER(pic).value, 0);
+				LLVMBuildStore(ctx->builder,
+					LLVMConstInt(LLVMInt8TypeInContext(ctx->ctx), 0, 0),
+					LLVMBuildGEP(ctx->builder, stritems[lp_offset].memptr,
+						&nullpos, 1, "str.nullpo"));	/* ガ！ */
+				break;
+			}
+
+			case IDLN_TYPE_WIDE_STRING:
+			case IDLN_TYPE_STRUCT:
+			case IDLN_TYPE_UNION:
+			case IDLN_TYPE_ARRAY:
+				/* TODO */
+
+			case IDLN_TYPE_SEQUENCE:
+				/* TODO: two parameters, one stritems[lp_offset].memptr,
+				 * the other the length of the received (potentially compound)
+				 * string item in bytes, divided by byte size of element type.
+				 */
+
+			default:
+				NOTDEFINED(lp->type);
+		}
 		return;
 	}
 
@@ -455,7 +513,8 @@ static int first_arg_index(IDL_tree op, IDL_tree pdecl)
 static LLVMBasicBlockRef build_op_decode(
 	struct llvm_ctx *ctx,
 	LLVMValueRef function,
-	const struct method_info *inf)
+	const struct method_info *inf,
+	const struct stritem_info *stritems)
 {
 	struct print_ctx *pr = ctx->pr;
 	char *name = !IS_EXN_MSG(inf)
@@ -493,7 +552,7 @@ static LLVMBasicBlockRef build_op_decode(
 		IDL_tree p = IDL_LIST(cur).data;
 		enum IDL_param_attr attr = IDL_PARAM_DCL(p).attr;
 		if(attr == IDL_PARAM_IN) {
-			emit_in_param(ctx, args, &arg_pos, inf, p);
+			emit_in_param(ctx, args, &arg_pos, inf, stritems, p);
 		} else if(attr == IDL_PARAM_OUT) {
 			emit_out_param(ctx, args, &arg_pos,
 				get_type_spec(IDL_PARAM_DCL(p).param_type_spec));
@@ -504,7 +563,7 @@ static LLVMBasicBlockRef build_op_decode(
 			emit_out_param(ctx, args, &arg_pos, typ);
 			LLVMValueRef in_args[2];
 			int in_arg_pos = 0;
-			emit_in_param(ctx, in_args, &in_arg_pos, inf, p);
+			emit_in_param(ctx, in_args, &in_arg_pos, inf, stritems, p);
 			assert(in_arg_pos == arg_pos - start);
 			/* insert tab A in slot B */
 			for(int i=0; i<in_arg_pos; i++) {
@@ -653,6 +712,56 @@ static LLVMBasicBlockRef build_op_decode(
 }
 
 
+static void build_alloc_stritems(
+	struct llvm_ctx *ctx,
+	struct stritem_info *stritems)
+{
+	if(stritems == NULL) return;
+	for(int i=0; stritems[i].length >= 0; i++) {
+		/* FIXME: the "4" is sizeof(wchar_t); get this from the ABI spec */
+		int len = stritems[i].length + (stritems[i].stringlike ? 4 : 0);
+		/* TODO: adjust minimum malloc by some reasonable criteria */
+		stritems[i].memptr = build_malloc_storage(ctx,
+			LLVMInt8TypeInContext(ctx->ctx),
+			LLVMConstInt(ctx->i32t, len, 0),
+			tmp_f(ctx->pr, "stritem%d.ptr", i));
+	}
+}
+
+
+static void build_store_br(
+	struct llvm_ctx *ctx,
+	LLVMValueRef value,
+	int br)
+{
+	assert(br <= 32 && br >= 0);
+	LLVMValueRef br_addr = build_utcb_address(ctx,
+		br * -4 - 64, tmp_f(ctx->pr, "br%d.ptr", br));
+	LLVMBuildStore(ctx->builder, value, br_addr);
+}
+
+
+static void build_set_strbufs(
+	struct llvm_ctx *ctx,
+	const struct stritem_info *stritems)
+{
+	assert(stritems != NULL && stritems[0].length >= 0);
+	for(int i=0; stritems[i].length >= 0; i++) {
+		LLVMValueRef si[2];
+		build_simple_string_item(ctx, si, stritems[i].memptr,
+			LLVMConstInt(ctx->wordt, stritems[i].length, 0),
+			NULL);
+		build_store_br(ctx, si[0], i * 2 + 1);
+		if(stritems[i+1].length >= 0) {
+			/* non-last string buffers have low bit, "C", set. */
+			si[1] = LLVMBuildOr(ctx->builder, si[1],
+				LLVMConstInt(ctx->wordt, 1, 0), "strbuf.info.cont");
+		}
+		build_store_br(ctx, si[1], i * 2 + 2);
+	}
+}
+
+
 static gint method_by_tagmask_cmp(gconstpointer ap, gconstpointer bp)
 {
 	const struct method_info *a = ap, *b = bp;
@@ -684,18 +793,31 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 	ctx->wait_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "wait");
 	ctx->reply_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "reply");
 
+	/* the entry block. */
 	LLVMPositionBuilderAtEnd(ctx->builder, bb);
 	ctx->utcb = build_utcb_get(ctx);
-	LLVMValueRef xfer_timeouts_addr = build_utcb_address(ctx, -8, "xferto.addr"),
-		stored_timeouts = LLVMBuildLoad(ctx->builder,
-			xfer_timeouts_addr, "stored_timeouts"),
-		acceptor = LLVMConstInt(ctx->i32t, 0, 0);
-	LLVMBuildStore(ctx->builder, acceptor,
-		build_utcb_address(ctx, -16, "acceptor.addr"));
-	LLVMBuildStore(ctx->builder, stored_timeouts, xfer_timeouts_addr);
 	ctx->alloc_bb = bb;
+	ctx->malloc_ptrs = NULL;
+	/* store xfer timeouts at point of entry, i.e. as they are given by the
+	 * caller.
+	 */
+	LLVMValueRef xfer_timeouts_addr = build_utcb_address(ctx, -8, "xferto.addr"),
+		stored_timeouts = LLVMBuildLoad(ctx->builder, xfer_timeouts_addr,
+			"stored_timeouts");
+	/* string buffers */
+	struct stritem_info *stritems = dispatcher_stritems(methods);
+	build_alloc_stritems(ctx, stritems);
+	const bool have_stringbufs = stritems != NULL && stritems[0].length >= 0;
+	/* acceptor word (TODO: map/grant items) */
+	LLVMValueRef acceptor = LLVMConstInt(ctx->wordt,
+		have_stringbufs ? 1 : 0, 0);
+	/* (this block will be closed as ctx->alloc_bb down near function end.) */
 
+	/* non-reply IPC wait block. */
 	LLVMPositionBuilderAtEnd(ctx->builder, ctx->wait_bb);
+	LLVMBuildStore(ctx->builder, stored_timeouts, xfer_timeouts_addr);
+	build_store_br(ctx, acceptor, 0);
+	if(have_stringbufs) build_set_strbufs(ctx, stritems);
 	LLVMValueRef ipc_from, ipc_mr1, ipc_mr2,
 		ipc_tag = build_l4_ipc_call(ctx,
 			ctx->zero, LLVMConstNot(ctx->zero), LLVMConstNot(ctx->zero), ctx->zero,
@@ -721,6 +843,9 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 	 */
 	LLVMPositionBuilderAtEnd(ctx->builder, ctx->reply_bb);
 	ctx->reply_tag = LLVMBuildPhi(ctx->builder, ctx->wordt, "replytag.phi");
+	LLVMBuildStore(ctx->builder, stored_timeouts, xfer_timeouts_addr);
+	build_store_br(ctx, acceptor, 0);
+	if(have_stringbufs) build_set_strbufs(ctx, stritems);
 	ipc_tag = build_l4_ipc_call(ctx,
 		ctx->from, LLVMConstNot(ctx->zero), LLVMConstNot(ctx->zero),
 		ctx->reply_tag, &ipc_from, &ipc_mr1, &ipc_mr2);
@@ -730,10 +855,9 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 	LLVMAddIncoming(ctx->tag, &ipc_tag, &ctx->reply_bb, 1);
 	LLVMBuildBr(ctx->builder, loop_bb);
 
-	/* exit */
+	/* exit_bb's interface */
 	LLVMPositionBuilderAtEnd(ctx->builder, exit_bb);
 	LLVMValueRef retval = LLVMBuildPhi(ctx->builder, ctx->wordt, "retval");
-	LLVMBuildRet(ctx->builder, retval);
 
 	/* return L4_ErrorCode(); */
 	LLVMPositionBuilderAtEnd(ctx->builder, ret_ec_bb);
@@ -799,7 +923,7 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 			/* chain member. */
 			LLVMAddCase(mask_switch,
 				LLVMConstInt(ctx->wordt, inf->request->label, 0),
-				build_op_decode(ctx, fn, inf));
+				build_op_decode(ctx, fn, inf, stritems));
 		}
 		g_list_free(tm_list);
 	}
@@ -828,7 +952,8 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 		/* tag-mask dispatching is handled above */
 		if(inf->request->tagmask != NO_TAGMASK) continue;
 		if(inf->request->sublabel == NO_SUBLABEL) {
-			LLVMBasicBlockRef decode_bb = build_op_decode(ctx, fn, inf);
+			LLVMBasicBlockRef decode_bb = build_op_decode(ctx, fn, inf,
+				stritems);
 			LLVMAddCase(labelswitch,
 				LLVMConstInt(ctx->wordt, inf->request->label, 0),
 				decode_bb);
@@ -857,7 +982,7 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 			assert(top_label == inf->request->label);
 			LLVMAddCase(sublabelswitch,
 				LLVMConstInt(ctx->wordt, inf->request->sublabel, 0),
-				build_op_decode(ctx, fn, inf));
+				build_op_decode(ctx, fn, inf, stritems));
 		}
 	}
 
@@ -865,10 +990,24 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 	LLVMPositionBuilderAtEnd(ctx->builder, ctx->alloc_bb);
 	LLVMBuildBr(ctx->builder, ctx->wait_bb);
 
+	/* and emit free insns for all blocks in the malloc list */
+	LLVMPositionBuilderAtEnd(ctx->builder, exit_bb);
+	for(GList *cur = g_list_first(ctx->malloc_ptrs);
+		cur != NULL;
+		cur = g_list_next(cur))
+	{
+		LLVMValueRef ptr = cur->data;
+		LLVMBuildFree(ctx->builder, ptr);
+	}
+	g_list_free(ctx->malloc_ptrs);
+	ctx->malloc_ptrs = NULL;
+	LLVMBuildRet(ctx->builder, retval);
+
 	LLVMDisposeBuilder(ctx->builder);
 	ctx->builder = NULL;
 	g_list_foreach(methods, (GFunc)free_method_info, NULL);
 	g_list_free(methods);
 	g_list_free(tagmask_list);
+	g_free(stritems);
 	return fn;
 }

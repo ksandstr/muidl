@@ -768,7 +768,8 @@ static void print_helper_vars(
 	for(int i=0; i<msg->num_long; i++) {
 		struct long_param *p = msg->long_params[i];
 
-		assert(stritems != NULL && stritems[i].length >= 0);
+		assert(stritems != NULL);
+		assert(stritems[i].length >= 0);
 		if(IDL_NODE_TYPE(p->type) == IDLN_TYPE_STRING) {
 			IDL_tree bnode = IDL_TYPE_STRING(p->type).positive_int_const;
 			assert(bnode != NULL);	/* ensured by verify.c */
