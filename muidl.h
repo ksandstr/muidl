@@ -427,7 +427,7 @@ extern LLVMValueRef build_u_from_tag(struct llvm_ctx *ctx, LLVMValueRef tag);
 
 /* from sequence.c */
 
-/* return valueref is the position of the next unclaimed u-word (if valid). */
+/* returns new upos. */
 extern LLVMValueRef build_decode_inline_sequence(
 	struct llvm_ctx *ctx,
 	LLVMValueRef *dst,
@@ -437,6 +437,15 @@ extern LLVMValueRef build_decode_inline_sequence(
 	bool is_last,
 	LLVMValueRef errval_phi,	/* adds incoming of -errno */
 	LLVMBasicBlockRef err_bb);	/* ... and branches here to pop error */
+
+/* returns new upos. */
+extern LLVMValueRef build_encode_inline_sequence(
+	struct llvm_ctx *ctx,
+	LLVMValueRef mem,
+	LLVMValueRef lenptr,
+	const struct seq_param *seq,
+	LLVMValueRef upos,
+	bool is_last);
 
 
 /* from types.c */
