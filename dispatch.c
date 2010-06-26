@@ -720,7 +720,9 @@ static void build_alloc_stritems(
 	for(int i=0; stritems[i].length >= 0; i++) {
 		/* FIXME: the "4" is sizeof(wchar_t); get this from the ABI spec */
 		int len = stritems[i].length + (stritems[i].stringlike ? 4 : 0);
-		/* TODO: adjust minimum malloc by some reasonable criteria */
+		/* TODO: allocate small blocks (by some reasonable criteria... a single
+		 * cache line's size, or something) with build_local_storage()
+		 */
 		stritems[i].memptr = build_malloc_storage(ctx,
 			LLVMInt8TypeInContext(ctx->ctx),
 			LLVMConstInt(ctx->i32t, len, 0),

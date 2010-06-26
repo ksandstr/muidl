@@ -9,6 +9,11 @@ interface Stringserv
 {
 	[Label(5)]
 	void print_string(in string<128> boring_message);
+
+	[Label(23)]
+	void log_string(
+		in string<32> log_id,
+		in string<128> boring_message);
 };
 
 
