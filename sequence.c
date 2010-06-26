@@ -364,7 +364,7 @@ LLVMValueRef build_encode_inline_sequence(
 				LLVMAddIncoming(word_phi, &wordval, &prev, 1);
 			}
 			wordval = LLVMBuildOr(ctx->builder, word_phi,
-				build_load_subval_and_shift(ctx, mem, pos, i, seq),
+				build_load_subval_and_shift(ctx, mem, pos, i - 1, seq),
 				tmp_f(ctx->pr, "inlseq.odd.wordval.v%d", i));
 			prev = b;
 		}
