@@ -64,6 +64,10 @@ interface Countserv
 	void with_output_sequences(
 		out something delivery_for_mr_claus,
 		out packed_something surely_something_good);
+
+	[Label(679)]
+	void with_inout_sequence(
+		inout something whatevs_dudekins);
 };
 
 
