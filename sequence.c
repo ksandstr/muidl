@@ -187,7 +187,7 @@ LLVMValueRef build_decode_inline_sequence(
 					tmp_f(ctx->pr, "odd.c%d.shifted", i)),
 				seq_type, tmp_f(ctx->pr, "odd.c%d.limb", i));
 			LLVMValueRef offs = LLVMBuildAdd(ctx->builder, odd_offs,
-				LLVMConstInt(ctx->i32t, i, 0), "odd.limb.offs");
+				LLVMConstInt(ctx->i32t, i - 1, 0), "odd.limb.offs");
 			LLVMBuildStore(ctx->builder, limb,
 				LLVMBuildGEP(ctx->builder, seq_mem, &offs, 1,
 					"odd.limb.ptr"));
