@@ -231,9 +231,7 @@ static LLVMValueRef build_load_subval_and_shift(
 }
 
 
-/* this code is a bit of a mess with the basic block names and other stuff.
- * wouldn't be a surprise if it made the verifier scream for bread one day.
- */
+/* this code is a bit of a mess with the basic block names and other stuff. */
 LLVMValueRef build_encode_inline_sequence(
 	struct llvm_ctx *ctx,
 	LLVMValueRef mem,
@@ -319,20 +317,19 @@ LLVMValueRef build_encode_inline_sequence(
 	LLVMBuildCondBr(ctx->builder, exit_cond, loop_bb, loop_after_bb);
 
 	LLVMPositionBuilderAtEnd(ctx->builder, loop_after_bb);
+	LLVMValueRef pos_phi = LLVMBuildPhi(ctx->builder, ctx->i32t,
+			"inlseq.out.pos.phi"),
+		next_word_phi = LLVMBuildPhi(ctx->builder, ctx->i32t,
+			"inlseq.out.nextword.phi");
+	LLVMAddIncoming(pos_phi, &ctx->zero, &before_loop_bb, 1);
+	LLVMAddIncoming(next_word_phi, &isp_before_loop, &before_loop_bb, 1);
+	LLVMAddIncoming(pos_phi, &pos, &loop_bb, 1);
+	LLVMAddIncoming(next_word_phi, &next_word, &loop_bb, 1);
+	pos = pos_phi;
+	next_word = next_word_phi;
 	if(seq->elems_per_word > 1) {
 		LLVMBasicBlockRef after_bb = LLVMAppendBasicBlockInContext(
 			ctx->ctx, fn, "inlseq.odd.after");
-
-		LLVMValueRef pos_phi = LLVMBuildPhi(ctx->builder, ctx->i32t,
-				"inlseq.out.pos.phi"),
-			next_word_phi = LLVMBuildPhi(ctx->builder, ctx->i32t,
-				"inlseq.out.nextword.phi");
-		LLVMAddIncoming(pos_phi, &ctx->zero, &before_loop_bb, 1);
-		LLVMAddIncoming(next_word_phi, &isp_before_loop, &before_loop_bb, 1);
-		LLVMAddIncoming(pos_phi, &pos, &loop_bb, 1);
-		LLVMAddIncoming(next_word_phi, &next_word, &loop_bb, 1);
-		pos = pos_phi;
-		next_word = next_word_phi;
 
 		/* one-round duff's device for trailing elements. not
 		 * pretty, nor too compact, but gets the job done.
