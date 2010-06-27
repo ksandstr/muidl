@@ -424,17 +424,47 @@ static void emit_in_param(
 	}
 	if(lp != NULL) {
 		assert(stritems != NULL);
+		/* every long parameter is carried in a string item. therefore there
+		 * must be at least one; make sure this is true, and fuck off into the
+		 * msgerr block if it's not. (the length function returns tpos > tmax +
+		 * 1 to indicate this.)
+		 */
+		/* FIXME: get EINVAL from µiX header rather than <errno.h> */
+		LLVMValueRef einval = LLVMConstInt(ctx->i32t, -EINVAL, 0),
+			tmax_plus_one = LLVMBuildAdd(ctx->builder, ctx->tmax,
+				LLVMConstInt(ctx->i32t, 1, 0), "tmax.plus.one");
+		LLVMBasicBlockRef msgerr_bb = get_msgerr_bb(ctx),
+			branch_bb = LLVMGetInsertBlock(ctx->builder),
+			pre_ok_bb = LLVMAppendBasicBlockInContext(ctx->ctx,
+				LLVMGetBasicBlockParent(branch_bb), "stritem.preok"),
+			cont_bb = LLVMAppendBasicBlockInContext(ctx->ctx,
+				LLVMGetBasicBlockParent(branch_bb), "stritem.cont");
+		/* precondition: tpos <= tmax + 1 */
+		LLVMValueRef tpos_pc = LLVMBuildICmp(ctx->builder, LLVMIntULE,
+			ctx->tpos, tmax_plus_one, "stritem.precond");
+		LLVMAddIncoming(ctx->fncall_phi, &einval, &branch_bb, 1);
+		LLVMBuildCondBr(ctx->builder, tpos_pc, pre_ok_bb, msgerr_bb);
+
+		/* call lenfn, branch off to msgerr if retval indicates failure */
+		LLVMPositionBuilderAtEnd(ctx->builder, pre_ok_bb);
+		LLVMValueRef item_len_bytes = NULL;
+		ctx->tpos = build_recv_stritem_len(ctx, &item_len_bytes, ctx->tpos);
+		LLVMValueRef fail_cond = LLVMBuildICmp(ctx->builder, LLVMIntUGT,
+			ctx->tpos, tmax_plus_one, "stritem.fail.cond");
+		LLVMAddIncoming(ctx->fncall_phi, &einval, &pre_ok_bb, 1);
+		LLVMBuildCondBr(ctx->builder, fail_cond, msgerr_bb, cont_bb);
+
+		/* the actual sequence decode. */
+		LLVMPositionBuilderAtEnd(ctx->builder, cont_bb);
 		switch(IDL_NODE_TYPE(lp->type)) {
 			case IDLN_TYPE_STRING: {
 				/* <i8 *> is exactly what we need. */
 				args[(*arg_pos_p)++] = stritems[lp_offset].memptr;
 				/* null-terminate it, though. */
-				LLVMValueRef nullpos = NULL;
-				ctx->tpos = build_recv_stritem_len(ctx, &nullpos, ctx->tpos);
 				LLVMBuildStore(ctx->builder,
 					LLVMConstInt(LLVMInt8TypeInContext(ctx->ctx), 0, 0),
 					LLVMBuildGEP(ctx->builder, stritems[lp_offset].memptr,
-						&nullpos, 1, "str.nullpo"));	/* ガ！ */
+						&item_len_bytes, 1, "str.nullpo"));	/* ガ！ */
 				break;
 			}
 
@@ -534,7 +564,11 @@ static LLVMBasicBlockRef build_op_decode(
 
 	ctx->inline_seq_pos = LLVMConstInt(ctx->i32t,
 		inf->request->untyped_words + 1, 0);
-	ctx->tpos = build_t_from_tag(ctx, ctx->tag);
+	LLVMValueRef tag_u_val = build_u_from_tag(ctx, ctx->tag);
+	ctx->tmax = LLVMBuildAdd(ctx->builder,
+		tag_u_val, build_t_from_tag(ctx, ctx->tag), "tmax");
+	ctx->tpos = LLVMBuildAdd(ctx->builder, LLVMConstInt(ctx->i32t, 1, 0),
+		tag_u_val, "tpos.initial");
 	const int num_args_max = 1 + req->num_untyped
 		+ req->num_inline_seq * 2 + req->num_long * 2;
 	LLVMValueRef args[num_args_max], retvalptr = NULL;

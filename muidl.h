@@ -137,7 +137,7 @@ struct llvm_ctx
 	/* dispatcher-specific things */
 	LLVMBasicBlockRef reply_bb, msgerr_bb, wait_bb, alloc_bb;
 	LLVMValueRef vtab_arg, reply_tag, fncall_phi, inline_seq_pos;
-	LLVMValueRef tpos;
+	LLVMValueRef tpos, tmax;
 	LLVMValueRef stritem_len_fn;
 };
 

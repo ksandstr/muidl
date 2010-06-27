@@ -134,6 +134,9 @@ static LLVMValueRef get_stritem_len_fn(struct llvm_ctx *ctx)
 
 	/* returns (i32 len, i32 new_tpos)
 	 * params (word *utcbptr, i32 tpos)
+	 *
+	 * when return value "new_tpos" > tmax + 1, the result is invalid. the function
+	 * should also not be called when tpos > tmax + 1.
 	 */
 	LLVMTypeRef ret_types[2] = { ctx->i32t, ctx->i32t },
 		parm_types[2] = { LLVMPointerType(ctx->wordt, 0), ctx->i32t },
