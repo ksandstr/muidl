@@ -775,6 +775,13 @@ static void print_helper_vars(
 			assert(bnode != NULL);	/* ensured by verify.c */
 			code_f(pr, "char *p_%s = (char *)&_strbuf[%d];",
 				p->name, stritems[i].offset);
+		} else if(IDL_NODE_TYPE(p->type) == IDLN_TYPE_SEQUENCE) {
+			IDL_tree subtype = get_type_spec(
+				IDL_TYPE_SEQUENCE(p->type).simple_type_spec);
+			char *t = value_type(pr->ns, subtype);
+			code_f(pr, "%s *p_%s = (%s *)&_strbuf[%d];",
+				t, p->name, t, stritems[i].offset);
+			g_free(t);
 		} else {
 			/* TODO: wide strings, structs, non-inline sequences, etc etc */
 			NOTDEFINED(p->type);
@@ -915,6 +922,10 @@ void print_msg_encoder(
 		} else if(IDL_NODE_TYPE(p->type) == IDLN_TYPE_WIDE_STRING) {
 			len_expr = tmp_f(pr, "wcslen(%s%s) * sizeof(wchar_t)",
 				var_prefix, p->name);
+		} else if(IDL_NODE_TYPE(p->type) == IDLN_TYPE_SEQUENCE) {
+			/* FIXME (or just remove in the LLVM branch) */
+			code_f(pr, "/* would do something with sequences, but don't know what */");
+			len_expr = "66642";
 		} else {
 			/* FIXME: set len_expr to byte size of each element of p->type,
 			 * times one for structs and unions and times the length indication
@@ -1026,9 +1037,9 @@ static void print_null_termination(
 		} else if(IDL_NODE_TYPE(p->type) == IDLN_TYPE_WIDE_STRING) {
 			/* FIXME */
 			NOTDEFINED(p->type);
-		} else {
-			/* FIXME: support sequences, structs, unions, arrays, etc */
-			NOTDEFINED(p->type);
+		} else if(IDL_NODE_TYPE(p->type) == IDLN_TYPE_SEQUENCE) {
+			/* FIXME */
+			code_f(pr, "/* would set long in-sequence length here */");
 		}
 	}
 }
