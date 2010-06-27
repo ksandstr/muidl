@@ -152,17 +152,82 @@ static LLVMValueRef get_stritem_len_fn(struct llvm_ctx *ctx)
 	LLVMBuilderRef old_builder = ctx->builder;
 	ctx->builder = LLVMCreateBuilderInContext(ctx->ctx);
 	LLVMBasicBlockRef entry_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn,
-		"EntryBlock");
+			"EntryBlock"),
+		loop_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "loop"),
+		valid_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "valid"),
+		exit_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "exit");
 
 	LLVMPositionBuilderAtEnd(ctx->builder, entry_bb);
 	LLVMValueRef old_utcb = ctx->utcb, old_tpos = ctx->tpos;
 	ctx->utcb = LLVMGetParam(fn, 0);
 	ctx->tpos = LLVMGetParam(fn, 1);
+	LLVMBuildBr(ctx->builder, loop_bb);
 
-	/* TODO: the rest of the stritem length function */
-
-	LLVMValueRef rvals[2] = { LLVMConstInt(ctx->i32t, 0, 0), ctx->tpos };
+	LLVMPositionBuilderAtEnd(ctx->builder, exit_bb);
+	LLVMValueRef exit_len_phi = LLVMBuildPhi(ctx->builder, ctx->i32t,
+			"exit.len.phi"),
+		exit_tpos_phi = LLVMBuildPhi(ctx->builder, ctx->i32t,
+			"exit.tpos.phi");
+	LLVMValueRef rvals[2] = { exit_len_phi, exit_tpos_phi };
 	LLVMBuildAggregateRet(ctx->builder, rvals, 2);
+
+	LLVMPositionBuilderAtEnd(ctx->builder, loop_bb);
+	LLVMValueRef len_phi = LLVMBuildPhi(ctx->builder, ctx->i32t, "len.phi"),
+		tpos_phi = LLVMBuildPhi(ctx->builder, ctx->i32t, "tpos.phi");
+	LLVMAddIncoming(len_phi, &ctx->zero, &entry_bb, 1);
+	LLVMAddIncoming(tpos_phi, &ctx->tpos, &entry_bb, 1);
+	ctx->tpos = tpos_phi;
+	/* test: if tpos+1 doesn't look like a string item, conk out. */
+	LLVMValueRef infoword = build_utcb_load(ctx,
+		LLVMBuildAdd(ctx->builder, ctx->tpos, LLVMConstInt(ctx->i32t, 1, 0),
+			"tpos.plus.one"),
+		"si.info");
+	LLVMValueRef is_cond = LLVMBuildICmp(ctx->builder, LLVMIntEQ,
+		ctx->zero, LLVMBuildAnd(ctx->builder, infoword,
+			LLVMConstInt(ctx->wordt, 1 << 4, 0), "infoword.si.mask"),
+		"infoword.si.cond");
+	/* anything + 100 is sure to be > tmax + 1. */
+	LLVMValueRef fucked_tpos = LLVMBuildAdd(ctx->builder, tpos_phi,
+		LLVMConstInt(ctx->i32t, 100, 0), "fucked.tpos");
+	LLVMAddIncoming(exit_len_phi, &len_phi, &loop_bb, 1);
+	LLVMAddIncoming(exit_tpos_phi, &fucked_tpos, &loop_bb, 1);
+	LLVMBuildCondBr(ctx->builder, is_cond, valid_bb, exit_bb);
+
+	LLVMPositionBuilderAtEnd(ctx->builder, valid_bb);
+	LLVMValueRef string_length = LLVMBuildTruncOrBitCast(ctx->builder,
+			LLVMBuildLShr(ctx->builder, infoword,
+				LLVMConstInt(ctx->i32t, 10, 0), "si.info.len"),
+			ctx->i32t, "si.info.len.int"),
+		string_j = LLVMBuildTruncOrBitCast(ctx->builder,
+			LLVMBuildAnd(ctx->builder, LLVMConstInt(ctx->i32t, 0x1f, 0),
+				LLVMBuildLShr(ctx->builder, infoword,
+					LLVMConstInt(ctx->i32t, 4, 0), "si.info.j.shift"),
+				"si.info.j.masked"),
+			ctx->i32t, "si.info.j"),
+		string_c = LLVMBuildTruncOrBitCast(ctx->builder,
+			LLVMBuildAnd(ctx->builder, LLVMConstInt(ctx->i32t, 1 << 10, 0),
+				infoword, "si.info.c.masked"),
+			ctx->i32t, "si.info.c.masked.int"),
+		c_cond = LLVMBuildICmp(ctx->builder, LLVMIntNE,
+			string_c, LLVMConstInt(ctx->i32t, 0, 0), "si.info.c.cond"),
+		new_len = LLVMBuildAdd(ctx->builder, len_phi,
+			LLVMBuildMul(ctx->builder, string_length,
+				LLVMBuildAdd(ctx->builder, string_j,
+					LLVMConstInt(ctx->i32t, 1, 0), "j.plus.one"),
+				"len.incr"),
+			"len.new"),
+		new_tpos = LLVMBuildAdd(ctx->builder, ctx->tpos,
+			LLVMBuildSelect(ctx->builder, c_cond,
+				LLVMBuildAdd(ctx->builder, LLVMConstInt(ctx->i32t, 2, 0),
+					string_j, "cont.tpos.bump"),
+				LLVMConstInt(ctx->i32t, 2, 0),
+				"tpos.bump"),
+			"tpos.new");
+	LLVMAddIncoming(len_phi, &new_len, &valid_bb, 1);
+	LLVMAddIncoming(tpos_phi, &new_tpos, &valid_bb, 1);
+	LLVMAddIncoming(exit_len_phi, &new_len, &valid_bb, 1);
+	LLVMAddIncoming(exit_tpos_phi, &new_tpos, &valid_bb, 1);
+	LLVMBuildCondBr(ctx->builder, c_cond, loop_bb, exit_bb);
 
 	LLVMDisposeBuilder(ctx->builder);
 	ctx->builder = old_builder;
