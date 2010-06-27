@@ -403,10 +403,11 @@ static void emit_in_param(
 		 * function in the same order as they were in IDL. if not,
 		 * inline_seq_pos will be wrong.
 		 */
+		LLVMBasicBlockRef err_bb = get_msgerr_bb(ctx);
 		LLVMValueRef new_upos = build_decode_inline_sequence(ctx,
 			args, arg_pos_p, seq, ctx->inline_seq_pos,
 			seq == req->seq[req->num_inline_seq - 1],
-			ctx->fncall_phi, get_msgerr_bb(ctx));
+			ctx->fncall_phi, err_bb);
 		ctx->inline_seq_pos = new_upos;
 		return;
 	}
