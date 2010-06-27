@@ -91,24 +91,21 @@ LLVMValueRef build_u_from_tag(
 	struct llvm_ctx *ctx,
 	LLVMValueRef mr0)
 {
-	return LLVMBuildAnd(ctx->builder, mr0,
+	LLVMValueRef u = LLVMBuildAnd(ctx->builder, mr0,
 		LLVMConstInt(ctx->wordt, 0x3f, 0), "tag.u");
+	return LLVMBuildTruncOrBitCast(ctx->builder, u, ctx->i32t, "tag.u.int");
 }
 
 
-#if 0
-static LLVMValueRef build_t_from_tag(
-	LLVMBuilderRef builder,
-	LLVMTypeRef wordtype,
-	LLVMValueRef mr0)
+LLVMValueRef build_t_from_tag(struct llvm_ctx *ctx, LLVMValueRef mr0)
 {
-	return LLVMBuildAnd(builder,
-			LLVMConstInt(wordtype, 0x3f, 0),
-			LLVMBuildLShr(builder, mr0, LLVMConstInt(wordtype, 6, 0),
-				"tag.u.raw"),
-			"tag.u");
+	LLVMValueRef t = LLVMBuildAnd(ctx->builder,
+		LLVMBuildLShr(ctx->builder, mr0, LLVMConstInt(ctx->wordt, 6, 0),
+			"tag.t.raw"),
+		LLVMConstInt(ctx->wordt, 0x3f, 0),
+		"tag.t");
+	return LLVMBuildTruncOrBitCast(ctx->builder, t, ctx->i32t, "tag.t.int");
 }
-#endif
 
 
 void build_simple_string_item(
@@ -128,4 +125,62 @@ void build_simple_string_item(
 		LLVMBuildShl(ctx->builder, cache_hint,
 			LLVMConstInt(ctx->i32t, 1, 0), "stritem.simple.ch.shl"),
 		"stritem.simple.info");
+}
+
+
+static LLVMValueRef get_stritem_len_fn(struct llvm_ctx *ctx)
+{
+	if(ctx->stritem_len_fn != NULL) return ctx->stritem_len_fn;
+
+	/* returns (i32 len, i32 new_tpos)
+	 * params (word *utcbptr, i32 tpos)
+	 */
+	LLVMTypeRef ret_types[2] = { ctx->i32t, ctx->i32t },
+		parm_types[2] = { LLVMPointerType(ctx->wordt, 0), ctx->i32t },
+		ret_type = LLVMStructTypeInContext(ctx->ctx, ret_types, 2, 0),
+		fn_type = LLVMFunctionType(ret_type, parm_types, 2, 0);
+	LLVMValueRef fn = LLVMAddFunction(ctx->module, "__muidl_get_stritem_len",
+		fn_type);
+	LLVMSetFunctionCallConv(fn, LLVMFastCallConv);
+	LLVMSetVisibility(fn, LLVMHiddenVisibility);
+	LLVMSetLinkage(fn, LLVMInternalLinkage);
+	ctx->stritem_len_fn = fn;
+
+	LLVMBuilderRef old_builder = ctx->builder;
+	ctx->builder = LLVMCreateBuilderInContext(ctx->ctx);
+	LLVMBasicBlockRef entry_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn,
+		"EntryBlock");
+
+	LLVMPositionBuilderAtEnd(ctx->builder, entry_bb);
+	LLVMValueRef old_utcb = ctx->utcb, old_tpos = ctx->tpos;
+	ctx->utcb = LLVMGetParam(fn, 0);
+	ctx->tpos = LLVMGetParam(fn, 1);
+
+	/* TODO: the rest of the stritem length function */
+
+	LLVMValueRef rvals[2] = { LLVMConstInt(ctx->i32t, 0, 0), ctx->tpos };
+	LLVMBuildAggregateRet(ctx->builder, rvals, 2);
+
+	LLVMDisposeBuilder(ctx->builder);
+	ctx->builder = old_builder;
+	ctx->utcb = old_utcb;
+	ctx->tpos = old_tpos;
+
+	return ctx->stritem_len_fn;
+}
+
+
+LLVMValueRef build_recv_stritem_len(
+	struct llvm_ctx *ctx,
+	LLVMValueRef *nullpos_p,
+	LLVMValueRef tpos)
+{
+	LLVMValueRef args[2] = { ctx->utcb, tpos };
+	LLVMValueRef agg = LLVMBuildCall(ctx->builder,
+		get_stritem_len_fn(ctx), args, 2, "stritemlen.rval");
+	LLVMSetTailCall(agg, 1);
+	*nullpos_p = LLVMBuildExtractValue(ctx->builder, agg, 0,
+		"stritemlen.rval.len");
+	return LLVMBuildExtractValue(ctx->builder, agg, 1,
+		"stritemlen.rval.new.tpos");
 }

@@ -428,10 +428,8 @@ static void emit_in_param(
 				/* <i8 *> is exactly what we need. */
 				args[(*arg_pos_p)++] = stritems[lp_offset].memptr;
 				/* null-terminate it, though. */
-				IDL_tree pic = IDL_TYPE_STRING(lp->type).positive_int_const;
-				assert(pic != NULL);
-				LLVMValueRef nullpos = LLVMConstInt(ctx->i32t,
-					IDL_INTEGER(pic).value, 0);
+				LLVMValueRef nullpos = NULL;
+				ctx->tpos = build_recv_stritem_len(ctx, &nullpos, ctx->tpos);
 				LLVMBuildStore(ctx->builder,
 					LLVMConstInt(LLVMInt8TypeInContext(ctx->ctx), 0, 0),
 					LLVMBuildGEP(ctx->builder, stritems[lp_offset].memptr,
@@ -526,7 +524,6 @@ static LLVMBasicBlockRef build_op_decode(
 	g_free(name);
 	opname = &opname[7];	/* skip "decode." for value names */
 
-	/* (TODO: we're allowed to do this, right?) */
 	LLVMPositionBuilderAtEnd(ctx->builder, bb);
 
 	/* collection of arguments according to op decl. */
@@ -536,6 +533,7 @@ static LLVMBasicBlockRef build_op_decode(
 
 	ctx->inline_seq_pos = LLVMConstInt(ctx->i32t,
 		inf->request->untyped_words + 1, 0);
+	ctx->tpos = build_t_from_tag(ctx, ctx->tag);
 	const int num_args_max = 1 + req->num_untyped
 		+ req->num_inline_seq * 2 + req->num_long * 2;
 	LLVMValueRef args[num_args_max], retvalptr = NULL;

@@ -137,6 +137,8 @@ struct llvm_ctx
 	/* dispatcher-specific things */
 	LLVMBasicBlockRef reply_bb, msgerr_bb, wait_bb, alloc_bb;
 	LLVMValueRef vtab_arg, reply_tag, fncall_phi, inline_seq_pos;
+	LLVMValueRef tpos;
+	LLVMValueRef stritem_len_fn;
 };
 
 
@@ -434,6 +436,7 @@ extern LLVMValueRef build_utcb_load(
 	const char *name);
 
 extern LLVMValueRef build_u_from_tag(struct llvm_ctx *ctx, LLVMValueRef tag);
+extern LLVMValueRef build_t_from_tag(struct llvm_ctx *ctx, LLVMValueRef tag);
 
 /* after return, dest[0] is the first word, dest[1] is the second word */
 extern void build_simple_string_item(
@@ -442,6 +445,12 @@ extern void build_simple_string_item(
 	LLVMValueRef data_ptr,
 	LLVMValueRef data_len,		/* in bytes */
 	LLVMValueRef cache_hint);	/* NULL = default policy */
+
+/* return value is new tpos */
+LLVMValueRef build_recv_stritem_len(
+	struct llvm_ctx *ctx,
+	LLVMValueRef *nullpos_p,
+	LLVMValueRef tpos);
 
 
 /* from sequence.c */
