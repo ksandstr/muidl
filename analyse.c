@@ -178,6 +178,7 @@ static struct message_info *build_message(
 	bool explicit_u[64];
 	for(int i=0; i<64; i++) explicit_u[i] = false;
 	unsigned long max_fixreg = 0;
+	int inline_seq_alloc = 0;
 	for(int i=0; i<num_params; i++) {
 		IDL_tree p = params[i],
 			type = get_type_spec(IDL_PARAM_DCL(p).param_type_spec),
@@ -213,19 +214,32 @@ static struct message_info *build_message(
 			}
 
 			untyped = g_list_prepend(untyped, u);
-		} else if(is_bounded_seq(type)
-			&& is_value_type(get_type_spec(IDL_TYPE_SEQUENCE(type).simple_type_spec)))
-		{
-			struct seq_param *s = g_new(struct seq_param, 1);
-			s->name = name;
-			s->max_elems = IDL_INTEGER(IDL_TYPE_SEQUENCE(type).positive_int_const).value;
-			s->param_dcl = p;
-			s->elem_type = get_type_spec(IDL_TYPE_SEQUENCE(type).simple_type_spec);
-			s->bits_per_elem = size_in_bits(s->elem_type);
-			s->elems_per_word = BITS_PER_WORD / s->bits_per_elem;
-			s->min_words = 0;
-			s->max_words = (s->max_elems + s->elems_per_word - 1) / s->elems_per_word;
-			seq = g_list_prepend(seq, s);
+		} else if(is_bounded_seq(type)) {
+			IDL_tree subtype = get_type_spec(
+					IDL_TYPE_SEQUENCE(type).simple_type_spec),
+				bound = IDL_TYPE_SEQUENCE(type).positive_int_const;
+			assert(bound != NULL);
+			int epw = BITS_PER_WORD / size_in_bits(subtype),
+				max_words = (IDL_INTEGER(bound).value + epw - 1) / epw;
+			/* FIXME: be smarter about allocating these. there should be a
+			 * proper strategy and a nice policy.
+			 */
+			if(is_value_type(subtype) && inline_seq_alloc + max_words <= 48) {
+				struct seq_param *s = g_new(struct seq_param, 1);
+				s->name = name;
+				s->max_elems = IDL_INTEGER(bound).value;
+				s->param_dcl = p;
+				s->elem_type = subtype;
+				s->bits_per_elem = size_in_bits(s->elem_type);
+				s->elems_per_word = epw;
+				s->min_words = 0;
+				s->max_words = max_words;
+				seq = g_list_prepend(seq, s);
+				inline_seq_alloc += max_words;
+			} else {
+				/* it's a long sequence then. */
+				_long = g_list_prepend(_long, p);
+			}
 		} else {
 			/* presume it's a long type or something... */
 			_long = g_list_prepend(_long, p);
@@ -267,7 +281,7 @@ static struct message_info *build_message(
 	}
 	inf->untyped_words = next_mr - 1;
 
-	/* allocate sequences. */
+	/* allocate inline sequences. */
 	inf->num_inline_seq = g_list_length(seq);
 	inf->seq = g_new(struct seq_param *, inf->num_inline_seq);
 	pos = 0;
