@@ -468,17 +468,31 @@ static void emit_in_param(
 				break;
 			}
 
+			case IDLN_TYPE_SEQUENCE: {
+				/* two arguments. */
+				IDL_tree typ = get_type_spec(
+					IDL_TYPE_SEQUENCE(lp->type).simple_type_spec);
+				/* FIXME: use a llvm_rigid_type() instead! */
+				LLVMTypeRef itemtype = llvm_value_type(ctx, typ);
+				LLVMValueRef ptr = LLVMBuildPointerCast(ctx->builder,
+					stritems[lp_offset].memptr,
+					LLVMPointerType(itemtype, 0),
+					"seq.ptr");
+				LLVMValueRef len = LLVMBuildUDiv(ctx->builder,
+					item_len_bytes,
+					LLVMBuildTruncOrBitCast(ctx->builder,
+						LLVMSizeOf(itemtype), ctx->i32t, "seq.item.len.cast"),
+					"seq.len");
+				args[(*arg_pos_p)++] = ptr;
+				args[(*arg_pos_p)++] = len;
+				break;
+			}
+
 			case IDLN_TYPE_WIDE_STRING:
 			case IDLN_TYPE_STRUCT:
 			case IDLN_TYPE_UNION:
 			case IDLN_TYPE_ARRAY:
 				/* TODO */
-
-			case IDLN_TYPE_SEQUENCE:
-				/* TODO: two parameters, one stritems[lp_offset].memptr,
-				 * the other the length of the received (potentially compound)
-				 * string item in bytes, divided by byte size of element type.
-				 */
 
 			default:
 				NOTDEFINED(lp->type);
