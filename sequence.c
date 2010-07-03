@@ -22,6 +22,7 @@
 #include <llvm-c/Core.h>
 
 #include "muidl.h"
+#include "llvmutil.h"
 
 
 LLVMValueRef build_decode_inline_sequence(
@@ -75,7 +76,7 @@ LLVMValueRef build_decode_inline_sequence(
 	/* guard against maximum size violations */
 	/* FIXME: get EINVAL from µiX headers */
 	LLVMValueRef einval = LLVMConstInt(ctx->i32t, -EINVAL, 1);
-	LLVMAddIncoming(errval_phi, &einval, &entry_bb, 1);
+	branch_set_phi(ctx, errval_phi, einval);
 	LLVMValueRef einval_cond = LLVMBuildICmp(ctx->builder, LLVMIntULT,
 		seq_len, LLVMConstInt(ctx->i32t, seq->max_elems, 0),
 		"inlseq.len.cond");
@@ -144,11 +145,10 @@ LLVMValueRef build_decode_inline_sequence(
 		"loop.ctr.next");
 	next_sp = LLVMBuildAdd(ctx->builder, seq_pos,
 		LLVMConstInt(ctx->i32t, 1, 0), "loop.seqpos.next");
-	LLVMBasicBlockRef this_bb = LLVMGetInsertBlock(ctx->builder);
-	LLVMAddIncoming(counter, &next_counter, &this_bb, 1);
-	LLVMAddIncoming(seq_pos, &next_sp, &this_bb, 1);
+	branch_set_phi(ctx, counter, next_counter);
+	branch_set_phi(ctx, seq_pos, next_sp);
 	if(seq->elems_per_word == 1) {
-		LLVMAddIncoming(ret, &next_sp, &this_bb, 1);
+		branch_set_phi(ctx, ret, next_sp);
 	}
 	LLVMValueRef exit_cond = LLVMBuildICmp(ctx->builder,
 		LLVMIntULT, next_counter, seq_len, "loop.nextp");
@@ -165,7 +165,7 @@ LLVMValueRef build_decode_inline_sequence(
 		LLVMAddIncoming(odd_seqpos, &upos, &skip_loop_bb, 1);
 		LLVMAddIncoming(odd_offs, &next_counter, &loop_bb, 1);
 		LLVMAddIncoming(odd_seqpos, &next_sp, &loop_bb, 1);
-		LLVMAddIncoming(ret, &odd_seqpos, &odd_tail_bb, 1);
+		branch_set_phi(ctx, ret, odd_seqpos);
 		LLVMValueRef sw = LLVMBuildSwitch(ctx->builder,
 			LLVMBuildAnd(ctx->builder, seq_len,
 				LLVMConstInt(ctx->i32t, seq->elems_per_word - 1, 0),
@@ -192,8 +192,7 @@ LLVMValueRef build_decode_inline_sequence(
 
 		LLVMValueRef sp_bump = LLVMBuildAdd(ctx->builder, odd_seqpos,
 			LLVMConstInt(ctx->i32t, 1, 0), "odd.sp.bump");
-		LLVMBasicBlockRef bb = LLVMGetInsertBlock(ctx->builder);
-		LLVMAddIncoming(ret, &sp_bump, &bb, 1);
+		branch_set_phi(ctx, ret, sp_bump);
 		LLVMBuildBr(ctx->builder, exit_bb);
 	}
 
@@ -300,9 +299,8 @@ LLVMValueRef build_encode_inline_sequence(
 			"inlseq.out.pos.next"),
 		next_word = LLVMBuildAdd(ctx->builder, word_ix,
 			LLVMConstInt(ctx->i32t, 1, 0), "inlseq.out.word_ix.next");
-	LLVMBasicBlockRef current = LLVMGetInsertBlock(ctx->builder);
-	LLVMAddIncoming(pos, &next_pos, &current, 1);
-	LLVMAddIncoming(word_ix, &next_word, &current, 1);
+	branch_set_phi(ctx, pos, next_pos);
+	branch_set_phi(ctx, word_ix, next_word);
 	/* the fancy seq->elems_per_word conditional there is to make sure that
 	 * the loop is only executed while there are as many or more than
 	 * seq->elems_per_word items left.
