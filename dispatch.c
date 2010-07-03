@@ -27,6 +27,7 @@
 #include <libIDL/IDL.h>
 
 #include "muidl.h"
+#include "llvmutil.h"
 
 
 /* NOTE: offset is in _words_, since that's the unit the UTCB is addressed
@@ -134,6 +135,7 @@ static bool is_integral_type(IDL_tree typ)
 }
 
 
+#if 0
 static bool is_signed(IDL_tree typ)
 {
 	assert(is_integral_type(typ));
@@ -142,6 +144,7 @@ static bool is_signed(IDL_tree typ)
 		|| (IDL_NODE_TYPE(typ) == IDLN_TYPE_INTEGER
 			&& IDL_TYPE_INTEGER(typ).f_signed);
 }
+#endif
 
 
 /* returns # of MRs used.
@@ -178,13 +181,7 @@ static int build_write_ipc_parameter(
 	/* single-word types */
 	LLVMValueRef reg;
 	if(is_integral_type(ctyp)) {
-		if(is_signed(ctyp)) {
-			reg = LLVMBuildSExtOrBitCast(ctx->builder, val[0],
-				ctx->wordt, "cast.word.s");
-		} else {
-			reg = LLVMBuildZExtOrBitCast(ctx->builder, val[0],
-				ctx->wordt, "cast.word.z");
-		}
+		reg = WORD(val[0]);
 	} else {
 		/* TODO! */
 		NOTDEFINED(ctyp);
@@ -341,13 +338,11 @@ static LLVMBasicBlockRef get_msgerr_bb(struct llvm_ctx *ctx)
 		LLVMPositionBuilderAtEnd(ctx->builder, ctx->msgerr_bb);
 		ctx->fncall_phi = LLVMBuildPhi(ctx->builder, ctx->i32t, "fncall.phi");
 		LLVMValueRef msgerr_tag = LLVMBuildOr(ctx->builder,
-			LLVMConstInt(ctx->wordt, 1, 0),
-			LLVMConstInt(ctx->wordt, 1 << 16, 0),
-			"msgerr.tag");
+			CONST_WORD(1), CONST_WORD(1 << 16), "msgerr.tag");
 		LLVMBuildStore(ctx->builder,
 			LLVMBuildNeg(ctx->builder, ctx->fncall_phi, "rcneg.val"),
 			build_utcb_address(ctx, 1, "mr1.addr"));
-		LLVMAddIncoming(ctx->reply_tag, &msgerr_tag, &ctx->msgerr_bb, 1);
+		branch_set_phi(ctx, ctx->reply_tag, msgerr_tag);
 		LLVMBuildBr(ctx->builder, ctx->reply_bb);
 
 		LLVMPositionBuilderAtEnd(ctx->builder, prior);
@@ -442,7 +437,7 @@ static void emit_in_param(
 		/* precondition: tpos <= tmax + 1 */
 		LLVMValueRef tpos_pc = LLVMBuildICmp(ctx->builder, LLVMIntULE,
 			ctx->tpos, tmax_plus_one, "stritem.precond");
-		LLVMAddIncoming(ctx->fncall_phi, &einval, &branch_bb, 1);
+		branch_set_phi(ctx, ctx->fncall_phi, einval);
 		LLVMBuildCondBr(ctx->builder, tpos_pc, pre_ok_bb, msgerr_bb);
 
 		/* call lenfn, branch off to msgerr if retval indicates failure */
@@ -745,14 +740,12 @@ static LLVMBasicBlockRef build_op_decode(
 	 */
 
 	/* epilogue */
-	LLVMBasicBlockRef current = LLVMGetInsertBlock(ctx->builder);
 	/* flags = 0, u = inline_seq_pos - 1, label = 0, t = 0 */
 	LLVMValueRef u_val = LLVMBuildSub(ctx->builder, ctx->inline_seq_pos,
 			LLVMConstInt(ctx->i32t, 1, 0),
 			tmp_f(ctx->pr, "%s.reply.u", opname)),
-		tag = LLVMBuildZExtOrBitCast(ctx->builder, u_val,
-			ctx->wordt, tmp_f(ctx->pr, "%s.replytag", opname));
-	LLVMAddIncoming(ctx->reply_tag, &tag, &current, 1);
+		tag = WORD(u_val);	/* simple. */
+	branch_set_phi(ctx, ctx->reply_tag, tag);
 	LLVMBuildBr(ctx->builder, ctx->reply_bb);
 
 	return bb;
