@@ -21,6 +21,7 @@
 #include <llvm-c/Core.h>
 
 #include "muidl.h"
+#include "llvmutil.h"
 
 
 LLVMValueRef build_utcb_get(struct llvm_ctx *ctx)
@@ -92,7 +93,7 @@ LLVMValueRef build_u_from_tag(
 	LLVMValueRef mr0)
 {
 	LLVMValueRef u = LLVMBuildAnd(ctx->builder, mr0,
-		LLVMConstInt(ctx->wordt, 0x3f, 0), "tag.u");
+		CONST_WORD(0x3f), "tag.u");
 	return LLVMBuildTruncOrBitCast(ctx->builder, u, ctx->i32t, "tag.u.int");
 }
 
@@ -100,10 +101,8 @@ LLVMValueRef build_u_from_tag(
 LLVMValueRef build_t_from_tag(struct llvm_ctx *ctx, LLVMValueRef mr0)
 {
 	LLVMValueRef t = LLVMBuildAnd(ctx->builder,
-		LLVMBuildLShr(ctx->builder, mr0, LLVMConstInt(ctx->wordt, 6, 0),
-			"tag.t.raw"),
-		LLVMConstInt(ctx->wordt, 0x3f, 0),
-		"tag.t");
+		LLVMBuildLShr(ctx->builder, mr0, CONST_WORD(6), "tag.t.raw"),
+		CONST_WORD(0x3f), "tag.t");
 	return LLVMBuildTruncOrBitCast(ctx->builder, t, ctx->i32t, "tag.t.int");
 }
 
@@ -120,10 +119,10 @@ void build_simple_string_item(
 	dest[0] = LLVMBuildPtrToInt(ctx->builder, data_ptr, ctx->wordt,
 		"stritem.simple.ptr");
 	dest[1] = LLVMBuildOr(ctx->builder,
-		LLVMBuildShl(ctx->builder, data_len,
-			LLVMConstInt(ctx->i32t, 10, 0), "stritem.simple.len.shl"),
-		LLVMBuildShl(ctx->builder, cache_hint,
-			LLVMConstInt(ctx->i32t, 1, 0), "stritem.simple.ch.shl"),
+		LLVMBuildShl(ctx->builder, data_len, CONST_INT(10),
+			"stritem.simple.len.shl"),
+		LLVMBuildShl(ctx->builder, cache_hint, CONST_INT(1),
+			"stritem.simple.ch.shl"),
 		"stritem.simple.info");
 }
 
@@ -179,49 +178,48 @@ static LLVMValueRef get_stritem_len_fn(struct llvm_ctx *ctx)
 	ctx->tpos = tpos_phi;
 	/* test: if tpos+1 doesn't look like a string item, conk out. */
 	LLVMValueRef infoword = build_utcb_load(ctx,
-		LLVMBuildAdd(ctx->builder, ctx->tpos, LLVMConstInt(ctx->i32t, 1, 0),
+		LLVMBuildAdd(ctx->builder, ctx->tpos, CONST_INT(1),
 			"tpos.plus.one"),
 		"si.info");
 	LLVMValueRef is_cond = LLVMBuildICmp(ctx->builder, LLVMIntEQ,
 		ctx->zero, LLVMBuildAnd(ctx->builder, infoword,
-			LLVMConstInt(ctx->wordt, 1 << 4, 0), "infoword.si.mask"),
+			CONST_WORD(1 << 4), "infoword.si.mask"),
 		"infoword.si.cond");
 	/* anything + 100 is sure to be > tmax + 1. */
 	LLVMValueRef fucked_tpos = LLVMBuildAdd(ctx->builder, tpos_phi,
-		LLVMConstInt(ctx->i32t, 100, 0), "fucked.tpos");
-	LLVMAddIncoming(exit_len_phi, &len_phi, &loop_bb, 1);
-	LLVMAddIncoming(exit_tpos_phi, &fucked_tpos, &loop_bb, 1);
+		CONST_INT(100), "fucked.tpos");
+	branch_set_phi(ctx, exit_len_phi, len_phi);
+	branch_set_phi(ctx, exit_tpos_phi, fucked_tpos);
 	LLVMBuildCondBr(ctx->builder, is_cond, valid_bb, exit_bb);
 
 	LLVMPositionBuilderAtEnd(ctx->builder, valid_bb);
 	LLVMValueRef string_length = LLVMBuildTruncOrBitCast(ctx->builder,
 			LLVMBuildLShr(ctx->builder, infoword,
-				LLVMConstInt(ctx->i32t, 10, 0), "si.info.len"),
+				CONST_INT(10), "si.info.len"),
 			ctx->i32t, "si.info.len.int"),
 		string_j = LLVMBuildTruncOrBitCast(ctx->builder,
-			LLVMBuildAnd(ctx->builder, LLVMConstInt(ctx->i32t, 0x1f, 0),
-				LLVMBuildLShr(ctx->builder, infoword,
-					LLVMConstInt(ctx->i32t, 4, 0), "si.info.j.shift"),
+			LLVMBuildAnd(ctx->builder, CONST_WORD(0x1f),
+				LLVMBuildLShr(ctx->builder, infoword, CONST_WORD(4),
+					"si.info.j.shift"),
 				"si.info.j.masked"),
 			ctx->i32t, "si.info.j"),
 		string_c = LLVMBuildTruncOrBitCast(ctx->builder,
-			LLVMBuildAnd(ctx->builder, LLVMConstInt(ctx->i32t, 1 << 10, 0),
+			LLVMBuildAnd(ctx->builder, CONST_WORD(1 << 10),
 				infoword, "si.info.c.masked"),
 			ctx->i32t, "si.info.c.masked.int"),
 		c_cond = LLVMBuildICmp(ctx->builder, LLVMIntNE,
-			string_c, LLVMConstInt(ctx->i32t, 0, 0), "si.info.c.cond"),
+			string_c, ctx->zero, "si.info.c.cond"),
 		new_len = LLVMBuildAdd(ctx->builder, len_phi,
 			LLVMBuildMul(ctx->builder, string_length,
 				LLVMBuildAdd(ctx->builder, string_j,
-					LLVMConstInt(ctx->i32t, 1, 0), "j.plus.one"),
+					CONST_INT(1), "j.plus.one"),
 				"len.incr"),
 			"len.new"),
 		new_tpos = LLVMBuildAdd(ctx->builder, ctx->tpos,
 			LLVMBuildSelect(ctx->builder, c_cond,
-				LLVMBuildAdd(ctx->builder, LLVMConstInt(ctx->i32t, 2, 0),
+				LLVMBuildAdd(ctx->builder, CONST_INT(2),
 					string_j, "cont.tpos.bump"),
-				LLVMConstInt(ctx->i32t, 2, 0),
-				"tpos.bump"),
+				CONST_INT(2), "tpos.bump"),
 			"tpos.new");
 	LLVMAddIncoming(len_phi, &new_len, &valid_bb, 1);
 	LLVMAddIncoming(tpos_phi, &new_tpos, &valid_bb, 1);
