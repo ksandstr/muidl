@@ -210,7 +210,7 @@ static void vtable_in_param_type(
 				item_type = LLVMInt8TypeInContext(ctx->ctx);
 				break;
 			case IDLN_TYPE_WIDE_STRING:
-				/* FIXME: get wchar_t size from ABI! */
+				/* TODO: get wchar_t size from ABI! */
 				item_type = ctx->i32t;
 				break;
 			default:
@@ -373,7 +373,7 @@ static void emit_in_param(
 {
 	const struct message_info *req = inf->request;
 
-	/* FIXME: repair the untyped/seq/long param thing; they should not
+	/* TODO: repair the untyped/seq/long param thing; they should not
 	 * be flattened out by kind like that.
 	 */
 	struct untyped_param *u = find_untyped(req, pdecl);
@@ -422,7 +422,7 @@ static void emit_in_param(
 		 * msgerr block if it's not. (the length function returns tpos > tmax +
 		 * 1 to indicate this.)
 		 */
-		/* FIXME: get EINVAL from µiX header rather than <errno.h> */
+		/* TODO: get EINVAL from µiX header rather than <errno.h> */
 		LLVMValueRef einval = LLVMConstInt(ctx->i32t, -EINVAL, 0),
 			tmax_plus_one = LLVMBuildAdd(ctx->builder, ctx->tmax,
 				LLVMConstInt(ctx->i32t, 1, 0), "tmax.plus.one");
@@ -462,7 +462,7 @@ static void emit_in_param(
 				/* two arguments. */
 				IDL_tree typ = get_type_spec(
 					IDL_TYPE_SEQUENCE(lp->type).simple_type_spec);
-				/* FIXME: use a llvm_rigid_type() instead! */
+				/* TODO: use a llvm_rigid_type() instead! */
 				LLVMTypeRef itemtype = llvm_value_type(ctx, typ);
 				LLVMValueRef ptr = LLVMBuildPointerCast(ctx->builder,
 					stritems[lp_offset].memptr,
@@ -747,13 +747,16 @@ static LLVMBasicBlockRef build_op_decode(
 }
 
 
+/* (this actually allocates memory that is pointed to by the string items in
+ * the buffer registers.)
+ */
 static void build_alloc_stritems(
 	struct llvm_ctx *ctx,
 	struct stritem_info *stritems)
 {
 	if(stritems == NULL) return;
 	for(int i=0; stritems[i].length >= 0; i++) {
-		/* FIXME: the "4" is sizeof(wchar_t); get this from the ABI spec */
+		/* TODO: the "4" is sizeof(wchar_t); get this from the ABI spec */
 		int len = stritems[i].length + (stritems[i].stringlike ? 4 : 0);
 		/* TODO: allocate small blocks (by some reasonable criteria... a single
 		 * cache line's size, or something) with build_local_storage()
