@@ -24,6 +24,7 @@
 #include <libIDL/IDL.h>
 
 #include "muidl.h"
+#include "llvmutil.h"
 
 
 /* returns a LLVM representation corresponding to the C translation of the
@@ -96,8 +97,8 @@ void build_read_ipc_parameter_ixval(
 		/* unpack a two-word parameter. */
 		LLVMValueRef low = build_utcb_load(ctx, first_mr, "longparm.lo.mr"),
 			high = build_utcb_load(ctx,
-				LLVMBuildAdd(ctx->builder, first_mr,
-					LLVMConstInt(ctx->i32t, 1, 0), "longparm.hi.mr.ix"),
+				LLVMBuildAdd(ctx->builder, first_mr, CONST_INT(1),
+					"longparm.hi.mr.ix"),
 				"longparm.hi.mr");
 		/* TODO: stash this in the context */
 		LLVMTypeRef i64t = LLVMInt64TypeInContext(ctx->ctx);
@@ -106,9 +107,9 @@ void build_read_ipc_parameter_ixval(
 		high = LLVMBuildBitCast(ctx->builder, high, i64t,
 			"longparm.hi.cast");
 		dst[0] = LLVMBuildOr(ctx->builder, low,
-				LLVMBuildShl(ctx->builder, high, LLVMConstInt(i64t, 32, 0),
-					"longparm.hi.shift"),
-				"longparm.value");
+			LLVMBuildShl(ctx->builder, high, CONST_INT(32),
+				"longparm.hi.shift"),
+			"longparm.value");
 	} else if(IS_LONGDOUBLE_TYPE(ctyp)) {
 		fprintf(stderr, "%s: not defined for long double (yet)\n",
 			__func__);
