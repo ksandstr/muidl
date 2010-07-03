@@ -19,12 +19,13 @@ all: tags muidl
 
 clean:
 	rm -f *.o
+	rm -f *-defs.h *-service.c *-client.c
 
 
 distclean: clean
 	rm -f muidl
-	rm -f *-defs.h *-service.c *-client.c
 	@rm -f tags
+	@rm -rf .deps
 
 
 check:
@@ -40,19 +41,14 @@ tags: $(wildcard *.[ch])
 	@ctags -R *
 
 
+.deps:
+	@mkdir -p .deps
+
+
 %.o: %.c
-	$(CC) -c -o $@ $< $(CFLAGS)
+	$(CC) -c -o $@ $< -MMD $(CFLAGS)
+	@test -d .deps || mkdir -p .deps
+	@mv $(<:.c=.d) .deps/
 
 
-# TODO: generate these automagically
-muidl.o: muidl.c muidl.h
-util.o: util.c muidl.h
-gen-common.o: gen-common.c muidl.h
-gen-stubs.o: gen-stubs.c muidl.h
-analyse.o: analyse.c muidl.h
-verify.o: verify.c muidl.h
-dispatch.o: dispatch.c muidl.h
-sequence.o: sequence.c muidl.h
-types.o: types.c muidl.h
-l4x2.o: l4x2.c muidl.h
-llvmutil.o: llvmutil.c llvmutil.h muidl.h
+include $(wildcard .deps/*.d)

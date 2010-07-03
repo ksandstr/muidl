@@ -1,6 +1,7 @@
 *~
 muidl
 *.o
+*.d
 .*.sw[opn]
 tags
 *-defs.h
