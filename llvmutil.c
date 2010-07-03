@@ -18,6 +18,9 @@
  * along with µiX.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <stdarg.h>
+
+#include "muidl.h"
 #include "llvmutil.h"
 
 
@@ -28,4 +31,18 @@ void branch_set_phi(
 {
 	BB current = LLVMGetInsertBlock(ctx->builder);
 	LLVMAddIncoming(phi, &val, &current, 1);
+}
+
+
+LLVMBasicBlockRef add_sibling_block(
+	struct llvm_ctx *ctx,
+	const char *name_fmt,
+	...)
+{
+	va_list al;
+	va_start(al, name_fmt);
+	char *name = tmp_vf(ctx->pr, name_fmt, al);
+	V fn = LLVMGetBasicBlockParent(LLVMGetInsertBlock(ctx->builder));
+	/* TODO: assert that "fn" is a function reference */
+	return LLVMAppendBasicBlockInContext(ctx->ctx, fn, name);
 }

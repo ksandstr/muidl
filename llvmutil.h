@@ -54,5 +54,9 @@ extern void branch_set_phi(
 	LLVMValueRef phi,
 	LLVMValueRef val);
 
+extern LLVMBasicBlockRef add_sibling_block(
+	struct llvm_ctx *ctx,
+	const char *name_fmt,
+	...);
 
 #endif

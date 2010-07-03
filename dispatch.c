@@ -330,11 +330,9 @@ static LLVMTypeRef get_vtable_type(struct llvm_ctx *ctx, IDL_tree iface)
 static LLVMBasicBlockRef get_msgerr_bb(struct llvm_ctx *ctx)
 {
 	if(ctx->msgerr_bb == NULL) {
-		LLVMBasicBlockRef prior = LLVMGetInsertBlock(ctx->builder);
-		LLVMValueRef fn = LLVMGetBasicBlockParent(prior);
-		ctx->msgerr_bb = LLVMAppendBasicBlockInContext(ctx->ctx,
-			fn, "msgerr");
+		ctx->msgerr_bb = add_sibling_block(ctx, "msgerr");
 
+		BB prior = LLVMGetInsertBlock(ctx->builder);
 		LLVMPositionBuilderAtEnd(ctx->builder, ctx->msgerr_bb);
 		ctx->fncall_phi = LLVMBuildPhi(ctx->builder, ctx->i32t, "fncall.phi");
 		LLVMValueRef msgerr_tag = LLVMBuildOr(ctx->builder,
@@ -429,11 +427,8 @@ static void emit_in_param(
 			tmax_plus_one = LLVMBuildAdd(ctx->builder, ctx->tmax,
 				LLVMConstInt(ctx->i32t, 1, 0), "tmax.plus.one");
 		LLVMBasicBlockRef msgerr_bb = get_msgerr_bb(ctx),
-			branch_bb = LLVMGetInsertBlock(ctx->builder),
-			pre_ok_bb = LLVMAppendBasicBlockInContext(ctx->ctx,
-				LLVMGetBasicBlockParent(branch_bb), "stritem.preok"),
-			cont_bb = LLVMAppendBasicBlockInContext(ctx->ctx,
-				LLVMGetBasicBlockParent(branch_bb), "stritem.cont");
+			pre_ok_bb = add_sibling_block(ctx, "stritem.preok"),
+			cont_bb = add_sibling_block(ctx, "stritem.cont");
 		/* precondition: tpos <= tmax + 1 */
 		LLVMValueRef tpos_pc = LLVMBuildICmp(ctx->builder, LLVMIntULE,
 			ctx->tpos, tmax_plus_one, "stritem.precond");

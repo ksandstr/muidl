@@ -59,18 +59,14 @@ LLVMValueRef build_decode_inline_sequence(
 		seq_len = seq_words;
 	}
 
-	LLVMBasicBlockRef entry_bb = LLVMGetInsertBlock(ctx->builder);
-	LLVMValueRef fn = LLVMGetBasicBlockParent(entry_bb);
 	LLVMBasicBlockRef loop_bb, exit_bb, odd_tail_bb = NULL,
 		skip_loop_bb = NULL;
 	if(seq->elems_per_word > 1) {
-		skip_loop_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn,
-			"inlseq.skipmain.test");
-		odd_tail_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn,
-			"inlseq.odd.tail");
+		skip_loop_bb = add_sibling_block(ctx, "inlseq.skipmain.test");
+		odd_tail_bb = add_sibling_block(ctx, "inlseq.odd.tail");
 	}
-	loop_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "inlseq.loop");
-	exit_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "inlseq.loop.exit");
+	loop_bb = add_sibling_block(ctx, "inlseq.loop");
+	exit_bb = add_sibling_block(ctx, "inlseq.loop.exit");
 
 	/* guard against maximum size violations */
 	/* FIXME: get EINVAL from µiX headers */
@@ -167,8 +163,7 @@ LLVMValueRef build_decode_inline_sequence(
 			exit_bb, seq->elems_per_word - 1);
 
 		for(int i=seq->elems_per_word - 1; i>0; i--) {
-			LLVMBasicBlockRef bb = LLVMAppendBasicBlockInContext(
-				ctx->ctx, fn, tmp_f(ctx->pr, "inlseq.odd.%dcase", i));
+			BB bb = add_sibling_block(ctx, "inlseq.odd.%dcase", i);
 			if(i != seq->elems_per_word - 1) LLVMBuildBr(ctx->builder, bb);
 			LLVMPositionBuilderAtEnd(ctx->builder, bb);
 			LLVMAddCase(sw, CONST_UINT(i), bb);
