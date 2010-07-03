@@ -37,6 +37,15 @@
 #define BB LLVMBasicBlockRef
 
 
+/* constant macros. more useful than piles of LLVMConstInt(ctx->i32t, ...). */
+#define CONST_INT(n) LLVMConstInt(ctx->i32t, (n), 1)
+#define CONST_UINT(n) LLVMConstInt(ctx->i32t, (n), 0)
+#define CONST_WORD(n) LLVMConstInt(ctx->wordt, (n), 0)
+
+/* casting */
+#define WORD(v) LLVMBuildZExtOrBitCast(ctx->builder, (v), ctx->wordt, "cast.w")
+
+
 /* helper functions from llvmutil.c */
 
 /* set a value @val on @phi from origin LLVMGetInsertBlock(ctx->builder). */

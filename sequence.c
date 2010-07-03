@@ -45,11 +45,10 @@ LLVMValueRef build_decode_inline_sequence(
 		if(seq->elems_per_word == 1) seq_words = seq_len;
 		else {
 			seq_words = LLVMBuildUDiv(ctx->builder, seq_len,
-				LLVMConstInt(ctx->i32t, seq->elems_per_word, 0),
-				"inlseq.len.int");
+				CONST_UINT(seq->elems_per_word), "inlseq.len.int");
 		}
-		upos = LLVMBuildAdd(ctx->builder, upos,
-			LLVMConstInt(ctx->i32t, 1, 0), "inlseq.pos.bump");
+		upos = LLVMBuildAdd(ctx->builder, upos, CONST_UINT(1),
+			"inlseq.pos.bump");
 	} else {
 		/* last sequence of word-length items; compute length from "u". */
 		LLVMValueRef u = build_u_from_tag(ctx, ctx->tag);
@@ -75,11 +74,9 @@ LLVMValueRef build_decode_inline_sequence(
 
 	/* guard against maximum size violations */
 	/* FIXME: get EINVAL from µiX headers */
-	LLVMValueRef einval = LLVMConstInt(ctx->i32t, -EINVAL, 1);
-	branch_set_phi(ctx, errval_phi, einval);
+	branch_set_phi(ctx, errval_phi, CONST_INT(-EINVAL));
 	LLVMValueRef einval_cond = LLVMBuildICmp(ctx->builder, LLVMIntULT,
-		seq_len, LLVMConstInt(ctx->i32t, seq->max_elems, 0),
-		"inlseq.len.cond");
+		seq_len, CONST_UINT(seq->max_elems), "inlseq.len.cond");
 	LLVMBuildCondBr(ctx->builder, einval_cond,
 		seq->elems_per_word > 1 ? skip_loop_bb : loop_bb,
 		err_bb);
@@ -90,7 +87,7 @@ LLVMValueRef build_decode_inline_sequence(
 		 */
 		LLVMPositionBuilderAtEnd(ctx->builder, skip_loop_bb);
 		LLVMValueRef cond = LLVMBuildICmp(ctx->builder, LLVMIntULT,
-			seq_len, LLVMConstInt(ctx->i32t, seq->elems_per_word, 0),
+			seq_len, CONST_UINT(seq->elems_per_word),
 			"inlseq.skipmain.cond");
 		LLVMBuildCondBr(ctx->builder, cond, odd_tail_bb, loop_bb);
 	}
@@ -106,7 +103,7 @@ LLVMValueRef build_decode_inline_sequence(
 	LLVMPositionBuilderAtEnd(ctx->builder, loop_bb);
 	LLVMTypeRef seq_type = llvm_value_type(ctx, seq->elem_type);
 	LLVMValueRef seq_mem = build_local_storage(ctx, seq_type,
-		LLVMConstInt(ctx->i32t, seq->max_elems, 0), "inlseq.mem");
+		CONST_UINT(seq->max_elems), "inlseq.mem");
 	LLVMValueRef seq_pos, counter;
 	seq_pos = LLVMBuildPhi(ctx->builder, ctx->i32t, "loop.seqpos");
 	counter = LLVMBuildPhi(ctx->builder, ctx->i32t, "loop.ctr");
@@ -128,11 +125,10 @@ LLVMValueRef build_decode_inline_sequence(
 			int downshift = seq->bits_per_elem * i;
 			LLVMValueRef item = LLVMBuildTrunc(ctx->builder,
 				i == 0 ? word : LLVMBuildLShr(ctx->builder, word,
-					LLVMConstInt(ctx->i32t, downshift, 0),
-					"seq.limb.shifted"),
+					CONST_UINT(downshift), "seq.limb.shifted"),
 				seq_type, "seq.limb.trunc");
 			LLVMValueRef ix = LLVMBuildAdd(ctx->builder, counter,
-				LLVMConstInt(ctx->i32t, i, 0), "seq.limb.ix");
+				CONST_UINT(i), "seq.limb.ix");
 			LLVMBuildStore(ctx->builder, item,
 				LLVMBuildGEP(ctx->builder, seq_mem, &ix, 1,
 					"seq.limb.at"));
@@ -141,10 +137,9 @@ LLVMValueRef build_decode_inline_sequence(
 
 	LLVMValueRef next_counter, next_sp;
 	next_counter = LLVMBuildAdd(ctx->builder, counter,
-		LLVMConstInt(ctx->i32t, seq->elems_per_word, 0),
-		"loop.ctr.next");
-	next_sp = LLVMBuildAdd(ctx->builder, seq_pos,
-		LLVMConstInt(ctx->i32t, 1, 0), "loop.seqpos.next");
+		CONST_UINT(seq->elems_per_word), "loop.ctr.next");
+	next_sp = LLVMBuildAdd(ctx->builder, seq_pos, CONST_UINT(1),
+		"loop.seqpos.next");
 	branch_set_phi(ctx, counter, next_counter);
 	branch_set_phi(ctx, seq_pos, next_sp);
 	if(seq->elems_per_word == 1) {
@@ -168,8 +163,7 @@ LLVMValueRef build_decode_inline_sequence(
 		branch_set_phi(ctx, ret, odd_seqpos);
 		LLVMValueRef sw = LLVMBuildSwitch(ctx->builder,
 			LLVMBuildAnd(ctx->builder, seq_len,
-				LLVMConstInt(ctx->i32t, seq->elems_per_word - 1, 0),
-				"odd.len"),
+				CONST_UINT(seq->elems_per_word - 1), "odd.len"),
 			exit_bb, seq->elems_per_word - 1);
 
 		for(int i=seq->elems_per_word - 1; i>0; i--) {
@@ -177,21 +171,21 @@ LLVMValueRef build_decode_inline_sequence(
 				ctx->ctx, fn, tmp_f(ctx->pr, "inlseq.odd.%dcase", i));
 			if(i != seq->elems_per_word - 1) LLVMBuildBr(ctx->builder, bb);
 			LLVMPositionBuilderAtEnd(ctx->builder, bb);
-			LLVMAddCase(sw, LLVMConstInt(ctx->i32t, i, 0), bb);
+			LLVMAddCase(sw, CONST_UINT(i), bb);
 			LLVMValueRef limb = LLVMBuildTrunc(ctx->builder,
 				LLVMBuildLShr(ctx->builder, wordval,
-					LLVMConstInt(ctx->i32t, (i - 1) * seq->bits_per_elem, 0),
+					CONST_UINT((i - 1) * seq->bits_per_elem),
 					tmp_f(ctx->pr, "odd.c%d.shifted", i)),
 				seq_type, tmp_f(ctx->pr, "odd.c%d.limb", i));
 			LLVMValueRef offs = LLVMBuildAdd(ctx->builder, odd_offs,
-				LLVMConstInt(ctx->i32t, i - 1, 0), "odd.limb.offs");
+				CONST_UINT(i - 1), "odd.limb.offs");
 			LLVMBuildStore(ctx->builder, limb,
 				LLVMBuildGEP(ctx->builder, seq_mem, &offs, 1,
 					"odd.limb.ptr"));
 		}
 
 		LLVMValueRef sp_bump = LLVMBuildAdd(ctx->builder, odd_seqpos,
-			LLVMConstInt(ctx->i32t, 1, 0), "odd.sp.bump");
+			CONST_UINT(1), "odd.sp.bump");
 		branch_set_phi(ctx, ret, sp_bump);
 		LLVMBuildBr(ctx->builder, exit_bb);
 	}
@@ -213,19 +207,15 @@ static LLVMValueRef build_load_subval_and_shift(
 	const struct seq_param *seq)
 {
 	LLVMValueRef sub_pos = LLVMBuildAdd(ctx->builder,
-		pos, LLVMConstInt(ctx->i32t, ix, 0), "dstitem.sub.pos");
-	LLVMValueRef subval = LLVMBuildZExtOrBitCast(ctx->builder,
-		LLVMBuildLoad(ctx->builder,
-			LLVMBuildGEP(ctx->builder, mem, &sub_pos, 1,
-				"dstitem.sub.ptr"),
-			"dstitem.sub.val"),
-		ctx->wordt, "dstitem.sub.val.word");
+		pos, CONST_UINT(ix), "dstitem.sub.pos");
+	LLVMValueRef subval = WORD(LLVMBuildLoad(ctx->builder,
+		LLVMBuildGEP(ctx->builder, mem, &sub_pos, 1, "dstitem.sub.ptr"),
+		"dstitem.sub.val"));
 	/* fill from left to right, in little-endian order. this optimizes the
 	 * one-odd tail case while not penalizing any other.
 	 */
 	int upshift = seq->bits_per_elem * ix;
-	return LLVMBuildShl(ctx->builder, subval,
-		LLVMConstInt(ctx->i32t, upshift, 0),
+	return LLVMBuildShl(ctx->builder, subval, CONST_UINT(upshift),
 		"dstitem.sub.val.shifted");
 }
 
@@ -243,13 +233,11 @@ LLVMValueRef build_encode_inline_sequence(
 		lenptr, "inlseq.len");
 	if(seq->elems_per_word > 1 || !is_last) {
 		/* not simple && last; emit an item-count word. */
-		LLVMBuildStore(ctx->builder,
-			LLVMBuildZExtOrBitCast(ctx->builder, num_items,
-				ctx->wordt, "inlseq.len.word"),
+		LLVMBuildStore(ctx->builder, WORD(num_items),
 			LLVMBuildGEP(ctx->builder, ctx->utcb,
 				&upos, 1, "inlseq.len.word.offs"));
-		upos = LLVMBuildAdd(ctx->builder, upos,
-			LLVMConstInt(ctx->i32t, 1, 0), "inlseq.pos.bump");
+		upos = LLVMBuildAdd(ctx->builder, upos, CONST_UINT(1),
+			"inlseq.pos.bump");
 	}
 
 	/* loop per word. */
@@ -261,7 +249,7 @@ LLVMValueRef build_encode_inline_sequence(
 			ctx->ctx, fn, "inlseq.out.loop.after");
 	LLVMBuildCondBr(ctx->builder,
 		LLVMBuildICmp(ctx->builder, LLVMIntUGE, num_items,
-			LLVMConstInt(ctx->i32t, seq->elems_per_word, 0),
+			CONST_UINT(seq->elems_per_word),
 			"inlseq.out.loop.entrycond"),
 		loop_bb, loop_after_bb);
 	LLVMValueRef isp_before_loop = upos;
@@ -275,11 +263,9 @@ LLVMValueRef build_encode_inline_sequence(
 	LLVMAddIncoming(word_ix, &upos, &before_loop_bb, 1);
 	LLVMValueRef wordval;
 	if(seq->elems_per_word == 1) {
-		wordval = LLVMBuildZExtOrBitCast(ctx->builder,
-			LLVMBuildLoad(ctx->builder,
-				LLVMBuildGEP(ctx->builder, mem, &pos, 1, "item.ptr"),
-				"item.data"),
-			ctx->wordt, "item.wordval");
+		wordval = WORD(LLVMBuildLoad(ctx->builder,
+			LLVMBuildGEP(ctx->builder, mem, &pos, 1, "item.ptr"),
+			"item.data"));
 	} else {
 		/* bit-pack elements.
 		 * TODO: make this emit 4- and 8-wide cases in a treelike way
@@ -295,10 +281,9 @@ LLVMValueRef build_encode_inline_sequence(
 	LLVMBuildStore(ctx->builder, wordval,
 		LLVMBuildGEP(ctx->builder, ctx->utcb, &word_ix, 1, "word_ix.ptr"));
 	LLVMValueRef next_pos = LLVMBuildAdd(ctx->builder, pos,
-			LLVMConstInt(ctx->i32t, seq->elems_per_word, 0),
-			"inlseq.out.pos.next"),
+			CONST_UINT(seq->elems_per_word), "inlseq.out.pos.next"),
 		next_word = LLVMBuildAdd(ctx->builder, word_ix,
-			LLVMConstInt(ctx->i32t, 1, 0), "inlseq.out.word_ix.next");
+			CONST_UINT(1), "inlseq.out.word_ix.next");
 	branch_set_phi(ctx, pos, next_pos);
 	branch_set_phi(ctx, word_ix, next_word);
 	/* the fancy seq->elems_per_word conditional there is to make sure that
@@ -309,7 +294,7 @@ LLVMValueRef build_encode_inline_sequence(
 		seq->elems_per_word == 1
 			? next_pos
 			: LLVMBuildAdd(ctx->builder, next_pos,
-				LLVMConstInt(ctx->i32t, seq->elems_per_word - 1, 0),
+				CONST_UINT(seq->elems_per_word - 1),
 				"inlseq.out.pos.next.test"),
 		num_items, "exit.cond");
 	LLVMBuildCondBr(ctx->builder, exit_cond, loop_bb, loop_after_bb);
@@ -338,9 +323,9 @@ LLVMValueRef build_encode_inline_sequence(
 		LLVMValueRef store_word = next_word;
 		next_word = LLVMBuildSelect(ctx->builder,
 			LLVMBuildICmp(ctx->builder, LLVMIntUGT, remain,
-				LLVMConstInt(ctx->i32t, 0, 0), "inlseq.odd.exists"),
-			LLVMBuildAdd(ctx->builder, next_word,
-				LLVMConstInt(ctx->i32t, 1, 0), "inlseq.odd.word.bump"),
+				CONST_UINT(0), "inlseq.odd.exists"),
+			LLVMBuildAdd(ctx->builder, next_word, CONST_UINT(1),
+				"inlseq.odd.word.bump"),
 			next_word, "inlseq.odd.word.bump.maybe");
 
 		LLVMValueRef sel = LLVMBuildSwitch(ctx->builder, remain,
@@ -352,7 +337,7 @@ LLVMValueRef build_encode_inline_sequence(
 			LLVMBasicBlockRef b = LLVMAppendBasicBlockInContext(
 				ctx->ctx, fn, tmp_f(ctx->pr, "inlseq.odd.c%d", i));
 			if(prev != loop_after_bb) LLVMBuildBr(ctx->builder, b);
-			LLVMAddCase(sel, LLVMConstInt(ctx->i32t, i, 0), b);
+			LLVMAddCase(sel, CONST_UINT(i), b);
 			LLVMPositionBuilderAtEnd(ctx->builder, b);
 			LLVMValueRef word_phi;
 			if(prev == loop_after_bb) word_phi = ctx->zero;
