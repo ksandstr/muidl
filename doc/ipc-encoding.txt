@@ -1,0 +1,80 @@
+
+ENCODING OF PARAMETERS FROM IDL TO IPC.
+
+µIDL encodes operation parameters as types carried over L4.X2 IPC in the
+following manner:
+
+  - integral types (long, short, octet) with sizes smaller than, or equal to,
+    the target's native word size are zero-extended to word size regardless of
+    whether they are specified as signed or not.
+  - if the long long (64-bit) integer is larger than word size, it is encoded
+    as two native words, less significant half first.
+  - floating point types are encoded by external machine (memory)
+    representation. 64-bit floating point types may be split across two words
+    on 32-bit systems, low end first.
+  - booleans are encoded as the lowest bit of a single word. this is hugely
+    wasteful, so packing of several items into a word is a topic for [v2].
+  - characters are treated as octets
+  - wide characters are treated as long integers (i.e. like wchar_t on x86
+    GNU)
+  - strings and wide strings are passed as a simple string item without null
+    termination. the rationale for the latter is that the recipient cannot
+    trust the sender to have null-terminated in the first place, so it's
+    useless to copy that character over.
+  - arrays of fixed-length subtype may be encoded inline (see INLINE ENCODINGS
+    below) if the whole array is known to fit in the untyped section alongside
+    those parameters that must be encoded as untyped words. arrays that don't
+    fit this criteria are encoded as a fixed-length simple string item.
+  - enumerations are treated as the smallest unsigned integral type that will
+    fit their range
+  - native word types (word, fpage, time) are encoded as they are
+  - union types' encoding is to be decided. **TODO**
+  - fixed-length struct types may be encoded inline if they are composed of
+    constant-sized members. otherwise they are encoded as a simple string
+    item.
+  - sequences of fixed-length types may be encoded inline if and only if the
+    maximum number of message words taken up by the encoding fits what's left
+    in the message. otherwise a sequence of non-struct types is encoded as a
+    simple string transfer, and a sequence of struct types is encoded as a
+    compound string item.
+
+This leaves the following types undefined and therefore disallowed by µIDL:
+
+  - unbounded strings and wide strings
+  - unbounded sequences
+  - sequences of a variable length subtype
+  - arrays of a variable length subtype
+
+Reception of these types would require either 4-megabyte buffers for each
+individual string transfer, or an implementation max size. The first solution
+seems fine until one realizes that the overhead is paid per dispatcher thread
+(and in the future, per redirector!), and the latter would impose an arbitrary
+limit not specified in a formal manner per interface.
+
+
+INLINE ENCODINGS.
+
+Fixed-length struct types can be encoded in a bit-packed format when passed
+inline either as part of an inline array, an inline sequence, another inline
+structure, or an inline union. Items are packed into successive words starting
+from the least significant end. Items are never split across two words;
+therefore a struct of a boolean and a long long would occupy 3 words on a
+32-bit target. However, items need not be packed in strict order: a struct of
+a boolean, a long long, and an unsigned short would also fit in 3 words on a
+32-bit target, and leave room for 15 bits' worth more.
+
+(as this kind of bit-packing may be expensive in terms of code on the critical
+path, structures may be tagged with the "Packed(when)" property with when =
+"Never" as an optimization.)
+
+Arrays are encoded inline as words filled in low-end first order. This
+accommodates e.g. booleans (one bit each), octets (4 or 8 to a word) and
+packed structures (a structure of an octet and two booleans can fit 3 or 6 to
+a word, with 2 or 4 bits left over).
+
+Sequences are encoded inline much as arrays are, but the number of items
+carried must be indicated by a preceding length word. The length word may be
+omitted iff the sequence's subtype is packed one item per word and the
+sequence is the last sequence in the message that is encoded inline; in this
+case the length is the number of untyped words encoded/seen so far subtracted
+from the number of untyped words in the L4 message.
