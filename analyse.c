@@ -348,8 +348,10 @@ fail:
 static struct message_info *build_exception_message(IDL_tree exn)
 {
 	/* FIXME */
+#if 0
 	fprintf(stderr, "would build a credible exception message for `%s' here\n",
 		IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL(exn).ident));
+#endif
 
 	struct message_info *msg = g_malloc0(sizeof(struct message_info)
 		+ 0 * sizeof(IDL_tree));

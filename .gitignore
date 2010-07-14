@@ -5,7 +5,7 @@ muidl
 .*.sw[opn]
 tags
 *-defs.h
-*-service.c
-*-client.c
+*-service.[cSs]
+*-client.[cSs]
 *.gc??
 core

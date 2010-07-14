@@ -29,9 +29,14 @@
 #include <locale.h>
 #include <errno.h>
 #include <ctype.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <glib.h>
 #include <libIDL/IDL.h>
 #include <llvm-c/Analysis.h>
+#include <llvm-c/BitWriter.h>
 
 #include "muidl.h"
 
@@ -43,9 +48,6 @@ static gboolean arg_version = FALSE, arg_verbose_idl = FALSE,
 static gchar **arg_defines = NULL, **arg_idl_files = NULL,
 	**arg_include_paths = NULL, *arg_dest_path = NULL;
 
-
-static void add_str_f(GList **listptr, const char *fmt, ...)
-	__attribute__((format(printf, 2, 3)));
 
 static int strvlen(char **strv) __attribute__((pure));
 
@@ -668,179 +670,6 @@ void close_brace(struct print_ctx *pr)
 }
 
 
-/* NOTE: these actually add items to the _front_, since it is a O(1) operation
- * (disregarding allocator overhead etc). reverse before use, or iterate back
- * to front.
- */
-static void add_str_vf(GList **listptr, const char *fmt, va_list al)
-{
-	*listptr = g_list_prepend(*listptr, g_strdup_vprintf(fmt, al));
-}
-
-
-static void add_str_f(GList **listptr, const char *fmt, ...)
-{
-	va_list al;
-	va_start(al, fmt);
-	add_str_vf(listptr, fmt, al);
-	va_end(al);
-}
-
-
-static unsigned short_mask(IDL_tree fldtype)
-{
-	if(IS_USHORT_TYPE(fldtype)) return 0xffff;
-	else if(IDL_NODE_TYPE(fldtype) == IDLN_TYPE_OCTET) return 0xff;
-	else NOTDEFINED(fldtype);
-}
-
-
-static void print_helper_vars(
-	struct print_ctx *pr,
-	const struct message_info *msg,
-	const struct stritem_info *stritems,
-	bool inout)
-{
-	/* fixed-length untyped */
-	for(int i=0; i<msg->num_untyped; i++) {
-		const struct untyped_param *u = msg->untyped[i];
-
-		const enum IDL_param_attr attr = IDL_PARAM_DCL(u->param_dcl).attr;
-		const bool decode = attr != IDL_PARAM_OUT;
-
-		if(!inout && attr == IDL_PARAM_INOUT) continue;
-		if(attr == IDL_PARAM_IN && is_value_type(u->type)) {
-			/* an in-only valuetype parameter is passed as a call to
-			 * "L4_MsgWord()" at the vtable call site.
-			 */
-			continue;
-		}
-
-		char *initializer = NULL;
-		const char *deflt = "";
-		if(IS_MAPGRANT_TYPE(u->type)) {
-			assert(u->first_reg == u->last_reg - 1);
-			if(!decode) deflt = " = { .raw = { 0, 0 } }";
-			else {
-				initializer = g_strdup_printf(" = {\n"
-						"\t.raw = { L4_MsgWord(msgp, %d), L4_MsgWord(msgp, %d) }\n"
-					"}", (int)u->first_reg - 1,
-					(int)u->last_reg - 1);
-			}
-		} else if(IS_FPAGE_TYPE(u->type)) {
-			if(!decode) deflt = " = { .raw = 0 }";
-			else {
-				initializer = g_strdup_printf(" = { .raw = L4_MsgWord(msgp, %d) }",
-					(int)u->first_reg - 1);
-			}
-		} else if(is_value_type(u->type)) {
-			if(!decode) deflt = " = 0";
-			else {
-				initializer = g_strdup_printf(" = L4_MsgWord(msgp, %d)",
-					(int)u->first_reg - 1);
-			}
-		} else {
-			/* TODO: fixed-size structs, arrays */
-			NOTDEFINED(u->type);
-		}
-
-		char *tstr = value_type(pr->ns, u->type);
-		code_f(pr, "%s p_%s%s;", tstr, u->name,
-			initializer != NULL ? initializer : deflt);
-		g_free(tstr);
-		g_free(initializer);
-	}
-
-	/* inline sequences */
-	for(int i=0; i<msg->num_inline_seq; i++) {
-		const struct seq_param *s = msg->seq[i];
-		if(!inout && IDL_PARAM_DCL(s->param_dcl).attr == IDL_PARAM_INOUT) {
-			continue;
-		}
-
-		char *tstr = value_type(pr->ns, s->elem_type);
-		code_f(pr, "%s p_%s[%d];", tstr, s->name, s->max_elems);
-		code_f(pr, "unsigned p_%s_len = 0u;", s->name);
-		g_free(tstr);
-	}
-
-	/* long items */
-	for(int i=0; i<msg->num_long; i++) {
-		struct long_param *p = msg->long_params[i];
-
-		assert(stritems != NULL);
-		assert(stritems[i].length >= 0);
-		if(IDL_NODE_TYPE(p->type) == IDLN_TYPE_STRING) {
-			IDL_tree bnode = IDL_TYPE_STRING(p->type).positive_int_const;
-			assert(bnode != NULL);	/* ensured by verify.c */
-			code_f(pr, "char *p_%s = (char *)&_strbuf[%d];",
-				p->name, stritems[i].offset);
-		} else if(IDL_NODE_TYPE(p->type) == IDLN_TYPE_SEQUENCE) {
-			IDL_tree subtype = get_type_spec(
-				IDL_TYPE_SEQUENCE(p->type).simple_type_spec);
-			char *t = value_type(pr->ns, subtype);
-			code_f(pr, "%s *p_%s = (%s *)&_strbuf[%d];",
-				t, p->name, t, stritems[i].offset);
-			g_free(t);
-		} else {
-			/* TODO: wide strings, structs, non-inline sequences, etc etc */
-			NOTDEFINED(p->type);
-		}
-	}
-}
-
-
-static void build_dispatch_parms(
-	IDL_ns ns,
-	GList **parm_list,
-	const struct method_info *inf)
-{
-	const struct message_info *req = inf->request;
-	for(IDL_tree cur = IDL_OP_DCL(inf->node).parameter_dcls;
-		cur != NULL;
-		cur = IDL_LIST(cur).next)
-	{
-		IDL_tree p = IDL_LIST(cur).data,
-			type = get_type_spec(IDL_PARAM_DCL(p).param_type_spec);
-		const enum IDL_param_attr attr = IDL_PARAM_DCL(p).attr;
-		const char *name = IDL_IDENT(IDL_PARAM_DCL(p).simple_declarator).str;
-		if(attr != IDL_PARAM_IN && is_rigid_type(ns, type)) {
-			/* rigid out & inout parameters */
-			add_str_f(parm_list, "&p_%s", name);
-		} else if(IS_FPAGE_TYPE(type)) {
-			add_str_f(parm_list, "p_%s", name);
-		} else if(is_value_type(type)) {
-			struct untyped_param *u = NULL;
-			for(int i=0; i<req->num_untyped; i++) {
-				if(strcmp(req->untyped[i]->name, name) == 0) {
-					u = req->untyped[i];
-					break;
-				}
-			}
-			if(u == NULL) {
-				fprintf(stderr, "%s: brain damage!\n", __FUNCTION__);
-				abort();
-			}
-			for(int r=u->first_reg; r <= u->last_reg; r++) {
-				add_str_f(parm_list, "L4_MsgWord(msgp, %d)", r - 1);
-			}
-		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
-			add_str_f(parm_list, "p_%s", name);
-			add_str_f(parm_list, "%sp_%s_len",
-				attr == IDL_PARAM_IN ? "" : "&", name);
-		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_STRING
-			|| IDL_NODE_TYPE(type) == IDLN_TYPE_WIDE_STRING)
-		{
-			/* these are fairly simple. */
-			add_str_f(parm_list, "p_%s", name);
-		} else {
-			/* TODO: array, struct types */
-			NOTDEFINED(type);
-		}
-	}
-}
-
-
 void print_msg_encoder(
 	struct print_ctx *pr,
 	const struct message_info *msg,
@@ -996,592 +825,12 @@ void print_decode_inline_seqs(
 }
 
 
-static void print_null_termination(
-	struct print_ctx *pr,
-	const struct message_info *req,
-	const struct stritem_info *stritems,
-	const char *var_prefix)
-{
-	if(req->num_long == 0) return;
-
-	code_f(pr, "int str_state = 0;");
-	for(int i=0; i<req->num_long; i++) {
-		assert(stritems != NULL && stritems[i].length >= 0);
-
-		const struct long_param *p = req->long_params[i];
-		const struct stritem_info *si = &stritems[i];
-		code_f(pr,
-			"const L4_StringItem_t *si_%s = muidl_next_stringitem(msgp, &str_state);",
-			p->name);
-		code_f(pr, "if(si_%s == NULL) {", p->name);
-		indent(pr, 1);
-		/* FIXME! add a muidl_error_report() function or some such? */
-		code_f(pr, "/* FIXME: return error on insufficient string items */");
-#if 1
-		code_f(pr, "extern void printk(const char *, ...);");
-		code_f(pr, "printk(\"insufficient string items (label %%#x, u %%d, t %%d)\\n\", "
-			"(unsigned int)L4_Label(msgp->tag), (int)L4_UntypedWords(msgp->tag), "
-			"(int)L4_TypedWords(msgp->tag));");
-#endif
-		close_brace(pr);
-		code_f(pr, "int xlen_%s = muidl_stritemlen(si_%s);",
-			p->name, p->name);
-
-		if(IDL_NODE_TYPE(p->type) == IDLN_TYPE_STRING) {
-			IDL_tree bound = IDL_TYPE_STRING(p->type).positive_int_const;
-			assert(bound != NULL);
-			int limit = MIN(IDL_INTEGER(bound).value, si->length);
-			code_f(pr, "if(xlen_%s > %d) xlen_%s = %d;",
-				p->name, limit, p->name, limit);
-			code_f(pr, "p_%s[xlen_%s] = '\\0';", p->name, p->name);
-		} else if(IDL_NODE_TYPE(p->type) == IDLN_TYPE_WIDE_STRING) {
-			/* FIXME */
-			NOTDEFINED(p->type);
-		} else if(IDL_NODE_TYPE(p->type) == IDLN_TYPE_SEQUENCE) {
-			/* FIXME */
-			code_f(pr, "/* would set long in-sequence length here */");
-		}
-	}
-}
-
-
-static void print_op_decode(
-	struct print_ctx *pr,
-	struct method_info *inf,
-	const struct stritem_info *stritems)
-{
-	code_f(pr, "/* decoding of `%s' */", METHOD_NAME(inf->node));
-
-	const struct message_info *req = inf->request;
-	print_helper_vars(pr, inf->request, stritems, true);
-	if(inf->num_reply_msgs > 0) {
-		print_helper_vars(pr, inf->replies[0], NULL, false);
-	}
-
-	bool ret_is_real;
-	char *rtstr = return_type(pr->ns, inf->node, &ret_is_real, true),
-		*name = decapsify(METHOD_NAME(inf->node));
-	const bool is_voidfn = strcmp(rtstr, "void") == 0;
-
-	/* build the actual parameter list for the vtable call. */
-	GList *parm_list = NULL;	/* <char *>, g_free()'d at end */
-
-	if(inf->return_type != NULL && !ret_is_real
-		&& !IS_USHORT_TYPE(inf->return_type)
-		&& IDL_NODE_TYPE(inf->return_type) != IDLN_TYPE_OCTET)
-	{
-		/* the result out-parameter, if non-valuetype or both hidden by error
-		 * status and not unsigned short or octet
-		 */
-		char *typ;
-		if(is_value_type(inf->return_type)) {
-			typ = value_type(pr->ns, inf->return_type);
-		} else if(IS_MAPGRANT_TYPE(inf->return_type)) {
-			typ = g_strdup("L4_MapItem_t");
-		} else {
-			typ = rigid_type(pr->ns, inf->return_type);
-		}
-		code_f(pr, "%s result;", typ);
-		add_str_f(&parm_list, "&result");
-		g_free(typ);
-	}
-
-	print_decode_inline_seqs(pr, req, "msgp", "p_");
-	print_null_termination(pr, req, stritems, "p_");
-
-	build_dispatch_parms(pr->ns, &parm_list, inf);
-
-	/* the vtable call. */
-	const char *ret1, *ret2;
-	if(is_voidfn) {
-		ret1 = "";
-		ret2 = "";
-	} else {
-		ret1 = rtstr;
-		ret2 = " retval = ";
-	}
-	if(g_list_first(parm_list) == NULL) {
-		/* parameterless operations that don't even have a result
-		 * parameter.
-		 */
-		code_f(pr, "%s%s(*vtable->%s)();", ret1, ret2, name);
-	} else {
-		parm_list = g_list_reverse(parm_list);
-		for(GList *cur = g_list_first(parm_list);
-			cur != NULL;
-			cur = g_list_next(cur))
-		{
-			const char *str = cur->data,
-				*suffix = g_list_next(cur) != NULL ? "," : ");";
-			if(cur == g_list_first(parm_list)) {
-				code_f(pr, "%s%s(*vtable->%s)(%s%s", ret1, ret2, name,
-					(const char *)g_list_first(parm_list)->data, suffix);
-				indent(pr, 1);
-			} else {
-				code_f(pr, "%s%s", str, suffix);
-			}
-		}
-		indent(pr, -1);
-	}
-
-	if(!IDL_OP_DCL(inf->node).f_oneway) {
-		/* reply encoding */
-
-		/* the NegativeReturn exception, where applicable */
-		IDL_tree n_ex = find_neg_exn(inf->node);
-		bool first_if = true;
-		if(n_ex != NULL) {
-			assert(strcmp(rtstr, "int") == 0);
-			code_f(pr, "if(retval < 0) {");
-			indent(pr, 1);
-			/* FIXME: grab exception label from somewhere!
-			 * (linear search for n_ex in message_info->node.)
-			 */
-			code_f(pr, "L4_MsgClear(msgp);");
-			code_f(pr, "L4_Set_MsgLabel(msgp, MSG_ERROR);");
-			IDL_tree memb = IDL_LIST(IDL_EXCEPT_DCL(n_ex).members).data,
-				fldtype = get_type_spec(IDL_MEMBER(memb).type_spec);
-			assert(IDL_list_length(IDL_MEMBER(memb).dcls) == 1);
-			code_f(pr, "L4_MsgAppendWord(msgp, %#x & ((L4_Word_t)-retval));",
-				short_mask(fldtype));
-			close_brace(pr);
-			first_if = false;
-		}
-
-		/* other exceptions */
-		bool has_other_exns = false;
-		for(int i=0; i<inf->num_reply_msgs; i++) {
-			if(inf->replies[i]->node != n_ex
-				&& IDL_NODE_TYPE(inf->replies[i]->node) == IDLN_EXCEPT_DCL)
-			{
-				/* found an exception besides n_ex. whee! */
-				has_other_exns = true;
-				break;
-			}
-		}
-		if(has_other_exns) {
-			fprintf(pr->of, "#if 0\n");
-			code_f(pr, "%sif(ctx->exception_indicating_thingy != 0) {",
-				first_if ? "" : "} else ");
-			indent(pr, 1);
-			code_f(pr, "L4_MsgClear(msgp);");
-			code_f(pr, "/* FIXME: code that forwards ctx->exception in msgp */");
-			close_brace(pr);
-			fprintf(pr->of, "#endif\n");
-		}
-
-		/* this identifies the non-exception outcome. */
-		if(inf->num_reply_msgs > 0
-			&& IDL_NODE_TYPE(inf->replies[0]->node) == IDLN_OP_DCL)
-		{
-			if(!first_if) {
-				code_f(pr, "else {");
-				indent(pr, 1);
-			}
-			code_f(pr, "L4_MsgClear(msgp);");
-			char *retval_str;
-			if(n_ex != NULL && inf->return_type != NULL) {
-				/* strictly positive integral return types that're 31 bits or
-				 * shorter: unsigned short and octet. (whee!)
-				 */
-				retval_str = tmp_f(pr, "retval & %#x",
-					short_mask(inf->return_type));
-			} else if(inf->return_type == NULL) {
-				/* void */
-				retval_str = NULL;
-			} else if(is_value_type(inf->return_type)) {
-				retval_str = tmp_f(pr, "retval");
-			} else {
-				retval_str = tmp_f(pr,
-					"/* FIXME: return_type <%s> not handled by %s */",
-					IDL_NODE_TYPE_NAME(inf->return_type), __FUNCTION__);
-			}
-			print_msg_encoder(pr, inf->replies[0], retval_str, "msgp", "p_");
-			if(!first_if) close_brace(pr);
-		}
-	}
-
-	g_free(rtstr);
-	g_free(name);
-	list_dispose(parm_list);
-}
-
-
-/* FIXME: this is really a _skeleton_ utility function; i.e. the skeleton calls
- * a mod_iface_exnname_raise(member1, member2, member3, etc) function and
- * returns zero or void. the exception message is then picked up and propagated
- * by the dispatcher.
- *
- * so rewrite how this stuff is emitted for real and declare the functions
- * extern with prototypes in $idlfile-defs.h, conditional to a skelimpl #define
- * or something.
- */
-static void print_exception_encoder(struct print_ctx *pr, IDL_tree exn)
-{
-	code_f(pr, "/* would emit encoder for exception `%s' */",
-		IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL(exn).ident));
-#if 0
-	char *exn_ln = long_name(pr->ns, exn);
-	code_f(pr, "static void %s_encode(", exn_ln);
-	indent(pr, 1);
-	code_f(pr, "L4_Msg_t *msgp,");
-
-	/* encoder parameters */
-	for(IDL_tree cur = IDL_EXCEPT_DCL(exn).members;
-		cur != NULL;
-		cur = IDL_LIST(cur).next)
-	{
-		IDL_tree member = IDL_LIST(cur).data,
-			type = get_type_spec(IDL_MEMBER(member).type_spec);
-		/* TODO: handle and/or forbid long types */
-		char *typestr = in_param_type(pr->ns, type);
-		const bool last = IDL_LIST(cur).next == NULL;
-		for(IDL_tree m_iter = IDL_MEMBER(member).dcls;
-			m_iter != NULL;
-			m_iter = IDL_LIST(m_iter).next)
-		{
-			IDL_tree ident = IDL_LIST(m_iter).data;
-			code_f(pr, "%s%s%s%s", typestr, type_space(typestr),
-				IDL_IDENT(ident).str, last ? ")" : ",");
-		}
-		g_free(typestr);
-	}
-	indent(pr, -1);
-
-	code_f(pr, "{");
-	indent(pr, 1);
-
-	code_f(pr, "/* insert encoder body here */");
-
-	close_brace(pr);
-	code_f(pr, " ");
-	g_free(exn_ln);
-#endif
-}
-
-
-static gint exn_repoid_compare(gconstpointer a, gconstpointer b)
-{
-	IDL_tree n = (IDL_tree)a, m = (IDL_tree)b;
-	return strcmp(IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL(n).ident),
-		IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL(m).ident));
-}
-
-
-/* generate local (static) encoders for all exceptions referenced by this
- * interface's operations.
- */
-static void print_exceptions_for_iface(struct print_ctx *pr, IDL_tree iface)
-{
-	/* collect the exceptions. */
-	GHashTable *exn_hash = g_hash_table_new(&g_str_hash, &g_str_equal);
-	for(IDL_tree if_iter = IDL_INTERFACE(iface).body;
-		if_iter != NULL;
-		if_iter = IDL_LIST(if_iter).next)
-	{
-		IDL_tree elem = IDL_LIST(if_iter).data;
-		if(IDL_NODE_TYPE(elem) != IDLN_OP_DCL) continue;
-
-		for(IDL_tree r_iter = IDL_OP_DCL(elem).raises_expr;
-			r_iter != NULL;
-			r_iter = IDL_LIST(r_iter).next)
-		{
-			IDL_tree ident = IDL_LIST(r_iter).data;
-			IDL_tree ex = IDL_get_parent_node(ident, IDLN_EXCEPT_DCL, NULL);
-			if(ex == NULL) {
-				/* FIXME: gracefully plz */
-				fprintf(stderr, "%s: unknown exception `%s'\n",
-					__FUNCTION__, IDL_IDENT_REPO_ID(ident));
-				exit(EXIT_FAILURE);
-			}
-
-			char *repoid = IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL(ex).ident);
-			/* pointers to long-lived objects == just overwrite where
-			 * necessary, it's all good
-			 */
-			g_hash_table_insert(exn_hash, repoid, ex);
-		}
-	}
-
-	GList *exn_list = g_hash_table_get_values(exn_hash);
-	/* sort them by repoid for consistency. */
-	exn_list = g_list_sort(exn_list, &exn_repoid_compare);
-
-	for(GList *cur = g_list_first(exn_list);
-		cur != NULL;
-		cur = g_list_next(cur))
-	{
-		IDL_tree exn = cur->data;
-		print_exception_encoder(pr, exn);
-	}
-
-	g_list_free(exn_list);
-	g_hash_table_destroy(exn_hash);
-}
-
-
 char *dispatcher_name(IDL_ns ns, IDL_tree iface, char **vtprefix_p)
 {
 	char *vtprefix = vtable_prefix(ns, iface),
 		*ret = g_strdup_printf("_muidl_%s_dispatch", vtprefix);
 	if(vtprefix_p != NULL) *vtprefix_p = vtprefix; else g_free(vtprefix);
 	return ret;
-}
-
-
-/* this outputs a very generic dispatcher. ones written in customized assembly
- * code are optimizations, which we won't touch until µidl is reasonably
- * feature-complete. (i.e. need-to basis, and optimizations don't usually need
- * to.)
- */
-static void print_dispatcher_for_iface(struct print_ctx *pr, IDL_tree iface)
-{
-	code_f(pr, "/* dispatcher for interface `%s' */",
-		IDL_IDENT(IDL_INTERFACE(iface).ident).repo_id);
-	char *vtprefix = NULL,
-		*dispname = dispatcher_name(pr->ns, iface, &vtprefix);
-	code_f(pr, "L4_Word_t %s(", dispname);
-	indent(pr, 1);
-	code_f(pr, "const struct %s_vtable *vtable)", vtprefix);
-	indent(pr, -1);
-	code_f(pr, "{");
-	indent(pr, 1);
-
-	/* keep caller-configured transfer timeouts for reloading before each IPC
-	 * wait.
-	 */
-	code_f(pr, "const L4_Word_t _stored_timeouts = L4_XferTimeouts();");
-
-	GList *tagmask_list = NULL,
-		*methods = analyse_methods_of_iface(pr, &tagmask_list, iface);
-	const bool have_switch = g_list_length(tagmask_list) < g_list_length(methods),
-		have_tagmask = g_list_length(tagmask_list) > 0;
-
-	/* compute the context size, and string buffer offsets. */
-	struct stritem_info *stritems = dispatcher_stritems(methods);
-	bool have_stritems = stritems != NULL && stritems[0].length >= 0;
-	const char *ctx_size;
-	if(have_stritems) {
-		int total = 0;
-		for(int i=0; stritems[i].length >= 0; i++) {
-			/* TODO: pad the offset to the data's proper alignment, include
-			 * that in the total.
-			 */
-			stritems[i].offset = total;
-			total += stritems[i].length;
-			if(stritems[i].stringlike) total++;	/* '\0' at the end. */
-		}
-		ctx_size = tmp_f(pr, "sizeof(struct idl_context) + %d + 32",
-			total);
-	} else {
-		ctx_size = "sizeof(struct idl_context)";
-	}
-	code_f(pr, "muidl_supp_alloc_context(%s);", ctx_size);
-	code_f(pr, "struct idl_context *idlctx = muidl_supp_get_context();");
-
-	/* emit acceptor data (where applicable) and select the acceptor-loading
-	 * code fragment.
-	 */
-	const char *acc_stmt = NULL;
-	if(!have_stritems) {
-		acc_stmt = "L4_Accept(L4_UntypedWordsAcceptor);";
-	} else {
-		code_f(pr, "char *_strbuf = (char *)&idlctx[1];");
-		code_f(pr,
-			"L4_MsgBuffer_t _msgbuf;\n"
-			"L4_MsgBufferClear(&_msgbuf);");
-		for(int i=0; stritems[i].length >= 0; i++) {
-			code_f(pr,
-				"L4_MsgBufferAppendSimpleRcvString(&_msgbuf,\n"
-					"\tL4_StringItem(%d, &_strbuf[%d]));",
-				stritems[i].length, stritems[i].offset);
-		}
-		acc_stmt = "L4_AcceptStrings(L4_StringItemsAcceptor, &_msgbuf);";
-	}
-
-	code_f(pr, "for(;;) {");
-	indent(pr, 1);
-	code_f(pr,
-			"%s\n"
-			"L4_ThreadId_t sender_tid;\n"
-			"L4_Set_XferTimeouts(_stored_timeouts);\n"
-			"L4_MsgTag_t tag = L4_Wait(&sender_tid);\n"
-			"for(;;) {", acc_stmt);
-	indent(pr, 1);
-	code_f(pr,	"idlctx->last_sender = sender_tid;\n"
-				"if(L4_IpcFailed(tag)) return L4_ErrorCode();\n"
-				"L4_Msg_t *msgp = &idlctx->last_msg;\n"
-				"L4_MsgStore(tag, msgp);");
-
-	/* tag-mask dispatched things, in IDL order. */
-	for(GList *cur = g_list_first(tagmask_list);
-		cur != NULL;
-		cur = g_list_next(cur))
-	{
-		struct method_info *inf = cur->data;
-		assert(inf->request->tagmask != NO_TAGMASK);
-		code_f(pr, "%sif((tag.raw & 0x%lx) == 0x%lx) {",
-			cur == g_list_first(tagmask_list) ? "" : "} else ",
-			(unsigned long)inf->request->tagmask,
-			(unsigned long)inf->request->label << 16);
-		indent(pr, 1);
-
-		print_op_decode(pr, inf, stritems);
-		if(IDL_OP_DCL(inf->node).f_oneway) code_f(pr, "break;");
-
-		if(g_list_next(cur) != NULL) indent(pr, -1);
-		else {
-			/* last element, falls out into either label switch or
-			 * unknown-handler.
-			 */
-			indent(pr, -1);
-			code_f(pr, "} else {");
-			indent(pr, 1);
-		}
-	}
-
-	if(have_switch) {
-		/* TODO: update this to emit op decoders for sequences of sublabel
-		 * messages (since all for the same L4_Label() are sorted sequentially)
-		 * properly.
-		 */
-		code_f(pr, "bool reply = true;\nswitch(L4_Label(tag)) {");
-		indent(pr, 1);
-		struct method_info *prev = NULL, *inf;
-		for(GList *cur = g_list_first(methods);
-			cur != NULL;
-			prev = inf, cur = g_list_next(cur))
-		{
-			inf = cur->data;
-			if(g_list_find(tagmask_list, inf) != NULL) continue; /* been done */
-
-			/* take care of ifacelabel chaining, which may appear mixed with
-			 * non-ifacelabeled methods in an inherited interface.
-			 */
-			const bool have_sl = inf->request->sublabel != NO_SUBLABEL,
-				in_chain = have_sl && prev != NULL
-					&& prev->request->label == inf->request->label
-					&& prev->request->sublabel != NO_SUBLABEL;
-
-			if(!in_chain) {
-				/* starts, or exists outside, a sublabel chain */
-				code_f(pr, "case 0x%x: {", (unsigned)inf->request->label);
-				indent(pr, 1);
-				if(have_sl) {
-					code_f(pr, "const L4_Word_t _sublabel = L4_MsgWord(msgp, 0);");
-				}
-			}
-			if(have_sl) {
-				code_f(pr, "if(_sublabel == %#x) {",
-					(unsigned)inf->request->sublabel);
-				indent(pr, 1);
-			}
-			print_op_decode(pr, inf, stritems);
-			if(IDL_OP_DCL(inf->node).f_oneway) code_f(pr, "reply = false;");
-			code_f(pr, "break;");
-			close_brace(pr);
-
-			GList *next_link = g_list_next(cur);
-			struct method_info *next = next_link == NULL ? NULL : next_link->data;
-			if(!have_sl || next_link == NULL
-				|| next->request->label != inf->request->label)
-			{
-				/* we're the last in a sublabel chain, either because the next
-				 * item is NULL, because the label changes, or there wasn't any
-				 * sublabel chain at all.
-				 */
-				if(have_sl) {
-					code_f(pr, "return MUIDL_UNKNOWN_LABEL;");
-					close_brace(pr);
-				}
-				code_f(pr, " ");		/* aesthetics, man! */
-			}
-		}
-
-		code_f(pr, "default: {");
-		indent(pr, 1);
-	}
-
-	/* catch & release unrecognized messages */
-	code_f(pr, "return MUIDL_UNKNOWN_LABEL;");
-
-	if(have_switch) {
-		/* finish the unrecognized-messages handler */
-		code_f(pr, "break;");
-		close_brace(pr);
-		/* and the switch stmt */
-		close_brace(pr);
-		/* prevent msgload, replywait for oneway operations */
-		code_f(pr, "if(!reply) break;");
-	}
-
-	if(have_tagmask) close_brace(pr);
-
-	code_f(pr,
-		"L4_MsgLoad(msgp);\n"
-		"L4_Set_XferTimeouts(_stored_timeouts);\n"
-		"%s\n"
-		"tag = L4_ReplyWait(sender_tid, &sender_tid);",
-		acc_stmt);
-
-	close_brace(pr);	/* inner for loop */
-	close_brace(pr);	/* outer for loop */
-	close_brace(pr);	/* function */
-	code_f(pr, " ");
-
-	g_list_foreach(methods, (GFunc)free_method_info, NULL);
-	g_list_free(methods);
-	g_list_free(tagmask_list);
-	g_free(vtprefix);
-	g_free(dispname);
-	g_free(stritems);
-}
-
-
-static gboolean iter_print_dispatchers(IDL_tree_func_data *tf, void *ud)
-{
-	struct print_ctx *pr = ud;
-	switch(IDL_NODE_TYPE(tf->tree)) {
-		case IDLN_LIST:
-		case IDLN_MODULE:
-		case IDLN_SRCFILE:
-			return TRUE;
-
-		default: return FALSE;
-
-		case IDLN_INTERFACE:
-			/* TODO: have an option to not emit inhibited exceptions, i.e.
-			 * those that weren't declared in the IDL file at hand. for now
-			 * we'll regard dispatcher source as self-contained.
-			 */
-			print_exceptions_for_iface(pr, tf->tree);
-			print_dispatcher_for_iface(pr, tf->tree);
-			return FALSE;
-	}
-}
-
-
-static void print_dispatcher(struct print_ctx *pr)
-{
-	fprintf(pr->of, "#define MUIDL_SOURCE\n\n");
-
-	/* TODO: make this use print_headers() */
-	fprintf(pr->of,
-		"#include <stdint.h>\n"
-		"\n"
-		"#include <kernel/types.h>\n"
-		"#include <kernel/message.h>\n"
-		"#include <kernel/muidlsupp.h>\n"
-		"#include <kernel/idl.h>\n"
-		"\n"
-		"#include <l4/types.h>\n"
-		"#include <l4/message.h>\n"
-		"#include <l4/ipc.h>\n"
-		"\n");
-
-	fprintf(pr->of, "#include \"%s\"\n\n", pr->common_header_name);
-
-	IDL_tree_walk_in_order(pr->tree, &iter_print_dispatchers, pr);
 }
 
 
@@ -1649,8 +898,37 @@ static LLVMModuleRef make_llvm_service_module(
 
 	IDL_tree_walk_in_order(ctx->pr->tree, &iter_emit_dispatchers, ctx);
 
+	char *outmsg = NULL;
+	if(LLVMVerifyModule(mod, LLVMPrintMessageAction, &outmsg)) {
+		fprintf(stderr, "LLVM module verifier complained!\n");
+		LLVMDumpModule(mod);
+		abort();
+		LLVMDisposeMessage(outmsg);
+	}
+
 	ctx->module = NULL;
 	return mod;
+}
+
+
+static void output_llvm_source(LLVMModuleRef mod, const char *filename)
+{
+	char *cmd = g_strdup_printf("llc-2.7 -O2 -filetype=asm -o %s", filename);
+	FILE *p = popen(cmd, "w");
+	g_free(cmd);
+	if(p == NULL) {
+		fprintf(stderr, "can't open pipe to llc-2.7: %s\n", strerror(errno));
+		exit(EXIT_FAILURE);
+	}
+
+	int n = LLVMWriteBitcodeToFD(mod, fileno(p), 0, 0);
+	if(n != 0) {
+		fprintf(stderr, "bitcode writing failed; removing the file\n");
+		unlink(filename);
+		exit(EXIT_FAILURE);
+	}
+
+	pclose(p);
 }
 
 
@@ -1697,19 +975,6 @@ bool do_idl_file(const char *cppopts, const char *filename)
 		.common_header_name = commonname,
 		.tmpstrchunk = g_string_chunk_new(1024),
 	};
-
-	if(!arg_service_only && !arg_client_only) {
-		print_into(commonname, &print_common_header, &print_ctx);
-	}
-	if(!arg_defs_only && !arg_client_only) {
-		print_into(tmp_f(&print_ctx, "%s-service.c", basename),
-			&print_dispatcher, &print_ctx);
-	}
-	if(!arg_defs_only && !arg_service_only) {
-		print_into(tmp_f(&print_ctx, "%s-client.c", basename),
-			&print_stubs_file, &print_ctx);
-	}
-
 	/* FIXME: make this governed by a sane commandline interface */
 	struct llvm_ctx lc = {
 		.pr = &print_ctx,
@@ -1722,15 +987,19 @@ bool do_idl_file(const char *cppopts, const char *filename)
 	lc.zero = LLVMConstInt(lc.i32t, 0, 0);
 	LLVMTypeRef mapgrant_fields[] = { lc.wordt, lc.wordt };
 	lc.mapgrant = LLVMStructTypeInContext(lc.ctx, mapgrant_fields, 2, 1);
-	LLVMModuleRef mod = make_llvm_service_module(&lc, basename);
-	LLVMDumpModule(mod);
-	char *outmsg = NULL;
-	if(LLVMVerifyModule(mod, LLVMPrintMessageAction, &outmsg)) {
-		fprintf(stderr, "LLVM module verifier complained!\n");
-		abort();
-		LLVMDisposeMessage(outmsg);
+
+	if(!arg_service_only && !arg_client_only) {
+		print_into(commonname, &print_common_header, &print_ctx);
 	}
-	LLVMDisposeModule(mod);
+	if(!arg_defs_only && !arg_client_only) {
+		LLVMModuleRef mod = make_llvm_service_module(&lc, basename);
+		output_llvm_source(mod, tmp_f(&print_ctx, "%s-service.S", basename));
+		LLVMDisposeModule(mod);
+	}
+	if(!arg_defs_only && !arg_service_only) {
+		print_into(tmp_f(&print_ctx, "%s-client.c", basename),
+			&print_stubs_file, &print_ctx);
+	}
 
 	g_string_chunk_free(print_ctx.tmpstrchunk);
 	g_hash_table_destroy(ifaces);

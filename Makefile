@@ -2,7 +2,7 @@
 PKG=libIDL-2.0 glib-2.0
 PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib/pkgconfig
 LLVM_CONFIG=llvm-config-2.7
-LLVM_BITS=backend
+LLVM_BITS=backend bitwriter
 CFLAGS:=-std=gnu99 -Wall -g -O2 -march=native -pthread \
 	$(shell pkg-config --cflags $(PKG)) \
 	$(shell $(LLVM_CONFIG) --cflags $(LLVM_BITS)|./remove-unwanted-opts.pl)
