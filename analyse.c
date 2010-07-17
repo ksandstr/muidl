@@ -191,7 +191,7 @@ static struct message_info *build_message(
 			u->param_dcl = p;
 
 			unsigned long mr_n = 0;
-			if(!get_ul_property(&mr_n, ident, "MR")) return false;
+			if(!get_ul_property(&mr_n, ident, "MR")) goto fail;
 			u->reg_manual = mr_n > 0;
 			if(u->reg_manual) {
 				if(mr_n > 63) {
