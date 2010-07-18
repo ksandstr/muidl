@@ -8,6 +8,12 @@
 [StubPrefix(__countserv)]
 interface Countserv
 {
+	[Label(42)]
+	void hang_in_there(
+		in short what,
+		in long boing,
+		in octet whee);
+
 	/* you may hyperventilate! */
 	[Label(666)]
 	long bump();
@@ -15,6 +21,7 @@ interface Countserv
 	[Label(667)]
 	void set(in long value);
 
+#if 0
 	[Label(668)]
 	void read(out long value);
 
@@ -68,6 +75,7 @@ interface Countserv
 	[Label(679)]
 	void with_inout_sequence(
 		inout something whatevs_dudekins);
+#endif
 };
 
 

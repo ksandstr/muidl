@@ -51,6 +51,22 @@ static bool get_ul_property(
 }
 
 
+static bool op_has_sublabel(IDL_tree prop_node)
+{
+	IDL_tree iface = IDL_get_parent_node(prop_node, IDLN_INTERFACE, NULL);
+	/* exceptions, among other things, can appear outside interfaces.
+	 * fortunately sublabels don't apply to them.
+	 */
+	if(iface == NULL) return false;
+	else {
+		IDL_tree ifprop = IDL_INTERFACE(iface).ident;
+		unsigned long ifacelabel = 0;
+		return get_ul_property(&ifacelabel, ifprop, "IfaceLabel")
+			&& ifacelabel != 0;
+	}
+}
+
+
 static bool get_msg_label(struct message_info *inf, IDL_tree prop_node)
 {
 	unsigned long tagmask = NO_TAGMASK;
@@ -71,9 +87,11 @@ static bool get_msg_label(struct message_info *inf, IDL_tree prop_node)
 		if(get_ul_property(&ifacelabel, ifprop, "IfaceLabel")
 			&& ifacelabel != 0)
 		{
+			assert(op_has_sublabel(prop_node));
 			inf->sublabel = inf->label;
 			inf->label = ifacelabel;
 		} else {
+			assert(!op_has_sublabel(prop_node));
 			inf->sublabel = NO_SUBLABEL;
 		}
 		/* TODO: disallow tagmasks alongside ifacelabels. */
@@ -122,6 +140,68 @@ static int size_in_bits(IDL_tree type)
 }
 
 
+/* the size of a type's encoding in words, when encoded as a single
+ * parameter or member of an array parameter.
+ */
+static int size_in_words(IDL_tree type)
+{
+	switch(IDL_NODE_TYPE(type)) {
+		case IDLN_TYPE_INTEGER:
+			if(IDL_TYPE_INTEGER(type).f_type == IDL_INTEGER_TYPE_LONGLONG
+				&& BITS_PER_WORD == 32)
+			{
+				return 2;
+			} else {
+				return 1;
+			}
+
+		case IDLN_TYPE_FLOAT:
+			/* FIXME */
+			NOTDEFINED(type);
+
+		case IDLN_TYPE_BOOLEAN:
+		case IDLN_TYPE_OCTET:
+		case IDLN_TYPE_CHAR:
+		case IDLN_TYPE_WIDE_CHAR:
+		case IDLN_TYPE_ENUM:
+			return 1;
+
+		case IDLN_NATIVE:
+			if(IS_WORD_TYPE(type) || IS_FPAGE_TYPE(type)
+				|| IS_TIME_TYPE(type))
+			{
+				return 1;
+			} else if(IS_MAPGRANT_TYPE(type)) {
+				return 2;
+			} else {
+				NOTDEFINED(type);
+			}
+
+		case IDLN_TYPE_STRUCT: {
+//			int size = 0;
+			for(IDL_tree cur = IDL_TYPE_STRUCT(type).member_list;
+				cur != NULL;
+				cur = IDL_LIST(cur).next)
+			{
+				IDL_tree data = IDL_LIST(cur).data;
+				fprintf(stderr, "%s: struct member <%s>\n", __func__,
+					IDL_NODE_TYPE_NAME(data));
+			}
+			abort();
+		}
+
+		case IDLN_TYPE_UNION:
+		case IDLN_TYPE_ARRAY:
+			/* TODO */
+			NOTDEFINED(type);
+
+		default:
+			/* sequences, strings, bad things */
+			NOTDEFINED(type);
+	}
+}
+
+
 /* a type's maximum length in bytes. returns negative for unbounded.
  * doesn't include string terminator, since that's not transferred over IPC.
  */
@@ -153,6 +233,66 @@ static int max_size(IDL_tree type)
 }
 
 
+static struct untyped_param *new_untyped(
+	const char *name,
+	IDL_tree type,
+	IDL_tree param,
+	int param_ix)
+{
+	struct untyped_param *u = g_new(struct untyped_param, 1);
+	u->name = name;
+	u->type = type;
+	u->param_dcl = param;
+	u->param_ix = param_ix;
+	u->arg_ix = -1;
+	u->first_reg = 0;
+	u->last_reg = 0;
+	return u;
+}
+
+
+static struct seq_param *new_inline_seq(
+	const char *name,
+	IDL_tree type,
+	IDL_tree subtype,
+	IDL_tree param,
+	int param_ix)
+{
+	IDL_tree bound = IDL_TYPE_SEQUENCE(type).positive_int_const;
+	assert(bound != NULL);
+	int bpe = size_in_bits(subtype), epw = BITS_PER_WORD / bpe,
+		max_words = (IDL_INTEGER(bound).value + epw - 1) / epw;
+	struct seq_param *s = g_new(struct seq_param, 1);
+	s->name = name;
+	s->max_elems = IDL_INTEGER(bound).value;
+	s->param_dcl = param;
+	s->elem_type = subtype;
+	s->bits_per_elem = bpe;
+	s->elems_per_word = epw;
+	s->min_words = 0;
+	s->max_words = max_words;
+	s->param_ix = param_ix;
+	s->arg_ix = -1;
+	return s;
+}
+
+
+static struct long_param *new_long_param(
+	const char *name,
+	IDL_tree type,
+	IDL_tree p,
+	int param_ix)
+{
+	struct long_param *l = g_new(struct long_param, 1);
+	l->name = name;
+	l->type = type;
+	l->param_dcl = p;
+	l->param_ix = param_ix;
+	l->arg_ix = -1;
+	return l;
+}
+
+
 static bool is_bounded_seq(IDL_tree type)
 {
 	return IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE
@@ -168,120 +308,204 @@ static bool is_bounded_seq(IDL_tree type)
 static struct message_info *build_message(
 	IDL_tree return_type,		/* not IDL_PARAM_DCL, therefore separate */
 	const IDL_tree *params,
-	int num_params)
+	int num_params,
+	bool has_sublabel)
 {
 	struct message_info *inf = NULL;
-	GList *untyped = NULL, *seq = NULL,	/* struct [name]_parm * */
-		*_long = NULL;	/* of IDL_PARAM_DCL */
+	GList *untyped = NULL, *seq = NULL,	/* struct [name]_param * */
+		*_long = NULL;	/* struct long_param * */
 
-	/* classify the parameters. */
-	bool explicit_u[64];
-	for(int i=0; i<64; i++) explicit_u[i] = false;
-	unsigned long max_fixreg = 0;
-	int inline_seq_alloc = 0;
+	/* classify parameters and make structures. */
+	/* TODO: handle "return_type"! */
+	int arg_pos = 0;
 	for(int i=0; i<num_params; i++) {
 		IDL_tree p = params[i],
 			type = get_type_spec(IDL_PARAM_DCL(p).param_type_spec),
 			ident = IDL_PARAM_DCL(p).simple_declarator;
 		const char *name = IDL_IDENT(ident).str;
-		if(is_value_type(type)) {
-			struct untyped_param *u = g_new(struct untyped_param, 1);
-			u->name = name;
-			u->type = type;
-			u->param_dcl = p;
-
-			unsigned long mr_n = 0;
-			if(!get_ul_property(&mr_n, ident, "MR")) goto fail;
-			u->reg_manual = mr_n > 0;
-			if(u->reg_manual) {
-				if(mr_n > 63) {
-					fprintf(stderr, "%s: MR(%lu) too large\n", __FUNCTION__,
-						mr_n);
-					goto fail;
-				}
-				if(explicit_u[mr_n]) {
-					fprintf(stderr, "%s: MR(%lu) specified twice\n", __FUNCTION__,
-						mr_n);
-					goto fail;
-				}
-				explicit_u[mr_n] = true;
-				u->first_reg = mr_n;
-				u->last_reg = mr_n;
-				max_fixreg = MAX(max_fixreg, mr_n);
-			} else {
-				u->first_reg = 0;
-				u->last_reg = 0;
-			}
-
+		if(is_rigid_type(NULL, type)) {
+			/* this may include overlong items. */
+			struct untyped_param *u = new_untyped(name, type, p, i);
+			u->arg_ix = arg_pos++;
 			untyped = g_list_prepend(untyped, u);
 		} else if(is_bounded_seq(type)) {
 			IDL_tree subtype = get_type_spec(
-					IDL_TYPE_SEQUENCE(type).simple_type_spec),
-				bound = IDL_TYPE_SEQUENCE(type).positive_int_const;
-			assert(bound != NULL);
-			int epw = BITS_PER_WORD / size_in_bits(subtype),
-				max_words = (IDL_INTEGER(bound).value + epw - 1) / epw;
-			/* FIXME: be smarter about allocating these. there should be a
-			 * proper strategy and a nice policy.
-			 */
-			if(is_value_type(subtype) && inline_seq_alloc + max_words <= 48) {
-				struct seq_param *s = g_new(struct seq_param, 1);
-				s->name = name;
-				s->max_elems = IDL_INTEGER(bound).value;
-				s->param_dcl = p;
-				s->elem_type = subtype;
-				s->bits_per_elem = size_in_bits(s->elem_type);
-				s->elems_per_word = epw;
-				s->min_words = 0;
-				s->max_words = max_words;
-				seq = g_list_prepend(seq, s);
-				inline_seq_alloc += max_words;
-			} else {
-				/* it's a long sequence then. */
-				_long = g_list_prepend(_long, p);
-			}
+				IDL_TYPE_SEQUENCE(type).simple_type_spec);
+			assert(is_rigid_type(NULL, subtype));
+			/* this, too, will include overlong items. */
+			struct seq_param *s = new_inline_seq(name, type, subtype, p, i);
+			s->arg_ix = arg_pos;
+			arg_pos += 2;
+			seq = g_list_prepend(seq, s);
 		} else {
-			/* presume it's a long type or something... */
-			_long = g_list_prepend(_long, p);
+			/* everything else is passed as long items. */
+			struct long_param *l = new_long_param(name, type, p, i);
+			l->arg_ix = arg_pos;
+			arg_pos += 2;
+			_long = g_list_prepend(_long, l);
 		}
 	}
 	untyped = g_list_reverse(untyped);
 	seq = g_list_reverse(seq);
 	_long = g_list_reverse(_long);
 
-	const int num_long = g_list_length(_long);
-	inf = g_malloc(sizeof(struct message_info)
-		+ sizeof(struct long_param) * num_long);
+	/* assign untyped words. also figure out how many typed and untyped words
+	 * we're going to use, before inline sequences are allocated.
+	 */
+	bool reg_in_use[64];
+	for(int i=1; i<64; i++) reg_in_use[i] = false;
+	if(has_sublabel) reg_in_use[1] = true;
+	/* those with explicit MR(%d) specs, first. */
+	for(GList *cur = g_list_first(untyped);
+		cur != NULL;
+		cur = g_list_next(cur))
+	{
+		struct untyped_param *u = cur->data;
+		IDL_tree ident = IDL_PARAM_DCL(u->param_dcl).simple_declarator;
+		unsigned long mr_n = 0;
+		if(!get_ul_property(&mr_n, ident, "MR")) goto fail;
+		u->reg_manual = mr_n > 0;
+		if(!u->reg_manual) continue;
+		if(size_in_words(u->type) > 1) {
+			fprintf(stderr, "%s: mr spec attribute not valid for <%s> (size %d words)\n",
+				__func__, IDL_NODE_TYPE_NAME(u->type), size_in_words(u->type));
+			goto fail;
+		}
+		if(mr_n > 63) {
+			fprintf(stderr, "%s: MR(%lu) too large\n", __FUNCTION__, mr_n);
+			goto fail;
+		}
+		if(mr_n == 1 && has_sublabel) {
+			fprintf(stderr, "%s: can't specify MR(1) with sublabel\n",
+				__func__);
+			goto fail;
+		}
+		if(reg_in_use[mr_n]) {
+			fprintf(stderr, "%s: MR(%lu) specified twice\n", __func__, mr_n);
+			goto fail;
+		}
+		reg_in_use[mr_n] = true;
+		u->first_reg = mr_n;
+		u->last_reg = mr_n;
+	}
+	/* then the non-compound types (since there is no alternative encoding for
+	 * them)
+	 */
+	int next_u = has_sublabel ? 2 : 1, num_compound = 0;
+	for(GList *cur = g_list_first(untyped);
+		cur != NULL;
+		cur = g_list_next(cur))
+	{
+		struct untyped_param *u = cur->data;
+		if(u->reg_manual) continue;
+		if(!is_value_type(u->type)) {
+			num_compound++;
+			continue;
+		}
 
-	/* assign untyped words. */
+		int size = size_in_words(u->type);
+		while(next_u < 64) {
+			int span = 0;
+			while(span < size && next_u + span < 64
+				&& !reg_in_use[next_u + span])
+			{
+				span++;
+			}
+			if(span == size) break;
+			next_u++;
+		}
+		if(next_u == 64) {
+			/* TODO: come up with a better error message. this occurred in the
+			 * fixed part of the message, and therefore is an user error which
+			 * should be explained.
+			 */
+			fprintf(stderr, "%s: untyped item won't fit!\n", __func__);
+			abort();
+		}
+		u->first_reg = next_u;
+		u->last_reg = next_u + size - 1;
+		next_u += size;
+		for(int i=u->first_reg; i<=u->last_reg; i++) {
+			assert(!reg_in_use[i]);
+			reg_in_use[i] = true;
+		}
+	}
+	/* finally those parameters of compound type that we can squeeze in. this
+	 * algorithm is simple for repeatability's sake; a solution to the knapsack
+	 * problem would have to be proven optimal to fit as well. (v2 todo?)
+	 */
+	inf = g_new0(struct message_info, 1);		/* 0'd for g_free() safety */
+	int num_seq = g_list_length(seq), num_long = g_list_length(_long);
+
+	for(GList *cur = g_list_first(untyped), *next;
+		cur != NULL;
+		cur = next)
+	{
+		next = g_list_next(cur);
+		struct untyped_param *u = cur->data;
+		if(u->reg_manual || is_value_type(u->type)) continue;
+		assert(is_rigid_type(NULL, u->type));
+		num_compound--;
+		assert(num_compound >= 0);
+		/* accounts for typed items in the case that the following compound
+		 * items and all inline sequences won't fit, and for long items.
+		 */
+		const int space = 64 - (num_compound + num_seq + num_long) * 2 - next_u,
+			size = size_in_words(u->type);
+		/* first-fit. */
+		int start = has_sublabel ? 2 : 1;
+		while(start + size < space) {
+			int span = 0;
+			while(span < size && start + span < space
+				&& !reg_in_use[start + span])
+			{
+				span++;
+			}
+			if(span == size) break;
+			start++;
+		}
+		if(start + size >= space) {
+			/* can't fit. make into a hat. */
+			struct long_param *l = new_long_param(u->name, u->type,
+				u->param_dcl, u->param_ix);
+			l->arg_ix = arg_pos;
+			arg_pos += 2;
+			_long = g_list_append(_long, l);
+			g_free(u);
+			untyped = g_list_delete_link(untyped, cur);
+		} else {
+			/* place. */
+			u->first_reg = start;
+			u->last_reg = start + size - 1;
+			for(int i=u->first_reg; i<=u->last_reg; i++) {
+				assert(!reg_in_use[i]);
+				reg_in_use[i] = true;
+			}
+		}
+	}
+
 	inf->num_untyped = g_list_length(untyped);
 	inf->untyped = g_new(struct untyped_param *, inf->num_untyped);
-	int next_mr = 1, pos = 0;
-	/* TODO: handle "return_type"! */
+	int pos = 0;
 	for(GList *cur = g_list_first(untyped);
 		cur != NULL;
 		cur = g_list_next(cur))
 	{
 		struct untyped_param *u = cur->data;
 		inf->untyped[pos++] = u;
-		if(u->first_reg != 0 || u->last_reg != 0) continue;
-
-		/* TODO: this doesn't properly account for multi-word value types,
-		 * such as structs that are encoded as untyped words.
-		 */
-		while(next_mr <= 63 && explicit_u[next_mr]) next_mr++;
-		if(next_mr > 63) {
-			fprintf(stderr, "%s: ran out of untyped registers\n",
-				__FUNCTION__);
-			goto fail;
-		}
-		u->first_reg = next_mr;
-		u->last_reg = next_mr;
-		next_mr++;
 	}
-	inf->untyped_words = next_mr - 1;
+	inf->tag_u = has_sublabel ? 1 : 0;
+	for(int i=1; i<64; i++) {
+		if(reg_in_use[i]) inf->tag_u = i;
+	}
 
-	/* allocate inline sequences. */
+
+#if 0
+	/* allocate inline sequences.
+	 * (v2 todo: this, too, is really a knapsack problem. we'd want to get as
+	 * few string transfers as possible. but the algorithm would have to
+	 * provably output the optimal solution.)
+	 */
 	inf->num_inline_seq = g_list_length(seq);
 	inf->seq = g_new(struct seq_param *, inf->num_inline_seq);
 	pos = 0;
@@ -314,12 +538,13 @@ static struct message_info *build_message(
 	/* long types: non-rigid and large structs, strings, wide strings,
 	 * sequences that can't be encoded inline, etc
 	 */
-	inf->num_long = 0;
+	inf->num_long = num_long;
+	inf->long_params = g_new(struct long_param *, num_long);
 	GList *cur = g_list_first(_long);
 	for(int i=0; i<num_long; i++, cur = g_list_next(cur)) {
 		assert(cur != NULL);
-		IDL_tree param = cur->data,
-			type = get_type_spec(IDL_PARAM_DCL(param).param_type_spec),
+		struct long_param *l = cur->data;
+		IDL_tree param = l->param_dcl, type = l->type,
 			decl = IDL_PARAM_DCL(param).simple_declarator;
 
 		struct long_param *p = g_new(struct long_param, 1);
@@ -328,6 +553,7 @@ static struct message_info *build_message(
 		p->param_dcl = param;
 		inf->long_params[inf->num_long++] = p;
 	}
+#endif
 
 	g_list_free(untyped);
 	g_list_free(seq);
@@ -337,9 +563,10 @@ static struct message_info *build_message(
 fail:
 	list_dispose(untyped);
 	list_dispose(seq);
-	g_list_free(_long);
+	list_dispose(_long);
 	g_free(inf->untyped);
 	g_free(inf->seq);
+	g_free(inf->long_params);
 	g_free(inf);
 	return NULL;
 }
@@ -371,10 +598,10 @@ static bool sublabel_bump(struct message_info *req, GError **error_p)
 	assert(req->sublabel != NO_SUBLABEL);
 	assert(IDL_NODE_TYPE(req->node) == IDLN_OP_DCL);
 
-	if(req->untyped_words > 62) {
+	if(req->tag_u > 62) {
 		g_set_error(error_p, 0, 0,
 			"sublabel_bump: message won't fit in 63 words (%d given)",
-			req->untyped_words);
+			req->tag_u);
 		return false;
 	}
 	for(int i=0; i<req->num_untyped; i++) {
@@ -389,12 +616,12 @@ static bool sublabel_bump(struct message_info *req, GError **error_p)
 	for(int i=0; i<req->num_untyped; i++) {
 		struct untyped_param *u = req->untyped[i];
 		/* (untyped_words is a MsgWord offset, therefore +1.) */
-		assert(u->first_reg < req->untyped_words + 1);
-		assert(u->last_reg < req->untyped_words + 1);
+		assert(u->first_reg < req->tag_u + 1);
+		assert(u->last_reg < req->tag_u + 1);
 		u->first_reg++;
 		u->last_reg++;
 	}
-	req->untyped_words++;
+	req->tag_u++;
 
 	return true;
 }
@@ -433,7 +660,7 @@ struct method_info *analyse_op_dcl(
 			pbuf[nparms++] = param;
 		}
 	}
-	inf->request = build_message(NULL, pbuf, nparms);
+	inf->request = build_message(NULL, pbuf, nparms, op_has_sublabel(method));
 	if(inf->request == NULL) goto fail;
 	inf->request->node = method;
 	if(!get_msg_label(inf->request, IDL_OP_DCL(method).ident)) {
@@ -461,7 +688,8 @@ struct method_info *analyse_op_dcl(
 				pbuf[nparms++] = param;
 			}
 		}
-		inf->replies[0] = build_message(return_type, pbuf, nparms);
+		inf->replies[0] = build_message(return_type, pbuf, nparms,
+			op_has_sublabel(method));
 		inf->replies[0]->node = method;
 		inf->replies[0]->label = 0;
 		inf->replies[0]->tagmask = NO_TAGMASK;

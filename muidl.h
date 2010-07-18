@@ -146,8 +146,9 @@ struct untyped_param
 {
 	const char *name;
 	IDL_tree type, param_dcl;
+	int param_ix, arg_ix;
+	int first_reg, last_reg;
 	bool reg_manual;		/* register set with a [MR(n)] attribute */
-	uint8_t first_reg, last_reg;
 };
 
 
@@ -157,6 +158,7 @@ struct seq_param
 	int max_elems, bits_per_elem, elems_per_word;
 	IDL_tree elem_type, param_dcl;
 	int min_words, max_words;
+	int param_ix, arg_ix;
 };
 
 
@@ -164,6 +166,7 @@ struct long_param
 {
 	const char *name;
 	IDL_tree type, param_dcl;
+	int param_ix, arg_ix;
 };
 
 
@@ -182,7 +185,7 @@ struct message_info
 	 */
 	int num_untyped;
 	struct untyped_param **untyped;
-	int untyped_words;		/* MsgWord offset where inline sequences begin */
+	int tag_u;
 
 	/* sequence types that are passed inline. */
 	int num_inline_seq;
@@ -192,7 +195,7 @@ struct message_info
 	 * that are passed as string items.
 	 */
 	int num_long;
-	struct long_param *long_params[];
+	struct long_param **long_params;
 };
 
 #define NO_TAGMASK (~0u)

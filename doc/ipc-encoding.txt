@@ -1,4 +1,32 @@
 
+ENCODING OF THE IN-HALF OF AN IDL OPERATION.
+
+The in-half is comprised of a label, an optional sublabel, and a number (\in
+\nat) of in-parameters and in-halves of inout-parameters.
+
+If a sublabel is specified for an operation, then it will be carried in the
+low 16 bits of MR1 and parameter encoding proceeds from MR2 on.
+
+Parameters are encoded as three groups, each present where applicable: untyped
+words, inline sequences, and long items.
+
+Parameters of basic fixed-length type are always encoded as untyped words.
+Compound types are encoded as untyped words if they would fit alongside the
+other parameters' encodings in the message, and as long types if not.
+
+Sequences of basic fixed-length types may be encoded inline if and only if the
+maximum number of items is known to fit. Inline sequences are encoded with an
+item-count word prefix, except when the last one has items that are encoded
+one per message word; in that case the item-count is computed from the number
+of untyped message registers consumed so far.
+
+Long items are encoded as string transfers, one for each parameter. Simple
+types are carried as a stride-0 C-style array. Compound types are carried as a
+stride-0 array in their (optionally with the __packed__ attribute [v2])
+architecture-specific memory layout. String types are sent without explicit
+zero termination. Transfer length can be read from the string item structure.
+
+
 ENCODING OF PARAMETERS FROM IDL TO IPC.
 
 µIDL encodes operation parameters as types carried over L4.X2 IPC in the

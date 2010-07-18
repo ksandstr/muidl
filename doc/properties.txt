@@ -21,7 +21,8 @@ the L4.X2 protocols. TODO
 For operation parameters:
 
 MR(n) -- force an in-parameter or an out-parameter into a particular message
-word. When applied to inout parameters, equivalent to InMR(n), OutMR(n). TODO
+word. Only valid for single-word fixed-length types. (TODO: When applied to
+inout parameters, equivalent to InMR(n), OutMR(n).)
 
 InMR(n), OutMR(n) -- force an in-out parameter's message words on either side
 of the transfer. TODO

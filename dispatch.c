@@ -567,7 +567,7 @@ static LLVMBasicBlockRef build_op_decode(
 	LLVMTypeRef rv_type = vtable_return_type(ctx, inf->node, &rv_actual);
 
 	ctx->inline_seq_pos = LLVMConstInt(ctx->i32t,
-		inf->request->untyped_words + 1, 0);
+		inf->request->tag_u + 1, 0);
 	LLVMValueRef tag_u_val = build_u_from_tag(ctx, ctx->tag);
 	ctx->tmax = LLVMBuildAdd(ctx->builder,
 		tag_u_val, build_t_from_tag(ctx, ctx->tag), "tmax");
@@ -719,8 +719,7 @@ static LLVMBasicBlockRef build_op_decode(
 	/* FIXME: make sure reply->untyped_words + 1 == mr_pos; otherwise
 	 * cruel overwriting will occur
 	 */
-	ctx->inline_seq_pos = LLVMConstInt(ctx->i32t,
-		reply->untyped_words + 1, 0);
+	ctx->inline_seq_pos = LLVMConstInt(ctx->i32t, reply->tag_u + 1, 0);
 	for(int seq_i=0; seq_i < reply->num_inline_seq; seq_i++) {
 		const struct seq_param *seq = reply->seq[seq_i];
 		int first_arg = first_arg_index(reply->node, seq->param_dcl);

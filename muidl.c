@@ -779,7 +779,7 @@ void print_decode_inline_seqs(
 {
 	if(req->num_inline_seq == 0) return;
 
-	code_f(pr, "int seq_base = %d;", req->untyped_words);
+	code_f(pr, "int seq_base = %d;", req->tag_u);
 	for(int i=0; i<req->num_inline_seq; i++) {
 		struct seq_param *s = req->seq[i];
 		const char *len_lvalue = seq_len_lvalue(pr, s->param_dcl,
