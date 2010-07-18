@@ -304,13 +304,13 @@ static gboolean print_struct_decls(IDL_tree_func_data *tf, gpointer userdata)
 					if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
 						const char *t;
 						if(max_size <= 255) t = "uint8_t";
-					else if(max_size <= 65535) t = "uint16_t";
+						else if(max_size <= 65535) t = "uint16_t";
 						else t = "unsigned";
 						fprintf(of, "\t%s %s_len;\n", t, name);
 					}
-				fprintf(of, "\t%s %s%s%s;\n", typestr, name,
-					is_reserved_word(name) ? "_" : "",
-					suffix != NULL ? suffix : "");
+					fprintf(of, "\t%s %s%s%s;\n", typestr, name,
+						is_reserved_word(name) ? "_" : "",
+						suffix != NULL ? suffix : "");
 				} else {
 					/* TODO */
 					NOTDEFINED(type);
