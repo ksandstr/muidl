@@ -209,12 +209,22 @@ static void vtable_in_param_type(
 			case IDLN_TYPE_STRING:
 				item_type = LLVMInt8TypeInContext(ctx->ctx);
 				break;
+
 			case IDLN_TYPE_WIDE_STRING:
 				/* TODO: get wchar_t size from ABI! */
 				item_type = ctx->i32t;
 				break;
+
+			case IDLN_TYPE_STRUCT:
+			case IDLN_TYPE_ARRAY:
+			case IDLN_TYPE_UNION:
+				/* TODO: handle structs, arrays, unions as types known to
+				 * LLVM
+				 */
+				item_type = LLVMInt8TypeInContext(ctx->ctx);
+				break;
+
 			default:
-				/* TODO: handle structs, arrays, unions */
 				NOTDEFINED(type);
 		}
 		dst[(*pos_p)++] = LLVMPointerType(item_type, 0);

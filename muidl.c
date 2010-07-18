@@ -495,9 +495,11 @@ bool is_rigid_type(IDL_ns ns, IDL_tree type)
 			/* same for wide strings. */
 			return IDL_TYPE_WIDE_STRING(type).positive_int_const != NULL;
 
-		case IDLN_TYPE_UNION:
 		case IDLN_TYPE_ARRAY:
-			/* TODO: is rigid if the element type is, but... */
+			/* is rigid if the element type is. */
+			return is_rigid_type(ns, get_array_type(type));
+
+		case IDLN_TYPE_UNION:
 			NOTDEFINED(type);
 	}
 }
@@ -516,8 +518,18 @@ char *rigid_type(IDL_ns ns, IDL_tree type)
 		case IDLN_TYPE_STRING: return g_strdup("char");
 		case IDLN_TYPE_WIDE_STRING: return g_strdup("wchar_t");
 
+		case IDLN_TYPE_ARRAY: {
+			IDL_tree subtype = get_array_type(type);
+			if(is_value_type(subtype)) return value_type(ns, subtype);
+			else if(is_rigid_type(ns, subtype)) {
+				return rigid_type(ns, subtype);
+			} else {
+				NOTDEFINED(subtype);
+			}
+		}
+
 		case IDLN_TYPE_UNION:
-		case IDLN_TYPE_ARRAY:
+			/* TODO */
 
 		default:
 			NOTDEFINED(type);
@@ -573,7 +585,7 @@ char *in_param_type(IDL_ns ns, IDL_tree tree)
 	switch(IDL_NODE_TYPE(tree)) {
 		case IDLN_TYPE_STRUCT: {
 			char *sname = long_name(ns, tree),
-				*ret = g_strdup_printf("struct %s *", sname);
+				*ret = g_strdup_printf("const struct %s *", sname);
 			g_free(sname);
 			return ret;
 		}
@@ -581,7 +593,13 @@ char *in_param_type(IDL_ns ns, IDL_tree tree)
 		case IDLN_TYPE_STRING: return g_strdup("const char *");
 		case IDLN_TYPE_WIDE_STRING: return g_strdup("const wchar_t *");
 
-		case IDLN_TYPE_ARRAY:
+		case IDLN_TYPE_ARRAY: {
+			char *tname = rigid_type(ns, tree),
+				*ret = g_strdup_printf("const %s *", tname);
+			g_free(tname);
+			return ret;
+		}
+
 		case IDLN_TYPE_UNION:
 			/* TODO */
 

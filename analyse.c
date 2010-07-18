@@ -33,6 +33,8 @@
  * parameter or member of an array parameter.
  */
 static int size_in_words(IDL_tree type);
+static int array_size_in_words(IDL_tree type_array, IDL_tree dcl);
+static int struct_size_in_words(IDL_tree type_struct);
 
 
 /* returns true on success, including property not found (in which case
@@ -109,9 +111,8 @@ static bool get_msg_label(struct message_info *inf, IDL_tree prop_node)
 
 static int size_in_bits(IDL_tree type)
 {
-	assert(is_value_type(type));
+	assert(is_rigid_type(NULL, type));
 
-	int bits;
 	switch(IDL_NODE_TYPE(type)) {
 		case IDLN_TYPE_INTEGER: {
 			static const int8_t bits_per[] = {
@@ -121,28 +122,45 @@ static int size_in_bits(IDL_tree type)
 			};
 			enum IDL_integer_type ityp = IDL_TYPE_INTEGER(type).f_type;
 			assert(ityp >= 0 && ityp < G_N_ELEMENTS(bits_per));
-			bits = bits_per[(int)ityp];
-			break;
+			return bits_per[(int)ityp];
 		}
 
 		case IDLN_NATIVE:
-			assert(IS_WORD_TYPE(type) || IS_FPAGE_TYPE(type));
-			bits = BITS_PER_WORD;
-			break;
+			if(IS_WORD_TYPE(type) || IS_FPAGE_TYPE(type)
+				|| IS_TIME_TYPE(type))
+			{
+				return BITS_PER_WORD;
+			} else if(IS_MAPGRANT_TYPE(type)) {
+				return BITS_PER_WORD * 2;
+			} else {
+				NOTDEFINED(type);
+			}
 
 		case IDLN_TYPE_OCTET:
 		case IDLN_TYPE_CHAR:
-			bits = 8;
-			break;
+			return 8;
 
-		case IDLN_TYPE_BOOLEAN: bits = 1; break;
+		case IDLN_TYPE_BOOLEAN: return 1;
+		case IDLN_TYPE_WIDE_CHAR: return 32;
+
+		case IDLN_TYPE_ARRAY:
+			return BITS_PER_WORD * array_size_in_words(
+				get_array_type(type), type);
+
+		case IDLN_TYPE_STRUCT:
+			/* FIXME: array-member structs are supposed to be bitpacked in v1.
+			 * compute actual bit length like struct_size_in_words() does for
+			 * words.
+			 */
+			return BITS_PER_WORD * struct_size_in_words(type);
+
+		case IDLN_TYPE_ENUM:
+		case IDLN_TYPE_FLOAT:
+			/* TODO */
 
 		default:
-			/* TODO: float, widechar, enum types */
 			NOTDEFINED(type);
 	}
-
-	return bits;
 }
 
 
@@ -242,8 +260,10 @@ static int size_in_words(IDL_tree type)
 		case IDLN_TYPE_STRUCT:
 			return struct_size_in_words(type);
 
-		case IDLN_TYPE_UNION:
 		case IDLN_TYPE_ARRAY:
+			return array_size_in_words(get_array_type(type), type);
+
+		case IDLN_TYPE_UNION:
 			/* TODO */
 			NOTDEFINED(type);
 

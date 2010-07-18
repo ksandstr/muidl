@@ -27,12 +27,17 @@ struct fatcat
 [StubPrefix(__countserv)]
 interface Countserv
 {
-	[Label(42)]
+	[Label(5)]
 	void hang_in_there(
 		in short what,
 		in long boing,
 		in octet whee,
 		in fatcat el_parametro_grande);
+
+	typedef henchman small_crew[5];
+
+	[Label(23)]
+	void personnel_transfer(in small_crew whatsits);
 
 	/* you may hyperventilate! */
 	[Label(666)]
