@@ -76,10 +76,67 @@ LLVMTypeRef llvm_value_type(struct llvm_ctx *ctx, IDL_tree type)
 		case IDLN_TYPE_OCTET:
 		case IDLN_TYPE_CHAR:
 			return LLVMInt8TypeInContext(ctx->ctx);
+
 		case IDLN_TYPE_WIDE_CHAR:
 			return ctx->i32t;
 
 		case IDLN_TYPE_ENUM: return LLVMInt16TypeInContext(ctx->ctx);
+
+		default:
+			NOTDEFINED(type);
+	}
+}
+
+
+static LLVMTypeRef llvm_struct_type(struct llvm_ctx *ctx, IDL_tree type)
+{
+	assert(IDL_NODE_TYPE(type) == IDLN_TYPE_STRUCT);
+	GArray *types = g_array_new(FALSE, FALSE, sizeof(T));
+	for(IDL_tree cur = IDL_TYPE_STRUCT(type).member_list;
+		cur != NULL;
+		cur = IDL_LIST(cur).next)
+	{
+		IDL_tree member = IDL_LIST(cur).data,
+			mtype = get_type_spec(IDL_MEMBER(member).type_spec);
+		T mt = llvm_rigid_type(ctx, mtype);
+		for(IDL_tree dcl_cur = IDL_MEMBER(member).dcls;
+			dcl_cur != NULL;
+			dcl_cur = IDL_LIST(dcl_cur).next)
+		{
+			IDL_tree dcl = IDL_LIST(dcl_cur).data;
+			if(IDL_NODE_TYPE(dcl) == IDLN_IDENT) {
+				g_array_append_val(types, mt);
+			} else if(IDL_NODE_TYPE(dcl) == IDLN_TYPE_ARRAY) {
+				T ary = LLVMArrayType(mt, ARRAY_TYPE_LENGTH(dcl));
+				g_array_append_val(types, ary);
+			} else {
+				NOTDEFINED(member);
+			}
+		}
+	}
+	/* TODO: examine a "packed" attribute */
+	T ret = LLVMStructTypeInContext(ctx->ctx, &g_array_index(types, T, 0),
+		types->len, 0);
+	g_array_free(types, TRUE);
+	return ret;
+}
+
+
+LLVMTypeRef llvm_rigid_type(struct llvm_ctx *ctx, IDL_tree type)
+{
+	if(is_value_type(type)) return llvm_value_type(ctx, type);
+	switch(IDL_NODE_TYPE(type)) {
+		case IDLN_TYPE_STRUCT:
+			return llvm_struct_type(ctx, type);
+
+		case IDLN_TYPE_ARRAY: {
+			IDL_tree mt = get_array_type(type);
+			return LLVMArrayType(llvm_rigid_type(ctx, mt),
+				ARRAY_TYPE_LENGTH(type));
+		}
+
+		case IDLN_TYPE_UNION:
+			/* TODO */
 
 		default:
 			NOTDEFINED(type);

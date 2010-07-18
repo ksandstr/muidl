@@ -51,6 +51,10 @@
 		__n == NULL ? "(nil)" : IDL_tree_type_names[IDL_NODE_TYPE(__n)]; \
 	})
 
+#define ARRAY_TYPE_LENGTH(n) (IDL_INTEGER(IDL_LIST( \
+	IDL_TYPE_ARRAY((n)).size_list).data).value)
+
+
 /* predicates for word, Fpage, MapGrantItem, unsigned short types */
 #define IS_MAPGRANT_TYPE(t) (IDL_NODE_TYPE((t)) == IDLN_NATIVE \
 	&& strcmp(NATIVE_NAME((t)), "l4_mapgrantitem_t") == 0)
@@ -485,6 +489,7 @@ extern LLVMValueRef build_encode_inline_sequence(
 /* from types.c */
 
 extern LLVMTypeRef llvm_value_type(struct llvm_ctx *ctx, IDL_tree type);
+extern LLVMTypeRef llvm_rigid_type(struct llvm_ctx *ctx, IDL_tree type);
 
 /* when @ctyp is a value type, @dst[0] is assigned to the value.
  * when @ctyp is a rigid type, @dst[0] must be a pointer to the appropriate

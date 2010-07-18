@@ -204,30 +204,12 @@ static void vtable_in_param_type(
 	if(is_value_type(type)) {
 		dst[(*pos_p)++] = llvm_value_type(ctx, type);
 	} else if(is_rigid_type(ctx->ns, type)) {
-		LLVMTypeRef item_type;
-		switch(IDL_NODE_TYPE(type)) {
-			case IDLN_TYPE_STRING:
-				item_type = LLVMInt8TypeInContext(ctx->ctx);
-				break;
-
-			case IDLN_TYPE_WIDE_STRING:
-				/* TODO: get wchar_t size from ABI! */
-				item_type = ctx->i32t;
-				break;
-
-			case IDLN_TYPE_STRUCT:
-			case IDLN_TYPE_ARRAY:
-			case IDLN_TYPE_UNION:
-				/* TODO: handle structs, arrays, unions as types known to
-				 * LLVM
-				 */
-				item_type = LLVMInt8TypeInContext(ctx->ctx);
-				break;
-
-			default:
-				NOTDEFINED(type);
-		}
-		dst[(*pos_p)++] = LLVMPointerType(item_type, 0);
+		dst[(*pos_p)++] = LLVMPointerType(llvm_rigid_type(ctx, type), 0);
+	} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_STRING) {
+		dst[(*pos_p)++] = LLVMInt8TypeInContext(ctx->ctx);
+	} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_WIDE_STRING) {
+		/* TODO: get wchar_t size from ABI! */
+		dst[(*pos_p)++] = ctx->i32t;
 	} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
 		IDL_tree seqtype = get_type_spec(
 			IDL_TYPE_SEQUENCE(type).simple_type_spec);
