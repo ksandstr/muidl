@@ -282,6 +282,9 @@ extern bool is_rigid_type(IDL_ns ns, IDL_tree type);
 extern IDL_tree get_type_spec(IDL_tree node)
 	__attribute__((pure));
 
+/* find the type declaration of an IDL_ARRAY_TYPE. */
+extern IDL_tree get_array_type(IDL_tree type);
+
 /* is this IDLN_EXCEPT_DCL a NegativeReturn exception? */
 extern bool is_negs_exn(IDL_tree except_dcl);
 

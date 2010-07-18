@@ -456,6 +456,30 @@ static bool is_struct_rigid(IDL_ns ns, IDL_tree type)
 }
 
 
+IDL_tree get_array_type(IDL_tree type)
+{
+	assert(IDL_NODE_TYPE(type) == IDLN_TYPE_ARRAY);
+	IDL_tree parent = type->up;
+	while(parent != NULL && IDL_NODE_TYPE(parent) == IDLN_LIST) {
+		parent = parent->up;
+	}
+	if(parent == NULL) {
+		fprintf(stderr, "%s: array without parent? what.\n", __func__);
+		abort();
+	}
+	switch(IDL_NODE_TYPE(parent)) {
+		case IDLN_TYPE_DCL:
+			return get_type_spec(IDL_TYPE_DCL(parent).type_spec);
+
+		default:
+			/* FIXME where the node type is something that declares typed
+			 * members.
+			 */
+			NOTDEFINED(parent);
+	}
+}
+
+
 bool is_rigid_type(IDL_ns ns, IDL_tree type)
 {
 	if(type == NULL) return false;	/* void is not a rigid type either. */
