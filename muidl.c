@@ -44,7 +44,8 @@
 /* command-line arguments */
 gboolean arg_verbose = FALSE;
 static gboolean arg_version = FALSE, arg_verbose_idl = FALSE,
-	arg_defs_only = FALSE, arg_client_only = FALSE, arg_service_only = FALSE;
+	arg_defs_only = FALSE, arg_client_only = FALSE, arg_service_only = FALSE,
+	arg_dump_llvm = FALSE;
 static gchar **arg_defines = NULL, **arg_idl_files = NULL,
 	**arg_include_paths = NULL, *arg_dest_path = NULL;
 
@@ -947,6 +948,9 @@ static LLVMModuleRef make_llvm_service_module(
 		abort();
 		LLVMDisposeMessage(outmsg);
 	}
+	if(arg_dump_llvm) {
+		LLVMDumpModule(mod);
+	}
 
 	ctx->module = NULL;
 	return mod;
@@ -1063,6 +1067,8 @@ static void parse_cmdline(int argc, char *argv[])
 		  &arg_include_paths, "add PATH to preprocessor search list", "PATH" },
 		{ "destination-path", 'd', 0, G_OPTION_ARG_STRING,
 		  &arg_dest_path, "produce files in PATH", "PATH" },
+		{ "dump-llvm", 0, 0, G_OPTION_ARG_NONE, &arg_dump_llvm,
+		  "dump LLVM assembly to stderr (for debugging)", NULL },
 		{ "defs-only", 0, 0, G_OPTION_ARG_NONE, &arg_defs_only,
 		  "only produce `-defs.h'", NULL },
 		{ "client-only", 0, 0, G_OPTION_ARG_NONE, &arg_client_only,
