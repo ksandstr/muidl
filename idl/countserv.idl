@@ -5,6 +5,25 @@
 #include <posix-base.idl>
 
 
+struct henchman
+{
+	octet first, second;
+	short third, fourth;
+	long fifth, sixth;
+	char seventh, eigth;
+	octet surprise[9];
+};
+
+struct fatcat
+{
+	long was_the_year;
+	long long a_big_thing;
+	short stuff;
+	octet stream;
+	henchman bub, bob;
+};
+
+
 [StubPrefix(__countserv)]
 interface Countserv
 {
@@ -12,7 +31,8 @@ interface Countserv
 	void hang_in_there(
 		in short what,
 		in long boing,
-		in octet whee);
+		in octet whee,
+		in fatcat el_parametro_grande);
 
 	/* you may hyperventilate! */
 	[Label(666)]

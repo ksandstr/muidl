@@ -29,6 +29,12 @@
 #include "muidl.h"
 
 
+/* the size of a type's encoding in words, when encoded as a single
+ * parameter or member of an array parameter.
+ */
+static int size_in_words(IDL_tree type);
+
+
 /* returns true on success, including property not found (in which case
  * *value_p is not modified).
  */
@@ -140,9 +146,65 @@ static int size_in_bits(IDL_tree type)
 }
 
 
-/* the size of a type's encoding in words, when encoded as a single
- * parameter or member of an array parameter.
+static int array_size_in_words(IDL_tree type, IDL_tree dcl)
+{
+	IDL_tree size_list = IDL_TYPE_ARRAY(dcl).size_list;
+	assert(IDL_list_length(size_list) == 1);
+
+	int len = IDL_INTEGER(IDL_LIST(size_list).data).value,
+		sib = size_in_bits(type);
+	if(sib <= BITS_PER_WORD) {
+		/* short types. */
+		int epw = BITS_PER_WORD / sib;
+		assert(epw > 0);
+		return (len + epw - 1) / epw;
+	} else {
+		/* long types. */
+		return len * size_in_words(type);
+	}
+}
+
+
+/* a struct's size in words. see size_in_words() for explanation.
+ *
+ * this assumes the struct's members aren't encoded to minimize overhead (which
+ * is a v2 feature).
  */
+static int struct_size_in_words(IDL_tree type)
+{
+	assert(IDL_NODE_TYPE(type) == IDLN_TYPE_STRUCT);
+
+	/* (optimization: could cache the result by repo id, since this function
+	 * will likely be invoked a few times for each of the known structs.)
+	 */
+	int size = 0;
+	for(IDL_tree cur = IDL_TYPE_STRUCT(type).member_list;
+		cur != NULL;
+		cur = IDL_LIST(cur).next)
+	{
+		IDL_tree data = IDL_LIST(cur).data;
+		assert(IDL_NODE_TYPE(data) == IDLN_MEMBER);
+		IDL_tree mtype = get_type_spec(IDL_MEMBER(data).type_spec);
+		for(IDL_tree dcl_cur = IDL_MEMBER(data).dcls;
+			dcl_cur != NULL;
+			dcl_cur = IDL_LIST(dcl_cur).next)
+		{
+			IDL_tree dcl = IDL_LIST(dcl_cur).data;
+			if(IDL_NODE_TYPE(dcl) == IDLN_IDENT) size += size_in_words(mtype);
+			else if(IDL_NODE_TYPE(dcl) == IDLN_TYPE_ARRAY) {
+				size += array_size_in_words(mtype, dcl);
+			} else {
+				NOTDEFINED(dcl);
+			}
+		}
+	}
+	fprintf(stderr, "%s: total size of `%s' is %d words.\n",
+		__func__, IDL_IDENT(IDL_TYPE_STRUCT(type).ident).repo_id,
+		size);
+	return size;
+}
+
+
 static int size_in_words(IDL_tree type)
 {
 	switch(IDL_NODE_TYPE(type)) {
@@ -177,18 +239,8 @@ static int size_in_words(IDL_tree type)
 				NOTDEFINED(type);
 			}
 
-		case IDLN_TYPE_STRUCT: {
-//			int size = 0;
-			for(IDL_tree cur = IDL_TYPE_STRUCT(type).member_list;
-				cur != NULL;
-				cur = IDL_LIST(cur).next)
-			{
-				IDL_tree data = IDL_LIST(cur).data;
-				fprintf(stderr, "%s: struct member <%s>\n", __func__,
-					IDL_NODE_TYPE_NAME(data));
-			}
-			abort();
-		}
+		case IDLN_TYPE_STRUCT:
+			return struct_size_in_words(type);
 
 		case IDLN_TYPE_UNION:
 		case IDLN_TYPE_ARRAY:
