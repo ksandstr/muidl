@@ -104,6 +104,16 @@
 #define TIMEOUT_SEND (1 << 0)
 #define TIMEOUT_RECV (1 << 1)
 
+/* for fewer slip-ups in list handling.
+ *
+ * NOTE that this is not robust against modification from inside the list;
+ * instead, accumulate a bunch of nodes and delete them afterward.
+ */
+#define GLIST_FOREACH(__name, list) \
+	for(GList *__name = g_list_first((list)); \
+		__name != NULL; \
+		__name = g_list_next(__name))
+
 
 struct print_ctx
 {
@@ -146,31 +156,35 @@ struct llvm_ctx
 };
 
 
-struct untyped_param
-{
-	const char *name;
-	IDL_tree type, param_dcl;
-	int param_ix, arg_ix;
-	int first_reg, last_reg;
-	bool reg_manual;		/* register set with a [MR(n)] attribute */
+enum msg_param_kind {
+	P_UNTYPED,
+	P_SEQ,
+	P_LONG,
 };
 
 
-struct seq_param
+struct msg_param
 {
 	const char *name;
-	int max_elems, bits_per_elem, elems_per_word;
-	IDL_tree elem_type, param_dcl;
-	int min_words, max_words;
+	IDL_tree param_dcl;
 	int param_ix, arg_ix;
-};
+	enum msg_param_kind kind;
 
-
-struct long_param
-{
-	const char *name;
-	IDL_tree type, param_dcl;
-	int param_ix, arg_ix;
+	union {
+		struct {
+			IDL_tree type;
+			int first_reg, last_reg;
+			bool reg_manual;
+		} untyped;
+		struct {
+			IDL_tree elem_type;
+			int max_elems, bits_per_elem, elems_per_word;
+			int min_words, max_words;
+		} seq;
+		struct {
+			IDL_tree type;
+		} _long;
+	} X;
 };
 
 
@@ -180,6 +194,8 @@ struct message_info
 	uint16_t label;
 	uint32_t tagmask;		/* tag mask, or NO_TAGMASK if not set */
 	uint32_t sublabel;		/* MR1 label, or NO_SUBLABEL if not applicable */
+	int tag_u;				/* before inline sequences */
+	int tag_t;
 
 	IDL_tree node;			/* IDL_{EXCEPT,OP}_DCL */
 
@@ -187,19 +203,15 @@ struct message_info
 	 * types such as constant-length structs that are encoded as words, or
 	 * arrays of word-packable types.
 	 */
-	int num_untyped;
-	struct untyped_param **untyped;
-	int tag_u;
+	GList *untyped;
 
 	/* sequence types that are passed inline. */
-	int num_inline_seq;
-	struct seq_param **seq;
+	GList *seq;
 
 	/* other things (long sequences, long arrays, variable-length struct types)
 	 * that are passed as string items.
 	 */
-	int num_long;
-	struct long_param **long_params;
+	GList *_long;
 };
 
 #define NO_TAGMASK (~0u)
@@ -470,7 +482,7 @@ extern LLVMValueRef build_decode_inline_sequence(
 	struct llvm_ctx *ctx,
 	LLVMValueRef *dst,
 	int *dst_pos_p,
-	const struct seq_param *seq,
+	const struct msg_param *seq,
 	LLVMValueRef upos,		/* i32 # of first unclaimed u-word */
 	bool is_last,
 	LLVMValueRef errval_phi,	/* adds incoming of -errno */
@@ -481,7 +493,7 @@ extern LLVMValueRef build_encode_inline_sequence(
 	struct llvm_ctx *ctx,
 	LLVMValueRef mem,
 	LLVMValueRef lenptr,
-	const struct seq_param *seq,
+	const struct msg_param *seq,
 	LLVMValueRef upos,
 	bool is_last);
 

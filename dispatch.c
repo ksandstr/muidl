@@ -348,14 +348,11 @@ static LLVMBasicBlockRef get_msgerr_bb(struct llvm_ctx *ctx)
 }
 
 
-static struct untyped_param *find_untyped(
-	const struct message_info *msg,
-	IDL_tree node)
+static struct msg_param *find_pdecl(GList *list, IDL_tree pdecl)
 {
-	for(int i=0; i<msg->num_untyped; i++) {
-		if(msg->untyped[i]->param_dcl == node) {
-			return msg->untyped[i];
-		}
+	GLIST_FOREACH(cur, list) {
+		struct msg_param *p = cur->data;
+		if(p->param_dcl == pdecl) return p;
 	}
 	return NULL;
 }
@@ -371,24 +368,15 @@ static void emit_in_param(
 {
 	const struct message_info *req = inf->request;
 
-	/* TODO: repair the untyped/seq/long param thing; they should not
-	 * be flattened out by kind like that.
-	 */
-	struct untyped_param *u = find_untyped(req, pdecl);
+	struct msg_param *u = find_pdecl(req->untyped, pdecl);
 	if(u != NULL) {
 		build_read_ipc_parameter(ctx, &args[(*arg_pos_p)++],
-			u->type, u->first_reg);
+			u->X.untyped.type, u->X.untyped.first_reg);
 		return;
 	}
 
 	/* inline sequence? */
-	const struct seq_param *seq = NULL;
-	for(int i=0; i < req->num_inline_seq; i++) {
-		if(req->seq[i]->param_dcl == pdecl) {
-			seq = req->seq[i];
-			break;
-		}
-	}
+	struct msg_param *seq = find_pdecl(req->seq, pdecl);
 	if(seq != NULL) {
 		/* this only works if inline sequences appear as parameters to this
 		 * function in the same order as they were in IDL. if not,
@@ -397,21 +385,22 @@ static void emit_in_param(
 		LLVMBasicBlockRef err_bb = get_msgerr_bb(ctx);
 		LLVMValueRef new_upos = build_decode_inline_sequence(ctx,
 			args, arg_pos_p, seq, ctx->inline_seq_pos,
-			seq == req->seq[req->num_inline_seq - 1],
+			seq == g_list_last(req->seq)->data,
 			ctx->fncall_phi, err_bb);
 		ctx->inline_seq_pos = new_upos;
 		return;
 	}
 
 	/* long parameter? */
-	const struct long_param *lp = NULL;
-	int lp_offset;
-	for(int i=0; i < req->num_long; i++) {
-		if(req->long_params[i]->param_dcl == pdecl) {
-			lp = req->long_params[i];
-			lp_offset = i;
+	struct msg_param *lp = NULL;
+	int lp_offset = 0;
+	GLIST_FOREACH(cur, req->_long) {
+		struct msg_param *p = cur->data;
+		if(p->param_dcl == pdecl) {
+			lp = p;
 			break;
 		}
+		lp_offset++;
 	}
 	if(lp != NULL) {
 		assert(stritems != NULL);
@@ -420,6 +409,7 @@ static void emit_in_param(
 		 * msgerr block if it's not. (the length function returns tpos > tmax +
 		 * 1 to indicate this.)
 		 */
+		IDL_tree type = lp->X._long.type;
 		/* TODO: get EINVAL from µiX header rather than <errno.h> */
 		LLVMValueRef einval = LLVMConstInt(ctx->i32t, -EINVAL, 0),
 			tmax_plus_one = LLVMBuildAdd(ctx->builder, ctx->tmax,
@@ -444,7 +434,7 @@ static void emit_in_param(
 
 		/* the actual sequence decode. */
 		LLVMPositionBuilderAtEnd(ctx->builder, cont_bb);
-		switch(IDL_NODE_TYPE(lp->type)) {
+		switch(IDL_NODE_TYPE(type)) {
 			case IDLN_TYPE_STRING: {
 				/* <i8 *> is exactly what we need. */
 				args[(*arg_pos_p)++] = stritems[lp_offset].memptr;
@@ -459,7 +449,7 @@ static void emit_in_param(
 			case IDLN_TYPE_SEQUENCE: {
 				/* two arguments. */
 				IDL_tree typ = get_type_spec(
-					IDL_TYPE_SEQUENCE(lp->type).simple_type_spec);
+					IDL_TYPE_SEQUENCE(type).simple_type_spec);
 				/* TODO: use a llvm_rigid_type() instead! */
 				LLVMTypeRef itemtype = llvm_value_type(ctx, typ);
 				LLVMValueRef ptr = LLVMBuildPointerCast(ctx->builder,
@@ -483,7 +473,7 @@ static void emit_in_param(
 				/* TODO */
 
 			default:
-				NOTDEFINED(lp->type);
+				NOTDEFINED(type);
 		}
 		return;
 	}
@@ -571,8 +561,8 @@ static LLVMBasicBlockRef build_op_decode(
 		tag_u_val, build_t_from_tag(ctx, ctx->tag), "tmax");
 	ctx->tpos = LLVMBuildAdd(ctx->builder, LLVMConstInt(ctx->i32t, 1, 0),
 		tag_u_val, "tpos.initial");
-	const int num_args_max = 1 + req->num_untyped
-		+ req->num_inline_seq * 2 + req->num_long * 2;
+	const int num_args_max = g_list_length(req->untyped) + 1
+		+ 2 * g_list_length(req->seq) + 2 * g_list_length(req->_long);
 	LLVMValueRef args[num_args_max], retvalptr = NULL;
 	int arg_pos = 0;
 	if(inf->return_type != NULL && !rv_actual) {
@@ -718,13 +708,13 @@ static LLVMBasicBlockRef build_op_decode(
 	 * cruel overwriting will occur
 	 */
 	ctx->inline_seq_pos = LLVMConstInt(ctx->i32t, reply->tag_u + 1, 0);
-	for(int seq_i=0; seq_i < reply->num_inline_seq; seq_i++) {
-		const struct seq_param *seq = reply->seq[seq_i];
+	GLIST_FOREACH(cur, reply->seq) {
+		const struct msg_param *seq = cur->data;
 		int first_arg = first_arg_index(reply->node, seq->param_dcl);
 		assert(first_arg >= 0);
 		ctx->inline_seq_pos = build_encode_inline_sequence(ctx,
 			args[first_arg], args[first_arg + 1], seq,
-			ctx->inline_seq_pos, seq_i + 1 == reply->num_inline_seq);
+			ctx->inline_seq_pos, g_list_next(cur) == NULL);
 	}
 
 	/* TODO: encode typed words (long & complex sequences, strings, wide

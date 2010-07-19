@@ -305,25 +305,26 @@ static int max_size(IDL_tree type)
 }
 
 
-static struct untyped_param *new_untyped(
+static struct msg_param *new_untyped(
 	const char *name,
 	IDL_tree type,
 	IDL_tree param,
 	int param_ix)
 {
-	struct untyped_param *u = g_new(struct untyped_param, 1);
+	struct msg_param *u = g_new0(struct msg_param, 1);
+	u->kind = P_UNTYPED;
 	u->name = name;
-	u->type = type;
 	u->param_dcl = param;
 	u->param_ix = param_ix;
 	u->arg_ix = -1;
-	u->first_reg = 0;
-	u->last_reg = 0;
+	u->X.untyped.type = type;
+	u->X.untyped.first_reg = 0;
+	u->X.untyped.last_reg = 0;
 	return u;
 }
 
 
-static struct seq_param *new_inline_seq(
+static struct msg_param *new_inline_seq(
 	const char *name,
 	IDL_tree type,
 	IDL_tree subtype,
@@ -334,33 +335,35 @@ static struct seq_param *new_inline_seq(
 	assert(bound != NULL);
 	int bpe = size_in_bits(subtype), epw = BITS_PER_WORD / bpe,
 		max_words = (IDL_INTEGER(bound).value + epw - 1) / epw;
-	struct seq_param *s = g_new(struct seq_param, 1);
+	struct msg_param *s = g_new0(struct msg_param, 1);
+	s->kind = P_SEQ;
 	s->name = name;
-	s->max_elems = IDL_INTEGER(bound).value;
 	s->param_dcl = param;
-	s->elem_type = subtype;
-	s->bits_per_elem = bpe;
-	s->elems_per_word = epw;
-	s->min_words = 0;
-	s->max_words = max_words;
 	s->param_ix = param_ix;
 	s->arg_ix = -1;
+	s->X.seq.max_elems = IDL_INTEGER(bound).value;
+	s->X.seq.elem_type = subtype;
+	s->X.seq.bits_per_elem = bpe;
+	s->X.seq.elems_per_word = epw;
+	s->X.seq.min_words = 0;
+	s->X.seq.max_words = max_words;
 	return s;
 }
 
 
-static struct long_param *new_long_param(
+static struct msg_param *new_long_param(
 	const char *name,
 	IDL_tree type,
 	IDL_tree p,
 	int param_ix)
 {
-	struct long_param *l = g_new(struct long_param, 1);
+	struct msg_param *l = g_new0(struct msg_param, 1);
+	l->kind = P_LONG;
 	l->name = name;
-	l->type = type;
 	l->param_dcl = p;
 	l->param_ix = param_ix;
 	l->arg_ix = -1;
+	l->X._long.type = type;
 	return l;
 }
 
@@ -384,8 +387,7 @@ static struct message_info *build_message(
 	bool has_sublabel)
 {
 	struct message_info *inf = NULL;
-	GList *untyped = NULL, *seq = NULL,	/* struct [name]_param * */
-		*_long = NULL;	/* struct long_param * */
+	GList *untyped = NULL, *seq = NULL, *_long = NULL;	/* <struct msg_param *> */
 
 	/* classify parameters and make structures. */
 	/* TODO: handle "return_type"! */
@@ -397,7 +399,7 @@ static struct message_info *build_message(
 		const char *name = IDL_IDENT(ident).str;
 		if(is_rigid_type(NULL, type)) {
 			/* this may include overlong items. */
-			struct untyped_param *u = new_untyped(name, type, p, i);
+			struct msg_param *u = new_untyped(name, type, p, i);
 			u->arg_ix = arg_pos++;
 			untyped = g_list_prepend(untyped, u);
 		} else if(is_bounded_seq(type)) {
@@ -405,13 +407,13 @@ static struct message_info *build_message(
 				IDL_TYPE_SEQUENCE(type).simple_type_spec);
 			assert(is_rigid_type(NULL, subtype));
 			/* this, too, will include overlong items. */
-			struct seq_param *s = new_inline_seq(name, type, subtype, p, i);
+			struct msg_param *s = new_inline_seq(name, type, subtype, p, i);
 			s->arg_ix = arg_pos;
 			arg_pos += 2;
 			seq = g_list_prepend(seq, s);
 		} else {
 			/* everything else is passed as long items. */
-			struct long_param *l = new_long_param(name, type, p, i);
+			struct msg_param *l = new_long_param(name, type, p, i);
 			l->arg_ix = arg_pos;
 			arg_pos += 2;
 			_long = g_list_prepend(_long, l);
@@ -428,19 +430,17 @@ static struct message_info *build_message(
 	for(int i=1; i<64; i++) reg_in_use[i] = false;
 	if(has_sublabel) reg_in_use[1] = true;
 	/* those with explicit MR(%d) specs, first. */
-	for(GList *cur = g_list_first(untyped);
-		cur != NULL;
-		cur = g_list_next(cur))
-	{
-		struct untyped_param *u = cur->data;
-		IDL_tree ident = IDL_PARAM_DCL(u->param_dcl).simple_declarator;
+	GLIST_FOREACH(cur, untyped) {
+		struct msg_param *u = cur->data;
+		IDL_tree ident = IDL_PARAM_DCL(u->param_dcl).simple_declarator,
+			type = u->X.untyped.type;
 		unsigned long mr_n = 0;
 		if(!get_ul_property(&mr_n, ident, "MR")) goto fail;
-		u->reg_manual = mr_n > 0;
-		if(!u->reg_manual) continue;
-		if(size_in_words(u->type) > 1) {
+		u->X.untyped.reg_manual = mr_n > 0;
+		if(mr_n == 0) continue;
+		if(size_in_words(type) > 1) {
 			fprintf(stderr, "%s: mr spec attribute not valid for <%s> (size %d words)\n",
-				__func__, IDL_NODE_TYPE_NAME(u->type), size_in_words(u->type));
+				__func__, IDL_NODE_TYPE_NAME(type), size_in_words(type));
 			goto fail;
 		}
 		if(mr_n > 63) {
@@ -457,25 +457,23 @@ static struct message_info *build_message(
 			goto fail;
 		}
 		reg_in_use[mr_n] = true;
-		u->first_reg = mr_n;
-		u->last_reg = mr_n;
+		u->X.untyped.first_reg = mr_n;
+		u->X.untyped.last_reg = mr_n;
 	}
 	/* then the non-compound types (since there is no alternative encoding for
 	 * them)
 	 */
 	int next_u = has_sublabel ? 2 : 1, num_compound = 0;
-	for(GList *cur = g_list_first(untyped);
-		cur != NULL;
-		cur = g_list_next(cur))
-	{
-		struct untyped_param *u = cur->data;
-		if(u->reg_manual) continue;
-		if(!is_value_type(u->type)) {
+	GLIST_FOREACH(cur, untyped) {
+		struct msg_param *u = cur->data;
+		if(u->X.untyped.reg_manual) continue;
+		IDL_tree type = u->X.untyped.type;
+		if(!is_value_type(type)) {
 			num_compound++;
 			continue;
 		}
 
-		int size = size_in_words(u->type);
+		int size = size_in_words(type);
 		while(next_u < 64) {
 			int span = 0;
 			while(span < size && next_u + span < 64
@@ -494,10 +492,10 @@ static struct message_info *build_message(
 			fprintf(stderr, "%s: untyped item won't fit!\n", __func__);
 			abort();
 		}
-		u->first_reg = next_u;
-		u->last_reg = next_u + size - 1;
+		u->X.untyped.first_reg = next_u;
+		u->X.untyped.last_reg = next_u + size - 1;
 		next_u += size;
-		for(int i=u->first_reg; i<=u->last_reg; i++) {
+		for(int i=u->X.untyped.first_reg; i<=u->X.untyped.last_reg; i++) {
 			assert(!reg_in_use[i]);
 			reg_in_use[i] = true;
 		}
@@ -509,21 +507,19 @@ static struct message_info *build_message(
 	inf = g_new0(struct message_info, 1);		/* 0'd for g_free() safety */
 	int num_seq = g_list_length(seq), num_long = g_list_length(_long);
 
-	for(GList *cur = g_list_first(untyped), *next;
-		cur != NULL;
-		cur = next)
-	{
-		next = g_list_next(cur);
-		struct untyped_param *u = cur->data;
-		if(u->reg_manual || is_value_type(u->type)) continue;
-		assert(is_rigid_type(NULL, u->type));
+	GList *untyped_remove = NULL;
+	GLIST_FOREACH(cur, untyped) {
+		struct msg_param *u = cur->data;
+		IDL_tree type = u->X.untyped.type;
+		if(u->X.untyped.reg_manual || is_value_type(type)) continue;
+		assert(is_rigid_type(NULL, type));
 		num_compound--;
 		assert(num_compound >= 0);
 		/* accounts for typed items in the case that the following compound
 		 * items and all inline sequences won't fit, and for long items.
 		 */
 		const int space = 64 - (num_compound + num_seq + num_long) * 2 - next_u,
-			size = size_in_words(u->type);
+			size = size_in_words(type);
 		/* first-fit. */
 		int start = has_sublabel ? 2 : 1;
 		while(start + size < space) {
@@ -538,36 +534,31 @@ static struct message_info *build_message(
 		}
 		if(start + size >= space) {
 			/* can't fit. make into a hat. */
-			struct long_param *l = new_long_param(u->name, u->type,
+			struct msg_param *l = new_long_param(u->name, type,
 				u->param_dcl, u->param_ix);
 			l->arg_ix = arg_pos;
 			arg_pos += 2;
 			_long = g_list_append(_long, l);
 			g_free(u);
-			untyped = g_list_delete_link(untyped, cur);
+			untyped_remove = g_list_prepend(untyped_remove, cur);
 		} else {
 			/* place. */
-			u->first_reg = start;
-			u->last_reg = start + size - 1;
-			for(int i=u->first_reg; i<=u->last_reg; i++) {
+			u->X.untyped.first_reg = start;
+			u->X.untyped.last_reg = start + size - 1;
+			for(int i=u->X.untyped.first_reg; i<=u->X.untyped.last_reg; i++) {
 				assert(!reg_in_use[i]);
 				reg_in_use[i] = true;
 			}
 		}
 	}
-
-	inf->num_untyped = g_list_length(untyped);
-	inf->untyped = g_new(struct untyped_param *, inf->num_untyped);
-	int pos = 0;
-	for(GList *cur = g_list_first(untyped);
-		cur != NULL;
-		cur = g_list_next(cur))
-	{
-		struct untyped_param *u = cur->data;
-		inf->untyped[pos++] = u;
+	GLIST_FOREACH(c, untyped_remove) {
+		untyped = g_list_delete_link(untyped, c->data);
 	}
+	g_list_free(untyped_remove);
+
+	inf->untyped = untyped;
 	inf->tag_u = has_sublabel ? 1 : 0;
-	for(int i=1; i<64; i++) {
+	for(int i = inf->tag_u + 1; i < 64; i++) {
 		if(reg_in_use[i]) inf->tag_u = i;
 	}
 
@@ -627,19 +618,10 @@ static struct message_info *build_message(
 	}
 #endif
 
-	g_list_free(untyped);
-	g_list_free(seq);
-	g_list_free(_long);
 	return inf;
 
 fail:
-	list_dispose(untyped);
-	list_dispose(seq);
-	list_dispose(_long);
-	g_free(inf->untyped);
-	g_free(inf->seq);
-	g_free(inf->long_params);
-	g_free(inf);
+	free_message_info(inf);
 	return NULL;
 }
 
@@ -676,22 +658,24 @@ static bool sublabel_bump(struct message_info *req, GError **error_p)
 			req->tag_u);
 		return false;
 	}
-	for(int i=0; i<req->num_untyped; i++) {
-		struct untyped_param *u = req->untyped[i];
-		if(u->reg_manual && (u->first_reg == 0 || u->last_reg == 0)) {
+	GLIST_FOREACH(cur, req->untyped) {
+		struct msg_param *u = cur->data;
+		if(u->X.untyped.reg_manual
+			&& (u->X.untyped.first_reg == 0 || u->X.untyped.last_reg == 0))
+		{
 			g_set_error(error_p, 0, 0,
 				"sublabel_bump: register 0 assigned manually");
 			return false;
 		}
 	}
 
-	for(int i=0; i<req->num_untyped; i++) {
-		struct untyped_param *u = req->untyped[i];
+	GLIST_FOREACH(cur, req->untyped) {
+		struct msg_param *u = cur->data;
 		/* (untyped_words is a MsgWord offset, therefore +1.) */
-		assert(u->first_reg < req->tag_u + 1);
-		assert(u->last_reg < req->tag_u + 1);
-		u->first_reg++;
-		u->last_reg++;
+		assert(u->X.untyped.first_reg < req->tag_u + 1);
+		assert(u->X.untyped.last_reg < req->tag_u + 1);
+		u->X.untyped.first_reg++;
+		u->X.untyped.last_reg++;
 	}
 	req->tag_u++;
 
@@ -894,19 +878,18 @@ GList *analyse_methods_of_iface(
 struct stritem_info *dispatcher_stritems(GList *method_info_list)
 {
 	GArray *result = g_array_new(FALSE, FALSE, sizeof(struct stritem_info));
-	for(GList *cur = g_list_first(method_info_list);
-		cur != NULL;
-		cur = g_list_next(cur))
-	{
+	GLIST_FOREACH(cur, method_info_list) {
 		struct method_info *inf = cur->data;
 		struct message_info *req = inf->request;
 
-		for(int i=0; i<req->num_long; i++) {
-			struct long_param *p = req->long_params[i];
+		int i = 0;
+		GLIST_FOREACH(cur_l, req->_long) {
+			struct msg_param *p = cur_l->data;
 			assert(IDL_PARAM_DCL(p->param_dcl).attr != IDL_PARAM_OUT);
-			int length = max_size(p->type);
-			bool stringlike = IDL_NODE_TYPE(p->type) == IDLN_TYPE_STRING
-				|| IDL_NODE_TYPE(p->type) == IDLN_TYPE_WIDE_STRING;
+			IDL_tree type = p->X._long.type;
+			int length = max_size(type);
+			bool stringlike = IDL_NODE_TYPE(type) == IDLN_TYPE_STRING
+				|| IDL_NODE_TYPE(type) == IDLN_TYPE_WIDE_STRING;
 			struct stritem_info *si;
 			if(result->len <= i) {
 				struct stritem_info tmp = {
@@ -922,6 +905,7 @@ struct stritem_info *dispatcher_stritems(GList *method_info_list)
 			}
 			if(!si->stringlike && stringlike) si->stringlike = true;
 			si->length = MAX(si->length, length);
+			i++;
 		}
 	}
 

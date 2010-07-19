@@ -38,17 +38,10 @@ void list_dispose(GList *list)
 void free_message_info(struct message_info *inf)
 {
 	if(inf == NULL) return;
-	for(int i=0; i<inf->num_untyped; i++) {
-		g_free(inf->untyped[i]);
-	}
-	g_free(inf->untyped);
 
-	for(int i=0; i<inf->num_inline_seq; i++) g_free(inf->seq[i]);
-	g_free(inf->seq);
-
-	for(int i=0; i<inf->num_long; i++) g_free(inf->long_params[i]);
-	g_free(inf->long_params);
-
+	list_dispose(inf->untyped);
+	list_dispose(inf->seq);
+	list_dispose(inf->_long);
 	g_free(inf);
 }
 

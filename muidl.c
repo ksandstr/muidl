@@ -728,19 +728,20 @@ void print_msg_encoder(
 		next_r++;
 	}
 
-	for(int i=0; i<msg->num_untyped; i++) {
-		const struct untyped_param *u = msg->untyped[i];
-		bool short_type = IS_FPAGE_TYPE(u->type) || is_value_type(u->type);
-		if(short_type && u->first_reg != next_r) {
+	GLIST_FOREACH(cur_u, msg->untyped) {
+		const struct msg_param *u = cur_u->data;
+		IDL_tree type = u->X.untyped.type;
+		bool short_type = IS_FPAGE_TYPE(type) || is_value_type(type);
+		if(short_type && u->X.untyped.first_reg != next_r) {
 			fprintf(stderr, "warning: next reg# is %d, but first_reg is %d (opdcl `%s')\n",
-				next_r, (int)u->first_reg, u->name);
+				next_r, (int)u->X.untyped.first_reg, u->name);
 		}
 
-		if(IS_FPAGE_TYPE(u->type)) {
+		if(IS_FPAGE_TYPE(type)) {
 			code_f(pr, "L4_MsgAppendWord(%s, %s%s.raw);", msg_str,
 				var_prefix, u->name);
 			next_r++;
-		} else if(is_value_type(u->type)) {
+		} else if(is_value_type(type)) {
 			code_f(pr, "L4_MsgAppendWord(%s, %s%s);", msg_str, var_prefix,
 				u->name);
 			next_r++;
@@ -748,37 +749,38 @@ void print_msg_encoder(
 			/* TODO: handle mapitems, rigid types, and long types
 			 * as out-values too
 			 */
-			NOTDEFINED(u->type);
+			NOTDEFINED(type);
 		}
 	}
 
 	/* inline sequences */
-	for(int i=0; i<msg->num_inline_seq; i++) {
-		struct seq_param *s = msg->seq[i];
+	GLIST_FOREACH(cur_s, msg->seq) {
+		const struct msg_param *s = cur_s->data;
 		const char *len_lvalue = seq_len_lvalue(pr, s->param_dcl, var_prefix,
 			s->name, true);
-		if(i + 1 < msg->num_inline_seq) {
+		if(g_list_next(cur_s) != NULL) {
 			/* not the last; encode a length word. */
 			code_f(pr, "L4_MsgAppendWord(%s, %s);", msg_str, len_lvalue);
 		}
+		const int epw = s->X.seq.elems_per_word, bpe = s->X.seq.bits_per_elem;
 		code_f(pr, "for(unsigned i=0, _l=%s; i<_l; i+=%d) {", len_lvalue,
-			s->elems_per_word);
+			epw);
 		indent(pr, 1);
-		if(s->bits_per_elem == BITS_PER_WORD) {
+		if(bpe == BITS_PER_WORD) {
 			/* full word case. */
 			code_f(pr, "L4_MsgAppendWord(%s, %s%s[i]);", msg_str,
 				var_prefix, s->name);
 		} else {
 			/* shifting bit-pack case */
 			uint64_t mask;
-			if(s->bits_per_elem >= 64) mask = ~UINT64_C(0);
-			else mask = (UINT64_C(1) << s->bits_per_elem) - 1;
+			if(bpe >= 64) mask = ~UINT64_C(0);
+			else mask = (UINT64_C(1) << bpe) - 1;
 			code_f(pr, "L4_Word_t t = 0;");
-			for(int j=0; j<s->elems_per_word; j++) {
-				if(j > 0) code_f(pr, "t <<= %d;", s->bits_per_elem);
+			for(int j=0; j<epw; j++) {
+				if(j > 0) code_f(pr, "t <<= %d;", bpe);
 				code_f(pr, "t |= %s%s[i * %d + %d] & UINT%d_C(%#llx);",
-					var_prefix, s->name, s->elems_per_word, j,
-					BITS_PER_WORD, (unsigned long long)mask);
+					var_prefix, s->name, epw, j, BITS_PER_WORD,
+					(unsigned long long)mask);
 			}
 			code_f(pr, "L4_MsgAppendWord(%s, t);", msg_str);
 		}
@@ -786,24 +788,25 @@ void print_msg_encoder(
 	}
 
 	/* long items */
-	for(int i=0; i<msg->num_long; i++) {
-		const struct long_param *p = msg->long_params[i];
+	GLIST_FOREACH(cur_l, msg->_long) {
+		const struct msg_param *p = cur_l->data;
+		IDL_tree type = p->X._long.type;
 		const char *len_expr;
-		if(IDL_NODE_TYPE(p->type) == IDLN_TYPE_STRING) {
+		if(IDL_NODE_TYPE(type) == IDLN_TYPE_STRING) {
 			len_expr = tmp_f(pr, "strlen(%s%s)", var_prefix, p->name);
-		} else if(IDL_NODE_TYPE(p->type) == IDLN_TYPE_WIDE_STRING) {
+		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_WIDE_STRING) {
 			len_expr = tmp_f(pr, "wcslen(%s%s) * sizeof(wchar_t)",
 				var_prefix, p->name);
-		} else if(IDL_NODE_TYPE(p->type) == IDLN_TYPE_SEQUENCE) {
+		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
 			/* FIXME (or just remove in the LLVM branch) */
 			code_f(pr, "/* would do something with sequences, but don't know what */");
 			len_expr = "66642";
 		} else {
-			/* FIXME: set len_expr to byte size of each element of p->type,
+			/* FIXME: set len_expr to byte size of each element of type,
 			 * times one for structs and unions and times the length indication
 			 * (static for arrays, variable for sequences).
 			 */
-			NOTDEFINED(p->type);
+			NOTDEFINED(type);
 		}
 		code_f(pr, "L4_MsgAppendSimpleStringItem(%s, L4_StringItem(%s, (char *)%s%s));",
 			msg_str, len_expr, var_prefix, p->name);
@@ -820,14 +823,15 @@ void print_decode_inline_seqs(
 	const char *msgstr,
 	const char *var_prefix)
 {
-	if(req->num_inline_seq == 0) return;
+	if(req->seq == NULL) return;
 
 	code_f(pr, "int seq_base = %d;", req->tag_u);
-	for(int i=0; i<req->num_inline_seq; i++) {
-		struct seq_param *s = req->seq[i];
+	GLIST_FOREACH(cur_s, req->seq) {
+		const struct msg_param *s = cur_s->data;
+		const int epw = s->X.seq.elems_per_word, bpe = s->X.seq.bits_per_elem;
 		const char *len_lvalue = seq_len_lvalue(pr, s->param_dcl,
 			var_prefix, s->name, false);
-		if(i + 1 < req->num_inline_seq) {
+		if(g_list_next(cur_s) != NULL) {
 			/* not the last, therefore take a length word. */
 			code_f(pr, "%s = L4_MsgWord(%s, seq_base++);",
 				len_lvalue, msgstr);
@@ -839,28 +843,25 @@ void print_decode_inline_seqs(
 
 		/* NOTE: I'm quite sure this could be done smarter. but w/e...
 		 *
-		 * FIXME: make sure that when s->elems_per_word > 1, p_[name]
-		 * is sized to accept a multiple of s->elems_per_word items,
-		 * padding it out as necessary.
+		 * FIXME: make sure that when epw > 1, p_[name] is sized to accept a
+		 * multiple of epw items, padding it out as necessary.
 		 */
-		code_f(pr, "for(unsigned i=0; i<%s; i+=%d) {", len_lvalue,
-			s->elems_per_word);
+		code_f(pr, "for(unsigned i=0; i<%s; i+=%d) {", len_lvalue, epw);
 		indent(pr, 1);
-		if(s->bits_per_elem == BITS_PER_WORD) {
+		if(bpe == BITS_PER_WORD) {
 			/* full word case. */
 			code_f(pr, "%s%s[i] = L4_MsgWord(%s, seq_base++);",
 				var_prefix, s->name, msgstr);
 		} else {
 			/* masked-shift bit-packing case. */
 			uint64_t mask;
-			if(s->bits_per_elem >= 64) mask = ~UINT64_C(0);
-			else mask = (UINT64_C(1) << s->bits_per_elem) - 1;
+			if(bpe >= 64) mask = ~UINT64_C(0);
+			else mask = (UINT64_C(1) << bpe) - 1;
 			code_f(pr, "L4_Word_t w = L4_MsgWord(%s, seq_base++);", msgstr);
-			for(int j=0; j<s->elems_per_word; j++) {
+			for(int j=0; j<epw; j++) {
 				code_f(pr, "%s%s[i * %d + %d] = w & UINT%d_C(%#llx); w >>= %d;",
-					var_prefix, s->name, s->elems_per_word,
-					s->elems_per_word - j - 1, BITS_PER_WORD,
-					(unsigned long long)mask, s->bits_per_elem);
+					var_prefix, s->name, epw, epw - j - 1, BITS_PER_WORD,
+					(unsigned long long)mask, bpe);
 			}
 		}
 		close_brace(pr);
