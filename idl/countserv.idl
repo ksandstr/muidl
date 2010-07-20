@@ -16,9 +16,11 @@ struct henchman
 
 struct fatcat
 {
+	boolean maybe;
 	long was_the_year;
 	long long a_big_thing;
 	short stuff;
+	boolean perhaps;
 	octet stream;
 	henchman bub, bob;
 };
@@ -37,7 +39,9 @@ interface Countserv
 	typedef henchman small_crew[5];
 
 	[Label(23)]
-	void personnel_transfer(in small_crew whatsits);
+	void personnel_transfer(
+		in henchman head_mook,
+		in small_crew whatsits);
 
 	/* you may hyperventilate! */
 	[Label(666)]

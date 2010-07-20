@@ -115,6 +115,7 @@ static void build_read_ipc_parameter(
 		dst[0] = ctx->zero;
 	} else if(IDL_NODE_TYPE(ctyp) == IDLN_TYPE_STRUCT) {
 		/* FIXME: this is a FAAAAAKE */
+		const struct packed_format *fmt = packed_format_of(ctyp);
 		dst[0] = ctx->zero;
 	} else if(is_rigid_type(ctx->ns, ctyp)) {
 		/* TODO */

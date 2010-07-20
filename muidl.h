@@ -241,6 +241,22 @@ struct stritem_info
 };
 
 
+/* the bit-packed format of a structure. */
+
+struct packed_item {
+	int word, bit;	/* offsets; word from start, bit from low end */
+	char name[];	/* member name; they are unique to the struct. */
+};
+
+
+struct packed_format
+{
+	int num_words;
+	int num_items;
+	struct packed_item *items[];
+};
+
+
 /* from muidl.c */
 
 extern gboolean arg_verbose;
@@ -400,6 +416,9 @@ extern GList *analyse_methods_of_iface(
  */
 extern struct stritem_info *dispatcher_stritems(GList *methods);
 
+/* size of a rigid type in bits. */
+extern int size_in_bits(IDL_tree type);
+
 
 /* from verify.c */
 
@@ -517,5 +536,11 @@ extern void build_read_ipc_parameter_ixval(
 	LLVMValueRef *dst,
 	IDL_tree ctyp,
 	LLVMValueRef first_mr);
+
+
+/* from struct.c */
+
+extern const struct packed_format *packed_format_of(IDL_tree struct_type);
+
 
 #endif

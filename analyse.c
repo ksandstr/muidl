@@ -109,7 +109,7 @@ static bool get_msg_label(struct message_info *inf, IDL_tree prop_node)
 }
 
 
-static int size_in_bits(IDL_tree type)
+int size_in_bits(IDL_tree type)
 {
 	assert(is_rigid_type(NULL, type));
 
@@ -147,12 +147,14 @@ static int size_in_bits(IDL_tree type)
 			return BITS_PER_WORD * array_size_in_words(
 				get_array_type(type), type);
 
-		case IDLN_TYPE_STRUCT:
-			/* FIXME: array-member structs are supposed to be bitpacked in v1.
-			 * compute actual bit length like struct_size_in_words() does for
-			 * words.
+		case IDLN_TYPE_STRUCT: {
+			/* structs are never bit-packed next to one another; i.e. a single
+			 * struct always takes up at least a single word, bit-packed or
+			 * not. (this could be done smarter, but in v2...)
 			 */
-			return BITS_PER_WORD * struct_size_in_words(type);
+			const struct packed_format *pf = packed_format_of(type);
+			return pf->num_words * BITS_PER_WORD;
+		}
 
 		case IDLN_TYPE_ENUM:
 		case IDLN_TYPE_FLOAT:
