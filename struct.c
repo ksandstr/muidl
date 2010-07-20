@@ -105,7 +105,8 @@ static int pack_items(
 	GList **items_per_size,
 	const int num_items,
 	const int *word_occ,
-	const int num_words)
+	const int num_words,
+	const int max_sol)
 {
 	/* base case. */
 	if(num_items == 0) return num_words;
@@ -115,7 +116,7 @@ static int pack_items(
 	memcpy(my_occ, word_occ, sizeof(int) * num_words);
 	my_occ[num_words] = 0;
 	GPtrArray *best_output = g_ptr_array_new();
-	int best_num_words = 65, best_size = 0, best_wn = -1;
+	int best_num_words = max_sol, best_size = 0, best_wn = -1;
 	/* for the first item of each size (where available) */
 	assert(items_per_size[0] == NULL);
 	for(int sz=1; sz < (BITS_PER_WORD - 1); sz++) {
@@ -134,7 +135,7 @@ static int pack_items(
 			my_occ[wn] += nbits;
 			assert(my_occ[wn] <= BITS_PER_WORD);
 			int sub_num_words = pack_items(output, items_per_size,
-				num_items - 1, my_occ, num_words);
+				num_items - 1, my_occ, num_words, best_num_words);
 			assert(start_len <= output->len);
 			if(sub_num_words < best_num_words) {
 				/* record the subsolution */
@@ -153,40 +154,49 @@ static int pack_items(
 			assert(my_occ[wn] > 0);
 		}
 
-		/* and the solution where we allocate a new word at the end. */
-		struct packed_item *pi = new_packed_item(num_words, 0, ci->name);
-		g_ptr_array_add(output, pi);
-		my_occ[num_words] = nbits;
-		int sub_num_words = pack_items(output, items_per_size,
-			num_items - 1, my_occ, num_words + 1);
-		/* (NOTE: copypasted from inside the loop, above.) */
-		assert(start_len <= output->len);
-		if(sub_num_words < best_num_words) {
-			/* record the subsolution */
-			best_num_words = sub_num_words;
-			best_size = sz;
-			best_wn = num_words;
-			cut_gpa(best_output, output, start_len);
-		} else if(start_len < output->len) {
-			/* chuck it. */
-			for(int i=start_len; i<output->len; i++) {
-				g_free(output->pdata[i]);
+		/* and the solution where we allocate a new word at the end,
+		 * if the parameters permit.
+		 */
+		if(num_words + 1 <= max_sol) {
+			struct packed_item *pi = new_packed_item(num_words, 0, ci->name);
+			g_ptr_array_add(output, pi);
+			my_occ[num_words] = nbits;
+			int sub_num_words = pack_items(output, items_per_size,
+				num_items - 1, my_occ, num_words + 1, best_num_words);
+			/* (NOTE: copypasted from inside the loop, above.) */
+			assert(start_len <= output->len);
+			if(sub_num_words < best_num_words) {
+				/* record the subsolution */
+				best_num_words = sub_num_words;
+				best_size = sz;
+				best_wn = num_words;
+				cut_gpa(best_output, output, start_len);
+			} else if(start_len < output->len) {
+				/* chuck it. */
+				for(int i=start_len; i<output->len; i++) {
+					g_free(output->pdata[i]);
+				}
+				g_ptr_array_set_size(output, start_len);
 			}
-			g_ptr_array_set_size(output, start_len);
 		}
 
 		/* restore the item. */
 		items_per_size[sz] = g_list_prepend(items_per_size[sz], ci);
 	}
 
-	assert(best_size > 0 && best_wn >= 0);
 
-	/* return with the optimal solution. */
-	for(int i=0; i<best_output->len; i++) {
-		g_ptr_array_add(output, best_output->pdata[i]);
+	if(best_wn == -1) {
+		/* no solution down here. */
+		return max_sol + 1;
+	} else {
+		assert(best_size > 0 && best_wn >= 0);
+		/* return with the optimal solution. */
+		for(int i=0; i<best_output->len; i++) {
+			g_ptr_array_add(output, best_output->pdata[i]);
+		}
+		g_ptr_array_free(best_output, TRUE);
+		return best_num_words;
 	}
-	g_ptr_array_free(best_output, TRUE);
-	return best_num_words;
 }
 
 
@@ -235,7 +245,13 @@ const struct packed_format *packed_format_of(IDL_tree stype)
 		items_by_size[i] = g_list_reverse(items_by_size[i]);
 	}
 	GPtrArray *packed = g_ptr_array_new();
-	int num_words = pack_items(packed, items_by_size, num_small, NULL, 0);
+	int num_words = pack_items(packed, items_by_size, num_small, NULL, 0, 64);
+	if(num_words >= 64) {
+		fprintf(stderr, "structure `%s' can't be bit-packed\n", s_id);
+		/* FIXME: return NULL, make callers handle NULL */
+		abort();
+	}
+	assert(num_words < 64);
 	for(int i=0; i < (BITS_PER_WORD - 1); i++) {
 		g_list_free(items_by_size[i]);
 	}
