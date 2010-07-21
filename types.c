@@ -88,10 +88,18 @@ LLVMTypeRef llvm_value_type(struct llvm_ctx *ctx, IDL_tree type)
 }
 
 
-static LLVMTypeRef llvm_struct_type(struct llvm_ctx *ctx, IDL_tree type)
+/* TODO: cache outputs by the struct type's repo id, like in
+ * packed_format_of()
+ *
+ */
+LLVMTypeRef llvm_struct_type(
+	struct llvm_ctx *ctx,
+	char ***names_p,
+	IDL_tree type)
 {
 	assert(IDL_NODE_TYPE(type) == IDLN_TYPE_STRUCT);
 	GArray *types = g_array_new(FALSE, FALSE, sizeof(T));
+	GPtrArray *names = names_p != NULL ? g_ptr_array_new() : NULL;
 	for(IDL_tree cur = IDL_TYPE_STRUCT(type).member_list;
 		cur != NULL;
 		cur = IDL_LIST(cur).next)
@@ -106,14 +114,30 @@ static LLVMTypeRef llvm_struct_type(struct llvm_ctx *ctx, IDL_tree type)
 			IDL_tree dcl = IDL_LIST(dcl_cur).data;
 			if(IDL_NODE_TYPE(dcl) == IDLN_IDENT) {
 				g_array_append_val(types, mt);
+				if(names_p != NULL) {
+					g_ptr_array_add(names, g_strdup(IDL_IDENT(dcl).str));
+				}
 			} else if(IDL_NODE_TYPE(dcl) == IDLN_TYPE_ARRAY) {
 				T ary = LLVMArrayType(mt, ARRAY_TYPE_LENGTH(dcl));
 				g_array_append_val(types, ary);
+				if(names_p != NULL) {
+					g_ptr_array_add(names, g_strdup(IDL_IDENT(
+						IDL_TYPE_ARRAY(dcl).ident).str));
+				}
 			} else {
 				NOTDEFINED(member);
 			}
 		}
 	}
+
+	if(names_p != NULL) {
+		char **namev = g_new(char *, names->len + 1);
+		for(int i=0; i<names->len; i++) namev[i] = names->pdata[i];
+		namev[names->len] = NULL;
+		g_ptr_array_free(names, TRUE);
+		(*names_p) = namev;
+	}
+
 	/* TODO: examine a "packed" attribute */
 	T ret = LLVMStructTypeInContext(ctx->ctx, &g_array_index(types, T, 0),
 		types->len, 0);
@@ -127,7 +151,7 @@ LLVMTypeRef llvm_rigid_type(struct llvm_ctx *ctx, IDL_tree type)
 	if(is_value_type(type)) return llvm_value_type(ctx, type);
 	switch(IDL_NODE_TYPE(type)) {
 		case IDLN_TYPE_STRUCT:
-			return llvm_struct_type(ctx, type);
+			return llvm_struct_type(ctx, NULL, type);
 
 		case IDLN_TYPE_ARRAY: {
 			IDL_tree mt = get_array_type(type);
@@ -144,6 +168,9 @@ LLVMTypeRef llvm_rigid_type(struct llvm_ctx *ctx, IDL_tree type)
 }
 
 
+/* FIXME: this is not actually a typing-related function. move it elsewhere,
+ * say, message.c once that one is merged in.
+ */
 void build_read_ipc_parameter_ixval(
 	struct llvm_ctx *ctx,
 	LLVMValueRef *dst,
@@ -176,8 +203,73 @@ void build_read_ipc_parameter_ixval(
 		dst[0] = LLVMBuildTruncOrBitCast(ctx->builder,
 			build_utcb_load(ctx, first_mr, "shortparm.mr"),
 			llvm_value_type(ctx, ctyp), "shortparm");
-	} else if(is_rigid_type(ctx->ns, ctyp)) {
+	} else if(IDL_NODE_TYPE(ctyp) == IDLN_TYPE_STRUCT) {
+		const char *s_name = IDL_IDENT(IDL_TYPE_STRUCT(ctyp).ident).str;
+		const struct packed_format *fmt = packed_format_of(ctyp);
+		if(fmt == NULL) {
+			/* FIXME: ensure this doesn't happen. */
+			fprintf(stderr, "%s: struct `%s' not packable\n",
+				__func__, s_name);
+			abort();
+		}
+		char **names = NULL;
+		T s_type = llvm_struct_type(ctx, &names, ctyp);
+		/* TODO: fold this allocation with struct fields from other decoders,
+		 * if invoked from a dispatcher. somehow. (v2?)
+		 */
+		dst[0] = build_local_storage(ctx, s_type, NULL, s_name);
+		int names_len = 0;
+		while(names[names_len] != NULL) names_len++;
+		assert(names_len == fmt->num_items);
+		assert(LLVMCountStructElementTypes(s_type) == names_len);
+		T types[names_len];
+		LLVMGetStructElementTypes(s_type, types);
+		int cur_word = 0;
+		V wordval = NULL;
+		for(int i=0; i<fmt->num_items; i++) {
+			const struct packed_item *pi = fmt->items[i];
+			/* FIXME */
+			if(pi->len > BITS_PER_WORD) continue;
+			int field_ix = 0;
+			while(names[field_ix] != NULL
+				&& strcmp(names[field_ix], pi->name) != 0)
+			{
+				field_ix++;
+			}
+			if(names[field_ix] == NULL) {
+				fprintf(stderr, "%s: not the way to go.\n", __func__);
+				abort();
+			}
+			/* NOTE: this only works for non-compound members. struct members
+			 * should get their own loop, or something.
+			 */
+			if(cur_word != pi->word || wordval == NULL) {
+				cur_word = pi->word;
+				wordval = build_utcb_load(ctx,
+					LLVMBuildAdd(ctx->builder, first_mr,
+						CONST_INT(pi->word),
+						tmp_f(ctx->pr, "st.word%d.mr", pi->word)),
+					tmp_f(ctx->pr, "st.word%d", pi->word));
+			}
+			V shifted = LLVMBuildLShr(ctx->builder, wordval,
+				CONST_INT(pi->bit),
+				tmp_f(ctx->pr, "st.word%d.shr%d", pi->word, pi->bit));
+			V masked = LLVMBuildAnd(ctx->builder, shifted,
+				CONST_WORD((1 << pi->len) - 1),
+				tmp_f(ctx->pr, "st.word%d.s%d.m%d", pi->word, pi->bit,
+					pi->len));
+			LLVMBuildStore(ctx->builder,
+				LLVMBuildTruncOrBitCast(ctx->builder, masked,
+					types[field_ix], "st.val.cast"),
+				LLVMBuildStructGEP(ctx->builder, dst[0], field_ix,
+					"st.ptr"));
+		}
+		g_strfreev(names);
+	} else if(IDL_NODE_TYPE(ctyp) == IDLN_TYPE_UNION) {
 		NOTDEFINED(ctyp);
+	} else if(IDL_NODE_TYPE(ctyp) == IDLN_TYPE_ARRAY) {
+		/* FIXME: FAAAAAKE */
+		dst[0] = ctx->zero;
 	} else {
 		/* genuinely not defined */
 		NOTDEFINED(ctyp);

@@ -523,6 +523,15 @@ extern LLVMValueRef build_encode_inline_sequence(
 extern LLVMTypeRef llvm_value_type(struct llvm_ctx *ctx, IDL_tree type);
 extern LLVMTypeRef llvm_rigid_type(struct llvm_ctx *ctx, IDL_tree type);
 
+/* @names_p, if nonzero, will be filled in with a NULL-terminated string
+ * vector. it should be freed afterward with g_strfreev(). its contents'
+ * indexes correspond to field indexes in the returned LLVM typeref.
+ */
+extern LLVMTypeRef llvm_struct_type(
+	struct llvm_ctx *ctx,
+	char ***names_p,
+	IDL_tree type);
+
 /* when @ctyp is a value type, @dst[0] is assigned to the value.
  * when @ctyp is a rigid type, @dst[0] must be a pointer to the appropriate
  * type.

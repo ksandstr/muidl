@@ -24,8 +24,9 @@ struct fatcat {
 };
 
 struct toy {
-	boolean what, happen, where, how;
+	boolean what, happen, where;
 	octet when;
+	boolean how;
 };
 
 struct slimkitten {
@@ -41,15 +42,17 @@ interface Countserv
 		in short what,
 		in long boing,
 		in octet whee,
-		in slimkitten the_annoying_thing,
-		in fatcat el_parametro_grande);
+//		in slimkitten the_annoying_thing,
+		in toy el_parametro_grande);
 
+#if 0
 	typedef henchman small_crew[5];
 
 	[Label(23)]
 	void personnel_transfer(
 		in henchman head_mook,
 		in small_crew whatsits);
+#endif
 
 	/* you may hyperventilate! */
 	[Label(666)]

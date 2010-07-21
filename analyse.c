@@ -200,9 +200,9 @@ static int struct_size_in_words(IDL_tree type)
 		abort();
 	}
 
-	fprintf(stderr, "%s: total size of `%s' is %d words.\n",
+	fprintf(stderr, "%s: total size of `%s' is %d words (%d bits).\n",
 		__func__, IDL_IDENT(IDL_TYPE_STRUCT(type).ident).repo_id,
-		fmt->num_words);
+		fmt->num_words, fmt->num_bits);
 	return fmt->num_words;
 }
 
@@ -545,7 +545,12 @@ static struct message_info *build_message(
 	for(int i = inf->tag_u + 1; i < 64; i++) {
 		if(reg_in_use[i]) inf->tag_u = i;
 	}
-
+	GLIST_FOREACH(cur, inf->untyped) {
+		struct msg_param *p = cur->data;
+		printf("untyped `%s': p %d, arg %d, regs [%d, %d]\n",
+			p->name, p->param_ix, p->arg_ix,
+			p->X.untyped.first_reg, p->X.untyped.last_reg);
+	}
 
 #if 0
 	/* allocate inline sequences.

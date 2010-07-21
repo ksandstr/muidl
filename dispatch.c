@@ -81,7 +81,12 @@ static LLVMValueRef build_ipc_input_val(struct llvm_ctx *ctx, int mr)
 }
 
 
-/* (see build_read_ipc_parameter_ixval() comment in muidl.h) */
+/* (see build_read_ipc_parameter_ixval() comment in muidl.h)
+ *
+ * (also note that this function is most likely a pointless optimization as LLVM
+ * seems quite capable of recognizing values that don't need to be computed at
+ * run time.)
+ */
 static void build_read_ipc_parameter(
 	struct llvm_ctx *ctx,
 	LLVMValueRef *dst,
@@ -102,24 +107,16 @@ static void build_read_ipc_parameter(
 					"longparm.hi.shift"),
 				"longparm.value");
 	} else if(IS_LONGDOUBLE_TYPE(ctyp)) {
-		fprintf(stderr, "%s: not defined for long double (yet)\n",
-			__func__);
+		fprintf(stderr, "%s: long doubles are TODO\n", __func__);
 		abort();
 	} else if(is_value_type(ctyp)) {
 		/* appropriate for all value types. */
 		dst[0] = LLVMBuildTruncOrBitCast(ctx->builder,
 			build_ipc_input_val(ctx, first_mr),
 			llvm_value_type(ctx, ctyp), "shortparm");
-	} else if(IDL_NODE_TYPE(ctyp) == IDLN_TYPE_ARRAY) {
-		/* FIXME: FAAAAAAKE */
-		dst[0] = ctx->zero;
-	} else if(IDL_NODE_TYPE(ctyp) == IDLN_TYPE_STRUCT) {
-		/* FIXME: this is a FAAAAAKE */
-		const struct packed_format *fmt = packed_format_of(ctyp);
-		dst[0] = ctx->zero;
 	} else if(is_rigid_type(ctx->ns, ctyp)) {
-		/* TODO */
-		NOTDEFINED(ctyp);
+		build_read_ipc_parameter_ixval(ctx, dst, ctyp,
+			CONST_INT(first_mr));
 	} else {
 		/* genuinely not defined */
 		NOTDEFINED(ctyp);
