@@ -148,12 +148,14 @@ int size_in_bits(IDL_tree type)
 				get_array_type(type), type);
 
 		case IDLN_TYPE_STRUCT: {
-			/* structs are never bit-packed next to one another; i.e. a single
-			 * struct always takes up at least a single word, bit-packed or
-			 * not. (this could be done smarter, but in v2...)
+			/* only structs that're shorter than a single word can be packed in
+			 * the same word with another value of a rigid type. that is to
+			 * say, structs the same size or larger than a single word may
+			 * result in up to BITS_PER_WORD - 1 wasted space.
 			 */
 			const struct packed_format *pf = packed_format_of(type);
-			return pf->num_words * BITS_PER_WORD;
+			if(pf->num_bits < BITS_PER_WORD) return pf->num_bits;
+			else return pf->num_words * BITS_PER_WORD;
 		}
 
 		case IDLN_TYPE_ENUM:
@@ -185,43 +187,23 @@ static int array_size_in_words(IDL_tree type, IDL_tree dcl)
 }
 
 
-/* a struct's size in words. see size_in_words() for explanation.
- *
- * this assumes the struct's members aren't encoded to minimize overhead (which
- * is a v2 feature).
- */
+/* a struct's size in words. see size_in_words() for explanation. */
 static int struct_size_in_words(IDL_tree type)
 {
 	assert(IDL_NODE_TYPE(type) == IDLN_TYPE_STRUCT);
 
-	/* (optimization: could cache the result by repo id, since this function
-	 * will likely be invoked a few times for each of the known structs.)
-	 */
-	int size = 0;
-	for(IDL_tree cur = IDL_TYPE_STRUCT(type).member_list;
-		cur != NULL;
-		cur = IDL_LIST(cur).next)
-	{
-		IDL_tree data = IDL_LIST(cur).data;
-		assert(IDL_NODE_TYPE(data) == IDLN_MEMBER);
-		IDL_tree mtype = get_type_spec(IDL_MEMBER(data).type_spec);
-		for(IDL_tree dcl_cur = IDL_MEMBER(data).dcls;
-			dcl_cur != NULL;
-			dcl_cur = IDL_LIST(dcl_cur).next)
-		{
-			IDL_tree dcl = IDL_LIST(dcl_cur).data;
-			if(IDL_NODE_TYPE(dcl) == IDLN_IDENT) size += size_in_words(mtype);
-			else if(IDL_NODE_TYPE(dcl) == IDLN_TYPE_ARRAY) {
-				size += array_size_in_words(mtype, dcl);
-			} else {
-				NOTDEFINED(dcl);
-			}
-		}
+	const struct packed_format *fmt = packed_format_of(type);
+	if(fmt == NULL) {
+		/* TODO: return -1 once packed_format_of() returns NULL for them */
+		fprintf(stderr, "%s: not implemented for non-packable structs\n",
+			__func__);
+		abort();
 	}
+
 	fprintf(stderr, "%s: total size of `%s' is %d words.\n",
 		__func__, IDL_IDENT(IDL_TYPE_STRUCT(type).ident).repo_id,
-		size);
-	return size;
+		fmt->num_words);
+	return fmt->num_words;
 }
 
 

@@ -79,6 +79,7 @@ static GPtrArray *unpack_idl_fields(IDL_tree stype)
 static struct packed_item *new_packed_item(
 	int word,
 	int bit,
+	int len,
 	const char *name)
 {
 	int namelen = strlen(name);
@@ -86,6 +87,7 @@ static struct packed_item *new_packed_item(
 		+ sizeof(char) * (namelen + 1));
 	ret->word = word;
 	ret->bit = bit;
+	ret->len = len;
 	memcpy(ret->name, name, namelen + 1);
 	return ret;
 }
@@ -130,7 +132,7 @@ static int pack_items(
 		for(int wn=0; wn < num_words; wn++) {
 			if(my_occ[wn] + nbits > BITS_PER_WORD) continue;
 			struct packed_item *pi = new_packed_item(wn, my_occ[wn],
-				ci->name);
+				nbits, ci->name);
 			g_ptr_array_add(output, pi);
 			my_occ[wn] += nbits;
 			assert(my_occ[wn] <= BITS_PER_WORD);
@@ -158,7 +160,8 @@ static int pack_items(
 		 * if the parameters permit.
 		 */
 		if(num_words + 1 <= max_sol) {
-			struct packed_item *pi = new_packed_item(num_words, 0, ci->name);
+			struct packed_item *pi = new_packed_item(num_words, 0,
+				nbits, ci->name);
 			g_ptr_array_add(output, pi);
 			my_occ[num_words] = nbits;
 			int sub_num_words = pack_items(output, items_per_size,
@@ -236,6 +239,7 @@ const struct packed_format *packed_format_of(IDL_tree stype)
 	int num_small = 0;
 	for(int i=0; i<items->len; i++) {
 		struct comp_item *item = items->pdata[i];
+		/* TODO: produce N items for arrays where bits_each < BITS_PER_WORD. */
 		int bits = item->bits_each * item->dim;
 		if(bits >= BITS_PER_WORD) break;
 		items_by_size[bits] = g_list_prepend(items_by_size[bits], item);
@@ -264,14 +268,14 @@ const struct packed_format *packed_format_of(IDL_tree stype)
 	/* packing of word-length, and longer, items */
 	for(int i=0; i<items->len; i++) {
 		struct comp_item *item = items->pdata[i];
-		int bits = item->bits_each * item->dim;
-		if(bits < BITS_PER_WORD) continue;
+		int nbits = item->bits_each * item->dim;
+		if(nbits < BITS_PER_WORD) continue;
 		g_ptr_array_add(packed,
-			new_packed_item(num_words, 0, item->name));
-		int words = (bits + BITS_PER_WORD - 1) / BITS_PER_WORD;
+			new_packed_item(num_words, 0, nbits, item->name));
+		int words = (nbits + BITS_PER_WORD - 1) / BITS_PER_WORD;
 #if 0
 		printf("%s: packing item `%s' of %d words (%d bits) as-is\n",
-			__func__, item->name, words, bits);
+			__func__, item->name, words, nbits);
 #endif
 		num_words += words;
 	}
@@ -298,6 +302,10 @@ const struct packed_format *packed_format_of(IDL_tree stype)
 	memcpy(ret->items, &g_ptr_array_index(packed, 0),
 		packed->len * sizeof(void *));
 	g_ptr_array_free(packed, TRUE);
+	ret->num_bits = 0;
+	for(int i=0; i<ret->num_items; i++) {
+		ret->num_bits += ret->items[i]->len;
+	}
 	g_hash_table_insert(packed_cache, g_strdup(s_id), ret);
 
 	return ret;

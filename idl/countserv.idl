@@ -5,8 +5,7 @@
 #include <posix-base.idl>
 
 
-struct henchman
-{
+struct henchman {
 	octet first, second;
 	short third, fourth;
 	long fifth, sixth;
@@ -14,8 +13,7 @@ struct henchman
 	octet surprise[9];
 };
 
-struct fatcat
-{
+struct fatcat {
 	boolean maybe;
 	long was_the_year;
 	long long a_big_thing;
@@ -23,6 +21,15 @@ struct fatcat
 	boolean perhaps;
 	octet stream;
 	henchman bub, bob;
+};
+
+struct toy {
+	boolean what, happen, where, how;
+	octet when;
+};
+
+struct slimkitten {
+	toy mouse, ball, horse;
 };
 
 
@@ -34,6 +41,7 @@ interface Countserv
 		in short what,
 		in long boing,
 		in octet whee,
+		in slimkitten the_annoying_thing,
 		in fatcat el_parametro_grande);
 
 	typedef henchman small_crew[5];

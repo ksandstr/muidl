@@ -245,13 +245,14 @@ struct stritem_info
 
 struct packed_item {
 	int word, bit;	/* offsets; word from start, bit from low end */
+	int len;		/* length in bits; when >= BITS_PER_WORD, word-aligned */
 	char name[];	/* member name; they are unique to the struct. */
 };
 
 
 struct packed_format
 {
-	int num_words;
+	int num_words, num_bits;
 	int num_items;
 	struct packed_item *items[];
 };
