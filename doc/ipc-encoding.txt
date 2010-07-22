@@ -37,9 +37,9 @@ following manner:
     whether they are specified as signed or not.
   - if the long long (64-bit) integer is larger than word size, it is encoded
     as two native words, less significant half first.
-  - floating point types are encoded by external machine (memory)
-    representation. 64-bit floating point types may be split across two words
-    on 32-bit systems, low end first.
+  - floating point types are encoded by external machine representation (i.e.
+    as they appear in memory). 64-bit floating point types may be split across
+    two words on 32-bit systems, low end first.
   - booleans are encoded as the lowest bit of a single word. this is hugely
     wasteful, so packing of several items into a word is a topic for [v2].
   - characters are treated as octets
