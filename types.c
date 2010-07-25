@@ -280,12 +280,12 @@ void build_read_ipc_parameter_ixval(
 				"longparm.hi.mr");
 		/* TODO: stash this in the context */
 		LLVMTypeRef i64t = LLVMInt64TypeInContext(ctx->ctx);
-		low = LLVMBuildBitCast(ctx->builder, low, i64t,
+		low = LLVMBuildZExtOrBitCast(ctx->builder, low, i64t,
 			"longparm.lo.cast");
-		high = LLVMBuildBitCast(ctx->builder, high, i64t,
+		high = LLVMBuildZExtOrBitCast(ctx->builder, high, i64t,
 			"longparm.hi.cast");
 		dst[0] = LLVMBuildOr(ctx->builder, low,
-			LLVMBuildShl(ctx->builder, high, CONST_INT(32),
+			LLVMBuildShl(ctx->builder, high, LLVMConstInt(i64t, 32, 0),
 				"longparm.hi.shift"),
 			"longparm.value");
 	} else if(IS_LONGDOUBLE_TYPE(ctyp)) {
