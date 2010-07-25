@@ -10,7 +10,7 @@ struct henchman {
 	short third, fourth;
 	long fifth, sixth;
 	char seventh, eigth;
-	octet surprise[9];
+	octet surprise;
 };
 
 struct fatcat {
