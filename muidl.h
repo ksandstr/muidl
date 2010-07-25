@@ -246,6 +246,8 @@ struct stritem_info
 struct packed_item {
 	int word, bit;	/* offsets; word from start, bit from low end */
 	int len;		/* length in bits; when >= BITS_PER_WORD, word-aligned */
+	int dim;		/* length in items. when > 1, this item is an array */
+	IDL_tree type;
 	char name[];	/* member name; they are unique to the struct. */
 };
 
