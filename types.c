@@ -170,7 +170,101 @@ LLVMTypeRef llvm_rigid_type(struct llvm_ctx *ctx, IDL_tree type)
 
 /* FIXME: this is not actually a typing-related function. move it elsewhere,
  * say, message.c once that one is merged in.
+ *
+ * and the same for build_read_ipc_parameter_ixval().
  */
+static void decode_packed_struct(
+	struct llvm_ctx *ctx,
+	LLVMValueRef *dst_p,
+	IDL_tree ctyp,
+	LLVMValueRef first_mr)
+{
+	const char *s_name = IDL_IDENT(IDL_TYPE_STRUCT(ctyp).ident).str;
+	const struct packed_format *fmt = packed_format_of(ctyp);
+	if(fmt == NULL) {
+		/* FIXME: ensure this doesn't happen. */
+		fprintf(stderr, "%s: struct `%s' not packable\n",
+			__func__, s_name);
+		abort();
+	}
+	char **names = NULL;
+	T s_type = llvm_struct_type(ctx, &names, ctyp);
+	if(*dst_p == NULL) {
+		/* TODO: fold this allocation with struct fields from other decoders,
+		 * if invoked from a dispatcher. somehow. (v2?)
+		 */
+		*dst_p = build_local_storage(ctx, s_type, NULL, s_name);
+	}
+	int names_len = 0;
+	while(names[names_len] != NULL) names_len++;
+	assert(names_len == fmt->num_items);
+	assert(LLVMCountStructElementTypes(s_type) == names_len);
+	T types[names_len];
+	LLVMGetStructElementTypes(s_type, types);
+	int cur_word = 0;
+	V wordval = NULL;
+	for(int i=0; i<fmt->num_items; i++) {
+		const struct packed_item *pi = fmt->items[i];
+		int field_ix = 0;
+		while(names[field_ix] != NULL
+			&& strcmp(names[field_ix], pi->name) != 0)
+		{
+			field_ix++;
+		}
+		if(names[field_ix] == NULL) {
+			fprintf(stderr, "%s: not the way to go.\n", __func__);
+			abort();
+		}
+
+		V start_mr = LLVMBuildAdd(ctx->builder, first_mr,
+			CONST_INT(pi->word), tmp_f(ctx->pr, "%s.start.mr", pi->name));
+		V dstptr = LLVMBuildStructGEP(ctx->builder, *dst_p, field_ix,
+			tmp_f(ctx->pr, "%s.start.ptr", pi->name));
+		if(pi->dim > 1) {
+			/* array types. TODO */
+			fprintf(stderr, "%s: struct-member arrays not implemented\n",
+				__func__);
+			abort();
+		} else if(IDL_NODE_TYPE(pi->type) == IDLN_TYPE_STRUCT) {
+			decode_packed_struct(ctx, &dstptr, pi->type, start_mr);
+		} else if(IDL_NODE_TYPE(pi->type) == IDLN_TYPE_UNION) {
+			fprintf(stderr, "%s: union-member types not implemented\n",
+				__func__);
+			abort();
+		} else if(IS_LONGLONG_TYPE(pi->type)) {
+			/* long long on a 32-bit architecture. can be #ifdef'd out for
+			 * 64-bit targets.
+			 */
+			V dtmp = NULL;
+			build_read_ipc_parameter_ixval(ctx, &dtmp, pi->type,
+				start_mr);
+			LLVMBuildStore(ctx->builder, dtmp, dstptr);
+		} else if(is_value_type(pi->type)) {
+			/* word-size and smaller items. */
+			if(cur_word != pi->word || wordval == NULL) {
+				cur_word = pi->word;
+				wordval = build_utcb_load(ctx, start_mr,
+					tmp_f(ctx->pr, "st.word%d", pi->word));
+			}
+			V shifted = LLVMBuildLShr(ctx->builder, wordval,
+				CONST_INT(pi->bit),
+				tmp_f(ctx->pr, "st.word%d.shr%d", pi->word, pi->bit));
+			V masked = LLVMBuildAnd(ctx->builder, shifted,
+				CONST_WORD((1 << pi->len) - 1),
+				tmp_f(ctx->pr, "st.word%d.s%d.m%d", pi->word, pi->bit,
+					pi->len));
+			LLVMBuildStore(ctx->builder,
+				LLVMBuildTruncOrBitCast(ctx->builder, masked,
+					types[field_ix], "st.val.cast"),
+				dstptr);
+		} else {
+			NOTDEFINED(pi->type);
+		}
+	}
+	g_strfreev(names);
+}
+
+
 void build_read_ipc_parameter_ixval(
 	struct llvm_ctx *ctx,
 	LLVMValueRef *dst,
@@ -204,67 +298,8 @@ void build_read_ipc_parameter_ixval(
 			build_utcb_load(ctx, first_mr, "shortparm.mr"),
 			llvm_value_type(ctx, ctyp), "shortparm");
 	} else if(IDL_NODE_TYPE(ctyp) == IDLN_TYPE_STRUCT) {
-		const char *s_name = IDL_IDENT(IDL_TYPE_STRUCT(ctyp).ident).str;
-		const struct packed_format *fmt = packed_format_of(ctyp);
-		if(fmt == NULL) {
-			/* FIXME: ensure this doesn't happen. */
-			fprintf(stderr, "%s: struct `%s' not packable\n",
-				__func__, s_name);
-			abort();
-		}
-		char **names = NULL;
-		T s_type = llvm_struct_type(ctx, &names, ctyp);
-		/* TODO: fold this allocation with struct fields from other decoders,
-		 * if invoked from a dispatcher. somehow. (v2?)
-		 */
-		dst[0] = build_local_storage(ctx, s_type, NULL, s_name);
-		int names_len = 0;
-		while(names[names_len] != NULL) names_len++;
-		assert(names_len == fmt->num_items);
-		assert(LLVMCountStructElementTypes(s_type) == names_len);
-		T types[names_len];
-		LLVMGetStructElementTypes(s_type, types);
-		int cur_word = 0;
-		V wordval = NULL;
-		for(int i=0; i<fmt->num_items; i++) {
-			const struct packed_item *pi = fmt->items[i];
-			/* FIXME */
-			if(pi->len > BITS_PER_WORD) continue;
-			int field_ix = 0;
-			while(names[field_ix] != NULL
-				&& strcmp(names[field_ix], pi->name) != 0)
-			{
-				field_ix++;
-			}
-			if(names[field_ix] == NULL) {
-				fprintf(stderr, "%s: not the way to go.\n", __func__);
-				abort();
-			}
-			/* NOTE: this only works for non-compound members. struct members
-			 * should get their own loop, or something.
-			 */
-			if(cur_word != pi->word || wordval == NULL) {
-				cur_word = pi->word;
-				wordval = build_utcb_load(ctx,
-					LLVMBuildAdd(ctx->builder, first_mr,
-						CONST_INT(pi->word),
-						tmp_f(ctx->pr, "st.word%d.mr", pi->word)),
-					tmp_f(ctx->pr, "st.word%d", pi->word));
-			}
-			V shifted = LLVMBuildLShr(ctx->builder, wordval,
-				CONST_INT(pi->bit),
-				tmp_f(ctx->pr, "st.word%d.shr%d", pi->word, pi->bit));
-			V masked = LLVMBuildAnd(ctx->builder, shifted,
-				CONST_WORD((1 << pi->len) - 1),
-				tmp_f(ctx->pr, "st.word%d.s%d.m%d", pi->word, pi->bit,
-					pi->len));
-			LLVMBuildStore(ctx->builder,
-				LLVMBuildTruncOrBitCast(ctx->builder, masked,
-					types[field_ix], "st.val.cast"),
-				LLVMBuildStructGEP(ctx->builder, dst[0], field_ix,
-					"st.ptr"));
-		}
-		g_strfreev(names);
+		dst[0] = NULL;
+		decode_packed_struct(ctx, &dst[0], ctyp, first_mr);
 	} else if(IDL_NODE_TYPE(ctyp) == IDLN_TYPE_UNION) {
 		NOTDEFINED(ctyp);
 	} else if(IDL_NODE_TYPE(ctyp) == IDLN_TYPE_ARRAY) {

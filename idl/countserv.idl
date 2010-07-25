@@ -42,8 +42,8 @@ interface Countserv
 		in short what,
 		in long boing,
 		in octet whee,
-//		in slimkitten the_annoying_thing,
-		in toy el_parametro_grande);
+		in slimkitten the_annoying_thing,
+		in fatcat el_parametro_grande);
 
 #if 0
 	typedef henchman small_crew[5];
