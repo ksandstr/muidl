@@ -570,19 +570,22 @@ extern void decode_packed_struct(
 	struct llvm_ctx *ctx,
 	LLVMValueRef *dst_p,
 	IDL_tree ctyp,
-	LLVMValueRef first_mr);
+	LLVMValueRef first_mr,
+	LLVMValueRef bit_offset);
 
 extern void decode_packed_struct_inline(
 	struct llvm_ctx *ctx,
 	LLVMValueRef dstptrval,
 	IDL_tree ctyp,
-	LLVMValueRef first_mr);
+	LLVMValueRef first_mr,
+	LLVMValueRef bit_offset);
 
 extern void decode_packed_struct_fncall(
 	struct llvm_ctx *ctx,
 	LLVMValueRef dstptrval,
 	IDL_tree ctyp,
-	LLVMValueRef first_mr);
+	LLVMValueRef first_mr,
+	LLVMValueRef bit_offset);
 
 
 /* from common.c */

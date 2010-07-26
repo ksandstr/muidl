@@ -320,6 +320,7 @@ LLVMValueRef get_struct_decoder_fn(struct llvm_ctx *ctx, IDL_tree ctyp)
 	const char *s_id = IDL_IDENT(IDL_TYPE_STRUCT(ctyp).ident).repo_id;
 	LLVMValueRef fn = g_hash_table_lookup(ctx->struct_decoder_fns, s_id);
 	if(fn == NULL) {
+		const struct packed_format *fmt = packed_format_of(ctyp);
 		int namelen = strlen(s_id);
 		char flatname[namelen + 1];
 		/* FIXME: make this proper, i.e. use a name mangler that works */
@@ -328,12 +329,13 @@ LLVMValueRef get_struct_decoder_fn(struct llvm_ctx *ctx, IDL_tree ctyp)
 			if(!isalnum(flatname[i])) flatname[i] = '_';
 		}
 		flatname[namelen] = '\0';
-		T types[2] = {
+		T types[3] = {
 			LLVMPointerType(llvm_rigid_type(ctx, ctyp), 0),
+			ctx->i32t,
 			ctx->i32t,
 		};
 		T fntype = LLVMFunctionType(LLVMVoidTypeInContext(ctx->ctx),
-			types, 2, 0);
+			types, fmt->num_words == 1 ? 3 : 2, 0);
 		char *fnname = g_strdup_printf("__muidl_idl_decode__%s", flatname);
 		fn = LLVMAddFunction(ctx->module, fnname, fntype);
 		LLVMSetLinkage(fn, LLVMExternalLinkage);
@@ -348,7 +350,8 @@ void decode_packed_struct_inline(
 	struct llvm_ctx *ctx,
 	LLVMValueRef dst,
 	IDL_tree ctyp,
-	LLVMValueRef first_mr)
+	LLVMValueRef first_mr,
+	LLVMValueRef bit_offset)
 {
 	const struct packed_format *fmt = packed_format_of(ctyp);
 	assert(fmt != NULL);
@@ -385,7 +388,8 @@ void decode_packed_struct_inline(
 				__func__);
 			abort();
 		} else if(IDL_NODE_TYPE(pi->type) == IDLN_TYPE_STRUCT) {
-			decode_packed_struct(ctx, &dstptr, pi->type, start_mr);
+			decode_packed_struct(ctx, &dstptr, pi->type, start_mr,
+				CONST_INT(pi->bit));
 		} else if(IDL_NODE_TYPE(pi->type) == IDLN_TYPE_UNION) {
 			fprintf(stderr, "%s: union-member types not implemented\n",
 				__func__);
@@ -402,8 +406,14 @@ void decode_packed_struct_inline(
 			/* word-size and smaller items. */
 			if(cur_word != pi->word || wordval == NULL) {
 				cur_word = pi->word;
+				V old_wv = wordval;
 				wordval = build_utcb_load(ctx, start_mr,
 					tmp_f(ctx->pr, "st.word%d", pi->word));
+				if(old_wv == NULL) {
+					/* shift it down, since we start at an offset. */
+					wordval = LLVMBuildLShr(ctx->builder, wordval,
+						bit_offset, "st.bitoffs.shifted");
+				}
 			}
 			V shifted = LLVMBuildLShr(ctx->builder, wordval,
 				CONST_INT(pi->bit),
@@ -429,11 +439,19 @@ void decode_packed_struct_fncall(
 	struct llvm_ctx *ctx,
 	LLVMValueRef dstptr,
 	IDL_tree ctyp,
-	LLVMValueRef first_mr)
+	LLVMValueRef first_mr,
+	LLVMValueRef bit_offset)
 {
-	V decode_fn = get_struct_decoder_fn(ctx, ctyp),
-		parms[2] = { dstptr, first_mr };
-	LLVMBuildCall(ctx->builder, decode_fn, parms, 2, "");
+	V decode_fn = get_struct_decoder_fn(ctx, ctyp);
+	const struct packed_format *fmt = packed_format_of(ctyp);
+	if(fmt->num_words == 1) {
+		/* decoder function does have a bit-offset parameter. */
+		V parms[3] = { dstptr, first_mr, bit_offset };
+		LLVMBuildCall(ctx->builder, decode_fn, parms, 3, "");
+	} else {
+		V parms[2] = { dstptr, first_mr };
+		LLVMBuildCall(ctx->builder, decode_fn, parms, 2, "");
+	}
 }
 
 
@@ -441,7 +459,8 @@ void decode_packed_struct(
 	struct llvm_ctx *ctx,
 	LLVMValueRef *dst_p,
 	IDL_tree ctyp,
-	LLVMValueRef first_mr)
+	LLVMValueRef first_mr,
+	LLVMValueRef bit_offset)
 {
 	const char *s_name = IDL_IDENT(IDL_TYPE_STRUCT(ctyp).ident).str;
 	if(*dst_p == NULL) {
@@ -469,8 +488,8 @@ void decode_packed_struct(
 		}
 	}
 	if(is_short) {
-		decode_packed_struct_inline(ctx, *dst_p, ctyp, first_mr);
+		decode_packed_struct_inline(ctx, *dst_p, ctyp, first_mr, bit_offset);
 	} else {
-		decode_packed_struct_fncall(ctx, *dst_p, ctyp, first_mr);
+		decode_packed_struct_fncall(ctx, *dst_p, ctyp, first_mr, bit_offset);
 	}
 }
