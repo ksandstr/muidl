@@ -21,7 +21,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include <ctype.h>
 #include <llvm-c/Core.h>
 #include <libIDL/IDL.h>
 
@@ -92,7 +91,6 @@ LLVMTypeRef llvm_value_type(struct llvm_ctx *ctx, IDL_tree type)
 
 /* TODO: cache outputs by the struct type's repo id, like in
  * packed_format_of()
- *
  */
 LLVMTypeRef llvm_struct_type(
 	struct llvm_ctx *ctx,
@@ -259,36 +257,6 @@ void decode_packed_struct_inline(
 		}
 	}
 	g_strfreev(names);
-}
-
-
-/* FIXME: make this prettier and nicer */
-LLVMValueRef get_struct_decoder_fn(struct llvm_ctx *ctx, IDL_tree ctyp)
-{
-	const char *s_id = IDL_IDENT(IDL_TYPE_STRUCT(ctyp).ident).repo_id;
-	LLVMValueRef fn = g_hash_table_lookup(ctx->struct_decoder_fns, s_id);
-	if(fn == NULL) {
-		int namelen = strlen(s_id);
-		char flatname[namelen + 1];
-		/* FIXME: make this proper, i.e. use a name mangler that works */
-		for(int i=0; i < namelen; i++) {
-			flatname[i] = s_id[i];
-			if(!isalnum(flatname[i])) flatname[i] = '_';
-		}
-		flatname[namelen] = '\0';
-		T types[2] = {
-			LLVMPointerType(llvm_rigid_type(ctx, ctyp), 0),
-			ctx->i32t,
-		};
-		T fntype = LLVMFunctionType(LLVMVoidTypeInContext(ctx->ctx),
-			types, 2, 0);
-		char *fnname = g_strdup_printf("__muidl_idl_decode__%s", flatname);
-		fn = LLVMAddFunction(ctx->module, fnname, fntype);
-		LLVMSetLinkage(fn, LLVMExternalLinkage);
-		g_free(fnname);
-		g_hash_table_insert(ctx->struct_decoder_fns, g_strdup(s_id), fn);
-	}
-	return fn;
 }
 
 
