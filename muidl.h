@@ -434,7 +434,7 @@ extern int size_in_bits(IDL_tree type);
 extern bool verify_idl_input(IDL_ns ns, IDL_tree tree);
 
 
-/* from gen-common.c */
+/* from header.c */
 
 extern void print_common_header(struct print_ctx *pr);
 

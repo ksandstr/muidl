@@ -33,7 +33,7 @@ check:
 
 
 muidl: muidl.o util.o analyse.o verify.o llvmutil.o dispatch.o l4x2.o \
-		sequence.o types.o struct.o gen-common.o gen-stubs.o
+		sequence.o types.o struct.o header.o gen-stubs.o
 	$(CXX) -o $@ $^ $(CFLAGS) $(LIBS)
 
 

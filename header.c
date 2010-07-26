@@ -1,5 +1,5 @@
 /*
- * gen-common.c -- generic common header file generation for the L4 C API
+ * header.c -- common header file generation
  * Copyright 2009, 2010  Kalle A. Sandström <ksandstr@iki.fi>
  *
  * This file is part of µiX.
