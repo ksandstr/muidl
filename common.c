@@ -42,7 +42,7 @@ static void build_packed_struct_decoder(struct llvm_ctx *ctx, IDL_tree styp)
 	LLVMGetParams(fn, params);
 	const struct packed_format *fmt = packed_format_of(styp);
 	assert(fmt != NULL);
-	if(fmt->num_words > 1) params[2] = CONST_INT(0);
+	if(fmt->num_bits >= BITS_PER_WORD) params[2] = CONST_INT(0);
 	decode_packed_struct_inline(ctx, params[0], styp, params[1], params[2]);
 
 	/* return. */

@@ -335,7 +335,7 @@ LLVMValueRef get_struct_decoder_fn(struct llvm_ctx *ctx, IDL_tree ctyp)
 			ctx->i32t,
 		};
 		T fntype = LLVMFunctionType(LLVMVoidTypeInContext(ctx->ctx),
-			types, fmt->num_words == 1 ? 3 : 2, 0);
+			types, fmt->num_bits < BITS_PER_WORD ? 3 : 2, 0);
 		char *fnname = g_strdup_printf("__muidl_idl_decode__%s", flatname);
 		fn = LLVMAddFunction(ctx->module, fnname, fntype);
 		LLVMSetLinkage(fn, LLVMExternalLinkage);
@@ -444,7 +444,7 @@ void decode_packed_struct_fncall(
 {
 	V decode_fn = get_struct_decoder_fn(ctx, ctyp);
 	const struct packed_format *fmt = packed_format_of(ctyp);
-	if(fmt->num_words == 1) {
+	if(fmt->num_bits < BITS_PER_WORD) {
 		/* decoder function does have a bit-offset parameter. */
 		V parms[3] = { dstptr, first_mr, bit_offset };
 		LLVMBuildCall(ctx->builder, decode_fn, parms, 3, "");
