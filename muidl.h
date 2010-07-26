@@ -547,16 +547,13 @@ extern LLVMTypeRef llvm_struct_type(
  *
  * this function should be called build_read_ipc_argument() instead; parameters
  * are always translated according to direction attribute anyhow.
+ *
+ * FIXME: doesn't really belong in types.c but rather in a message.c or some
+ * such.
  */
 extern void build_read_ipc_parameter_ixval(
 	struct llvm_ctx *ctx,
 	LLVMValueRef *dst,
-	IDL_tree ctyp,
-	LLVMValueRef first_mr);
-
-extern void decode_packed_struct_inline(
-	struct llvm_ctx *ctx,
-	LLVMValueRef dst,
 	IDL_tree ctyp,
 	LLVMValueRef first_mr);
 
@@ -568,6 +565,24 @@ extern const struct packed_format *packed_format_of(IDL_tree struct_type);
 extern LLVMValueRef get_struct_decoder_fn(
 	struct llvm_ctx *ctx,
 	IDL_tree structtype);
+
+extern void decode_packed_struct(
+	struct llvm_ctx *ctx,
+	LLVMValueRef *dst_p,
+	IDL_tree ctyp,
+	LLVMValueRef first_mr);
+
+extern void decode_packed_struct_inline(
+	struct llvm_ctx *ctx,
+	LLVMValueRef dstptrval,
+	IDL_tree ctyp,
+	LLVMValueRef first_mr);
+
+extern void decode_packed_struct_fncall(
+	struct llvm_ctx *ctx,
+	LLVMValueRef dstptrval,
+	IDL_tree ctyp,
+	LLVMValueRef first_mr);
 
 
 /* from common.c */
