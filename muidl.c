@@ -1027,6 +1027,8 @@ bool do_idl_file(const char *cppopts, const char *filename)
 		.pr = &print_ctx,
 		.ns = ns,
 		.ctx = LLVMContextCreate(),
+		.struct_decoder_fns = g_hash_table_new_full(
+			&g_str_hash, &g_str_equal, &g_free, NULL),
 	};
 	lc.i32t = LLVMInt32TypeInContext(lc.ctx);
 	lc.wordt = lc.i32t;
@@ -1051,6 +1053,8 @@ bool do_idl_file(const char *cppopts, const char *filename)
 	g_string_chunk_free(print_ctx.tmpstrchunk);
 	g_hash_table_destroy(ifaces);
 	g_free(commonname);
+
+	g_hash_table_destroy(lc.struct_decoder_fns);
 
 	IDL_ns_free(ns);
 	IDL_tree_free(tree);

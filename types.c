@@ -20,6 +20,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
+#include <ctype.h>
 #include <llvm-c/Core.h>
 #include <libIDL/IDL.h>
 
@@ -168,33 +170,28 @@ LLVMTypeRef llvm_rigid_type(struct llvm_ctx *ctx, IDL_tree type)
 }
 
 
-/* FIXME: this is not actually a typing-related function. move it elsewhere,
- * say, message.c once that one is merged in.
- *
- * and the same for build_read_ipc_parameter_ixval().
+/* FIXME: the functions below this comment aren't actually related to typing.
+ * move them elsewhere, say, message.c once that one is merged in.
  */
+
+
 static void decode_packed_struct(
 	struct llvm_ctx *ctx,
 	LLVMValueRef *dst_p,
 	IDL_tree ctyp,
+	LLVMValueRef first_mr);
+
+
+static void decode_packed_struct_inline(
+	struct llvm_ctx *ctx,
+	LLVMValueRef dst,
+	IDL_tree ctyp,
 	LLVMValueRef first_mr)
 {
-	const char *s_name = IDL_IDENT(IDL_TYPE_STRUCT(ctyp).ident).str;
 	const struct packed_format *fmt = packed_format_of(ctyp);
-	if(fmt == NULL) {
-		/* FIXME: ensure this doesn't happen. */
-		fprintf(stderr, "%s: struct `%s' not packable\n",
-			__func__, s_name);
-		abort();
-	}
+	assert(fmt != NULL);
 	char **names = NULL;
 	T s_type = llvm_struct_type(ctx, &names, ctyp);
-	if(*dst_p == NULL) {
-		/* TODO: fold this allocation with struct fields from other decoders,
-		 * if invoked from a dispatcher. somehow. (v2?)
-		 */
-		*dst_p = build_local_storage(ctx, s_type, NULL, s_name);
-	}
 	int names_len = 0;
 	while(names[names_len] != NULL) names_len++;
 	assert(names_len == fmt->num_items);
@@ -218,7 +215,7 @@ static void decode_packed_struct(
 
 		V start_mr = LLVMBuildAdd(ctx->builder, first_mr,
 			CONST_INT(pi->word), tmp_f(ctx->pr, "%s.start.mr", pi->name));
-		V dstptr = LLVMBuildStructGEP(ctx->builder, *dst_p, field_ix,
+		V dstptr = LLVMBuildStructGEP(ctx->builder, dst, field_ix,
 			tmp_f(ctx->pr, "%s.start.ptr", pi->name));
 		if(pi->dim > 1) {
 			/* array types. TODO */
@@ -262,6 +259,88 @@ static void decode_packed_struct(
 		}
 	}
 	g_strfreev(names);
+}
+
+
+/* FIXME: make this prettier and nicer */
+static LLVMValueRef get_struct_decoder_fn(struct llvm_ctx *ctx, IDL_tree ctyp)
+{
+	const char *s_id = IDL_IDENT(IDL_TYPE_STRUCT(ctyp).ident).repo_id;
+	LLVMValueRef fn = g_hash_table_lookup(ctx->struct_decoder_fns, s_id);
+	if(fn == NULL) {
+		int namelen = strlen(s_id);
+		char flatname[namelen + 1];
+		/* FIXME: make this proper, i.e. use a name mangler that works */
+		for(int i=0; i < namelen; i++) {
+			flatname[i] = s_id[i];
+			if(!isalnum(flatname[i])) flatname[i] = '_';
+		}
+		flatname[namelen] = '\0';
+		T types[2] = {
+			LLVMPointerType(llvm_rigid_type(ctx, ctyp), 0),
+			ctx->i32t,
+		};
+		T fntype = LLVMFunctionType(LLVMVoidTypeInContext(ctx->ctx),
+			types, 2, 0);
+		char *fnname = g_strdup_printf("__muidl_idl_decode__%s", flatname);
+		fn = LLVMAddFunction(ctx->module, fnname, fntype);
+		LLVMSetLinkage(fn, LLVMExternalLinkage);
+		g_free(fnname);
+		g_hash_table_insert(ctx->struct_decoder_fns, g_strdup(s_id), fn);
+	}
+	return fn;
+}
+
+
+/* call a function to decode the structure. */
+static void decode_packed_struct_fncall(
+	struct llvm_ctx *ctx,
+	LLVMValueRef dstptr,
+	IDL_tree ctyp,
+	LLVMValueRef first_mr)
+{
+	V decode_fn = get_struct_decoder_fn(ctx, ctyp),
+		parms[2] = { dstptr, first_mr };
+	LLVMBuildCall(ctx->builder, decode_fn, parms, 2, "");
+}
+
+
+static void decode_packed_struct(
+	struct llvm_ctx *ctx,
+	LLVMValueRef *dst_p,
+	IDL_tree ctyp,
+	LLVMValueRef first_mr)
+{
+	const char *s_name = IDL_IDENT(IDL_TYPE_STRUCT(ctyp).ident).str;
+	if(*dst_p == NULL) {
+		/* TODO: fold this allocation with struct fields from other decoders,
+		 * if invoked from a dispatcher. somehow. (v2?)
+		 */
+		T s_type = llvm_struct_type(ctx, NULL, ctyp);
+		*dst_p = build_local_storage(ctx, s_type, NULL, s_name);
+	}
+	const struct packed_format *fmt = packed_format_of(ctyp);
+	if(fmt == NULL) {
+		/* FIXME: ensure this doesn't happen. */
+		fprintf(stderr, "%s: struct `%s' not packable\n",
+			__func__, s_name);
+		abort();
+	}
+	/* see if the structure is short enough to decode inline. */
+	bool is_short = true;
+	for(int i=0, sub=0; i < fmt->num_items; i++) {
+		const struct packed_item *item = fmt->items[i];
+		if(item->len < BITS_PER_WORD) sub++;
+		if(i >= 3 || sub >= 2) {
+			is_short = false;
+			break;
+		}
+	}
+	if(is_short) {
+		decode_packed_struct_inline(ctx, *dst_p, ctyp, first_mr);
+	} else {
+		decode_packed_struct_fncall(ctx, *dst_p, ctyp, first_mr);
+	}
 }
 
 

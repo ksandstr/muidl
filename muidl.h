@@ -144,6 +144,11 @@ struct llvm_ctx
 	LLVMValueRef zero;
 	GList *malloc_ptrs;		/* LLVM free insns emitted at fn end */
 
+	/* key: char * of struct repo id, value: LLVMValueRef of fn. key is
+	 * freed.
+	 */
+	GHashTable *struct_decoder_fns;
+
 	/* used by dispatcher building etc; common L4 IPC stuff */
 	LLVMValueRef utcb;		/* address of UTCB; <L4_Word_t *> */
 	LLVMValueRef from, mr1, mr2, tag;	/* IPC receive regs */
