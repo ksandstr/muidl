@@ -46,3 +46,19 @@ LLVMBasicBlockRef add_sibling_block(
 	/* TODO: assert that "fn" is a function reference */
 	return LLVMAppendBasicBlockInContext(ctx->ctx, fn, name);
 }
+
+
+void build_free_mallocs(struct llvm_ctx *ctx)
+{
+	if(ctx->malloc_ptrs == NULL) return;
+
+	for(GList *cur = g_list_first(ctx->malloc_ptrs);
+		cur != NULL;
+		cur = g_list_next(cur))
+	{
+		LLVMValueRef ptr = cur->data;
+		LLVMBuildFree(ctx->builder, ptr);
+	}
+	g_list_free(ctx->malloc_ptrs);
+	ctx->malloc_ptrs = NULL;
+}

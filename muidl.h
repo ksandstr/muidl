@@ -554,10 +554,24 @@ extern void build_read_ipc_parameter_ixval(
 	IDL_tree ctyp,
 	LLVMValueRef first_mr);
 
+extern LLVMValueRef get_struct_decoder_fn(
+	struct llvm_ctx *ctx,
+	IDL_tree structtype);
+
+extern void decode_packed_struct_inline(
+	struct llvm_ctx *ctx,
+	LLVMValueRef dst,
+	IDL_tree ctyp,
+	LLVMValueRef first_mr);
+
 
 /* from struct.c */
 
 extern const struct packed_format *packed_format_of(IDL_tree struct_type);
 
+
+/* from common.c */
+
+extern gboolean iter_build_common_module(IDL_tree_func_data *, void *);
 
 #endif

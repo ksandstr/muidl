@@ -182,7 +182,7 @@ static void decode_packed_struct(
 	LLVMValueRef first_mr);
 
 
-static void decode_packed_struct_inline(
+void decode_packed_struct_inline(
 	struct llvm_ctx *ctx,
 	LLVMValueRef dst,
 	IDL_tree ctyp,
@@ -263,7 +263,7 @@ static void decode_packed_struct_inline(
 
 
 /* FIXME: make this prettier and nicer */
-static LLVMValueRef get_struct_decoder_fn(struct llvm_ctx *ctx, IDL_tree ctyp)
+LLVMValueRef get_struct_decoder_fn(struct llvm_ctx *ctx, IDL_tree ctyp)
 {
 	const char *s_id = IDL_IDENT(IDL_TYPE_STRUCT(ctyp).ident).repo_id;
 	LLVMValueRef fn = g_hash_table_lookup(ctx->struct_decoder_fns, s_id);

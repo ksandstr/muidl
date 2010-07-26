@@ -59,4 +59,9 @@ extern LLVMBasicBlockRef add_sibling_block(
 	const char *name_fmt,
 	...);
 
+/* build free insns for LLVMValueRef data in ctx->malloc_ptrs, then truncate
+ * the list.
+ */
+extern void build_free_mallocs(struct llvm_ctx *ctx);
+
 #endif

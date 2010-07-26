@@ -911,9 +911,15 @@ static void print_into(
 }
 
 
-static gboolean iter_emit_dispatchers(IDL_tree_func_data *tf, void *ud)
+/* TODO: move this into dispatch.c */
+static gboolean iter_build_dispatchers(IDL_tree_func_data *tf, void *ud)
 {
 	struct llvm_ctx *ctx = ud;
+
+	/* TODO: add extern functions to the module on first invocation,
+	 * somehow
+	 */
+
 	switch(IDL_NODE_TYPE(tf->tree)) {
 		case IDLN_LIST:
 		case IDLN_MODULE:
@@ -930,17 +936,20 @@ static gboolean iter_emit_dispatchers(IDL_tree_func_data *tf, void *ud)
 }
 
 
-static LLVMModuleRef make_llvm_service_module(
+static LLVMModuleRef make_llvm_module(
 	struct llvm_ctx *ctx,
-	const char *basename)
+	const char *basename,
+	IDL_tree_func treefn)
 {
 	LLVMModuleRef mod = LLVMModuleCreateWithNameInContext(basename, ctx->ctx);
 	LLVMSetTarget(mod, "i486-linux-gnu");
 	ctx->module = mod;
 
-	/* TODO: add extern functions */
+	/* reset per-module context things */
+	g_hash_table_remove_all(ctx->struct_decoder_fns);
+	assert(ctx->malloc_ptrs == NULL);
 
-	IDL_tree_walk_in_order(ctx->pr->tree, &iter_emit_dispatchers, ctx);
+	IDL_tree_walk_in_order(ctx->pr->tree, treefn, ctx);
 
 	char *outmsg = NULL;
 	if(LLVMVerifyModule(mod, LLVMPrintMessageAction, &outmsg)) {
@@ -958,7 +967,7 @@ static LLVMModuleRef make_llvm_service_module(
 }
 
 
-static void output_llvm_source(LLVMModuleRef mod, const char *filename)
+static void compile_module_to_asm(LLVMModuleRef mod, const char *filename)
 {
 	char *cmd = g_strdup_printf("llc-2.7 -O2 -filetype=asm -o %s", filename);
 	FILE *p = popen(cmd, "w");
@@ -1039,10 +1048,18 @@ bool do_idl_file(const char *cppopts, const char *filename)
 
 	if(!arg_service_only && !arg_client_only) {
 		print_into(commonname, &print_common_header, &print_ctx);
+
+		LLVMModuleRef mod = make_llvm_module(&lc, basename,
+			&iter_build_common_module);
+		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-common.S",
+			basename));
+		LLVMDisposeModule(mod);
 	}
 	if(!arg_defs_only && !arg_client_only) {
-		LLVMModuleRef mod = make_llvm_service_module(&lc, basename);
-		output_llvm_source(mod, tmp_f(&print_ctx, "%s-service.S", basename));
+		LLVMModuleRef mod = make_llvm_module(&lc, basename,
+			&iter_build_dispatchers);
+		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-service.S",
+			basename));
 		LLVMDisposeModule(mod);
 	}
 	if(!arg_defs_only && !arg_service_only) {

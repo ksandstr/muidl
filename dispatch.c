@@ -1017,15 +1017,7 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 
 	/* and emit free insns for all blocks in the malloc list */
 	LLVMPositionBuilderAtEnd(ctx->builder, exit_bb);
-	for(GList *cur = g_list_first(ctx->malloc_ptrs);
-		cur != NULL;
-		cur = g_list_next(cur))
-	{
-		LLVMValueRef ptr = cur->data;
-		LLVMBuildFree(ctx->builder, ptr);
-	}
-	g_list_free(ctx->malloc_ptrs);
-	ctx->malloc_ptrs = NULL;
+	build_free_mallocs(ctx);
 	LLVMBuildRet(ctx->builder, retval);
 
 	LLVMDisposeBuilder(ctx->builder);
