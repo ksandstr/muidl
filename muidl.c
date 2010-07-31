@@ -993,6 +993,8 @@ bool do_idl_file(const char *cppopts, const char *filename)
 	IDL_tree tree = NULL;
 	IDL_ns ns = NULL;
 
+	reset_warn_once();
+
 	int n = IDL_parse_filename(filename, cppopts, &msg_callback,
 		&tree, &ns, IDLF_PROPERTIES | IDLF_XPIDL | IDLF_SHOW_CPP_ERRORS
 			| IDLF_COMBINE_REOPENED_MODULES

@@ -22,10 +22,14 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
 #include <llvm-c/Core.h>
 
 #include "muidl.h"
+
+
+static GHashTable *warn_once_hash = NULL;
 
 
 void list_dispose(GList *list)
@@ -54,6 +58,39 @@ void free_method_info(struct method_info *inf)
 		free_message_info(inf->replies[i]);
 	}
 	g_free(inf);
+}
+
+
+bool warn_once(const char *fmt, ...)
+{
+	if(warn_once_hash == NULL) {
+		warn_once_hash = g_hash_table_new_full(&g_str_hash,
+			&g_str_equal, &g_free, NULL);
+	}
+
+	va_list al;
+	va_start(al, fmt);
+	char *str = g_strdup_vprintf(fmt, al);
+	va_end(al);
+	int len = strlen(str);
+	while(len > 0 && str[len - 1] == '\n') len--;
+	str[MAX(0, len - 1)] = '\0';
+	if(g_hash_table_lookup(warn_once_hash, str) == NULL) {
+		g_hash_table_insert(warn_once_hash, str, GINT_TO_POINTER(1));
+		fprintf(stderr, "warning: %s\n", str);
+		return true;
+	} else {
+		g_free(str);
+		return false;
+	}
+}
+
+
+void reset_warn_once(void)
+{
+	if(warn_once_hash != NULL) {
+		g_hash_table_remove_all(warn_once_hash);
+	}
 }
 
 

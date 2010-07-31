@@ -358,6 +358,16 @@ extern void list_dispose(GList *list);
 extern void free_message_info(struct message_info *inf);
 extern void free_method_info(struct method_info *inf);
 
+/* output a "warning: %s[fmt]", but only once per program execution.
+ * returns true if a message was output.
+ */
+extern bool warn_once(const char *fmt, ...)
+	__attribute__((format(printf, 1, 2)));
+
+/* reset the warn_once() "already printed" set. */
+extern void reset_warn_once(void);
+
+
 /* these allocate from pr->tmpstrchunk. strings are valid until the next outer
  * print_into() returns.
  */
