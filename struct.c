@@ -61,6 +61,7 @@ static GPtrArray *unpack_idl_fields(IDL_tree stype)
 			struct comp_item *ci = g_new(struct comp_item, 1);
 			ci->type = mtype;
 			ci->bits_each = size_in_bits(mtype);
+			assert(ci->bits_each >= 0);
 			if(IDL_NODE_TYPE(dcl) == IDLN_IDENT) {
 				ci->dim = 1;
 				ci->name = IDL_IDENT(dcl).str;
@@ -243,7 +244,10 @@ const struct packed_format *packed_format_of(IDL_tree stype)
 	int num_small = 0;
 	for(int i=0; i<items->len; i++) {
 		struct comp_item *item = items->pdata[i];
-		/* TODO: produce N items for arrays where bits_each < BITS_PER_WORD. */
+		/* TODO: produce N items for arrays where bits_each < BITS_PER_WORD, so
+		 * that smaller items can be packed after e.g. an array member that
+		 * leaves 11 bits unused in each word.
+		 */
 		int bits = item->bits_each * item->dim;
 		if(bits >= BITS_PER_WORD) break;
 		items_by_size[bits] = g_list_prepend(items_by_size[bits], item);
@@ -254,10 +258,9 @@ const struct packed_format *packed_format_of(IDL_tree stype)
 	}
 	GPtrArray *packed = g_ptr_array_new();
 	int num_words = pack_items(packed, items_by_size, num_small, NULL, 0, 64);
-	if(num_words >= 64) {
-		fprintf(stderr, "structure `%s' can't be bit-packed\n", s_id);
-		/* FIXME: return NULL, make callers handle NULL */
-		abort();
+	if(num_words > 63) {
+		warn_once("structure `%s' can't be bit-packed\n", s_id);
+		return NULL;
 	}
 	assert(num_words < 64);
 	for(int i=0; i < (BITS_PER_WORD - 1); i++) {
@@ -321,6 +324,7 @@ LLVMValueRef get_struct_decoder_fn(struct llvm_ctx *ctx, IDL_tree ctyp)
 	LLVMValueRef fn = g_hash_table_lookup(ctx->struct_decoder_fns, s_id);
 	if(fn == NULL) {
 		const struct packed_format *fmt = packed_format_of(ctyp);
+		assert(fmt != NULL);	/* only sane for packable structs */
 		int namelen = strlen(s_id);
 		char flatname[namelen + 1];
 		/* FIXME: make this proper, i.e. use a name mangler that works */
@@ -444,6 +448,7 @@ void decode_packed_struct_fncall(
 {
 	V decode_fn = get_struct_decoder_fn(ctx, ctyp);
 	const struct packed_format *fmt = packed_format_of(ctyp);
+	assert(fmt != NULL);
 	if(fmt->num_bits < BITS_PER_WORD) {
 		/* decoder function does have a bit-offset parameter. */
 		V parms[3] = { dstptr, first_mr, bit_offset };
@@ -471,12 +476,7 @@ void decode_packed_struct(
 		*dst_p = build_local_storage(ctx, s_type, NULL, s_name);
 	}
 	const struct packed_format *fmt = packed_format_of(ctyp);
-	if(fmt == NULL) {
-		/* FIXME: ensure this doesn't happen. */
-		fprintf(stderr, "%s: struct `%s' not packable\n",
-			__func__, s_name);
-		abort();
-	}
+	assert(fmt != NULL);
 	/* see if the structure is short enough to decode inline. */
 	bool is_short = true;
 	for(int i=0, sub=0; i < fmt->num_items; i++) {

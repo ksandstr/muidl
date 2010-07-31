@@ -434,7 +434,9 @@ extern GList *analyse_methods_of_iface(
  */
 extern struct stritem_info *dispatcher_stritems(GList *methods);
 
-/* size of a rigid type in bits. */
+/* size of a rigid type in bits. negative if the type is a struct or union that
+ * µIDL cannot pack into fewer than 64 untyped words.
+ */
 extern int size_in_bits(IDL_tree type);
 
 
@@ -570,6 +572,9 @@ extern void build_read_ipc_parameter_ixval(
 
 /* from struct.c */
 
+/* returns NULL when the structure type can't be represented in a bit-packed
+ * format (i.e. it would use more than 63 untyped words).
+ */
 extern const struct packed_format *packed_format_of(IDL_tree struct_type);
 
 extern LLVMValueRef get_struct_decoder_fn(

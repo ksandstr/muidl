@@ -154,6 +154,7 @@ int size_in_bits(IDL_tree type)
 			 * result in up to BITS_PER_WORD - 1 wasted space.
 			 */
 			const struct packed_format *pf = packed_format_of(type);
+			if(pf == NULL) return -1;
 			if(pf->num_bits < BITS_PER_WORD) return pf->num_bits;
 			else return pf->num_words * BITS_PER_WORD;
 		}
@@ -168,6 +169,9 @@ int size_in_bits(IDL_tree type)
 }
 
 
+/* NOTE: this function is only defined for types that can be encoded as untyped
+ * words. structs larger than 63 words will pop blow that assert down there.
+ */
 static int array_size_in_words(IDL_tree type, IDL_tree dcl)
 {
 	IDL_tree size_list = IDL_TYPE_ARRAY(dcl).size_list;
@@ -175,6 +179,7 @@ static int array_size_in_words(IDL_tree type, IDL_tree dcl)
 
 	int len = IDL_INTEGER(IDL_LIST(size_list).data).value,
 		sib = size_in_bits(type);
+	assert(sib >= 0);
 	if(sib <= BITS_PER_WORD) {
 		/* short types. */
 		int epw = BITS_PER_WORD / sib;
@@ -317,7 +322,9 @@ static struct msg_param *new_inline_seq(
 {
 	IDL_tree bound = IDL_TYPE_SEQUENCE(type).positive_int_const;
 	assert(bound != NULL);
-	int bpe = size_in_bits(subtype), epw = BITS_PER_WORD / bpe,
+	int bpe = size_in_bits(subtype);
+	assert(bpe > 0);
+	int epw = BITS_PER_WORD / bpe,
 		max_words = (IDL_INTEGER(bound).value + epw - 1) / epw;
 	struct msg_param *s = g_new0(struct msg_param, 1);
 	s->kind = P_SEQ;
