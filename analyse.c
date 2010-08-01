@@ -367,48 +367,69 @@ static bool is_bounded_seq(IDL_tree type)
 }
 
 
-/* turn a bunch of parameters into lists of untyped, inline-sequence and long
- * types. the first have fixed register assignments, inline sequences have
- * register ranges and long types appear in transmission order.
+/* turn a parameter list into lists of untyped, inline-sequence and long types.
+ * the first have fixed register assignments, inline sequences have register
+ * ranges and long types appear in transmission order.
  */
 static struct message_info *build_message(
 	IDL_tree return_type,		/* not IDL_PARAM_DCL, therefore separate */
-	const IDL_tree *params,
-	int num_params,
-	bool has_sublabel)
+	IDL_tree param_list,
+	bool has_sublabel,
+	bool is_outhalf)
 {
 	struct message_info *inf = NULL;
 	GList *untyped = NULL, *seq = NULL, *_long = NULL;	/* <struct msg_param *> */
 
-	/* classify parameters and make structures. */
-	/* TODO: handle "return_type"! */
-	int arg_pos = 0;
-	for(int i=0; i<num_params; i++) {
-		IDL_tree p = params[i],
+	/* classify parameters and construct msg_param structures for them.
+	 *
+	 * the return value, where present, occupies the first argument slot. this
+	 * function doesn't allocate a msg_param for it, because return values are
+	 * a bit special against the C ABI.
+	 */
+	int arg_pos = (return_type != NULL ? 1 : 0), param_ix = 0;
+	for(IDL_tree cur = param_list;
+		cur != NULL;
+		cur = IDL_LIST(cur).next, param_ix++)
+	{
+		IDL_tree p = IDL_LIST(cur).data,
 			type = get_type_spec(IDL_PARAM_DCL(p).param_type_spec),
 			ident = IDL_PARAM_DCL(p).simple_declarator;
+		enum IDL_param_attr attr = IDL_PARAM_DCL(p).attr;
 		const char *name = IDL_IDENT(ident).str;
+		int nargs = 0;
+		bool accept = (is_outhalf && attr != IDL_PARAM_IN)
+			|| (!is_outhalf && attr != IDL_PARAM_OUT);
 		if(is_rigid_type(NULL, type)) {
-			/* this may include overlong items. */
-			struct msg_param *u = new_untyped(name, type, p, i);
-			u->arg_ix = arg_pos++;
-			untyped = g_list_prepend(untyped, u);
+			nargs = 1;
+			if(accept) {
+				/* this may include overlong items. */
+				struct msg_param *u = new_untyped(name, type, p, param_ix);
+				u->arg_ix = arg_pos;
+				untyped = g_list_prepend(untyped, u);
+			}
 		} else if(is_bounded_seq(type)) {
-			IDL_tree subtype = get_type_spec(
-				IDL_TYPE_SEQUENCE(type).simple_type_spec);
-			assert(is_rigid_type(NULL, subtype));
-			/* this, too, will include overlong items. */
-			struct msg_param *s = new_inline_seq(name, type, subtype, p, i);
-			s->arg_ix = arg_pos;
-			arg_pos += 2;
-			seq = g_list_prepend(seq, s);
+			nargs = 2;
+			if(accept) {
+				IDL_tree subtype = get_type_spec(
+					IDL_TYPE_SEQUENCE(type).simple_type_spec);
+				assert(is_rigid_type(NULL, subtype));
+				/* this, too, will include overlong items. */
+				struct msg_param *s = new_inline_seq(name, type, subtype, p,
+					param_ix);
+				s->arg_ix = arg_pos;
+				seq = g_list_prepend(seq, s);
+			}
 		} else {
-			/* everything else is passed as long items. */
-			struct msg_param *l = new_long_param(name, type, p, i);
-			l->arg_ix = arg_pos;
-			arg_pos += 2;
-			_long = g_list_prepend(_long, l);
+			nargs = 2;
+			if(accept) {
+				/* everything else is passed as long items. */
+				struct msg_param *l = new_long_param(name, type, p,
+					param_ix);
+				l->arg_ix = arg_pos;
+				_long = g_list_prepend(_long, l);
+			}
 		}
+		arg_pos += nargs;
 	}
 	untyped = g_list_reverse(untyped);
 	seq = g_list_reverse(seq);
@@ -419,7 +440,16 @@ static struct message_info *build_message(
 	 */
 	bool reg_in_use[64];
 	for(int i=1; i<64; i++) reg_in_use[i] = false;
-	if(has_sublabel) reg_in_use[1] = true;
+	int next_u = 1;
+	if(has_sublabel) reg_in_use[next_u++] = true;
+	if(return_type != NULL) {
+		assert(is_value_type(return_type));
+		int rt_words = size_in_words(return_type);
+		assert(next_u + rt_words <= 63);
+		for(int i=0; i<rt_words; i++) reg_in_use[next_u + i] = true;
+		next_u += rt_words;
+	}
+
 	/* those with explicit MR(%d) specs, first. */
 	GLIST_FOREACH(cur, untyped) {
 		struct msg_param *u = cur->data;
@@ -429,6 +459,7 @@ static struct message_info *build_message(
 		if(!get_ul_property(&mr_n, ident, "MR")) goto fail;
 		u->X.untyped.reg_manual = mr_n > 0;
 		if(mr_n == 0) continue;
+		/* TODO: move these three conditions into verify.c */
 		if(size_in_words(type) > 1) {
 			fprintf(stderr, "%s: mr spec attribute not valid for <%s> (size %d words)\n",
 				__func__, IDL_NODE_TYPE_NAME(type), size_in_words(type));
@@ -444,7 +475,18 @@ static struct message_info *build_message(
 			goto fail;
 		}
 		if(reg_in_use[mr_n]) {
-			fprintf(stderr, "%s: MR(%lu) specified twice\n", __func__, mr_n);
+			fprintf(stderr, "%s: MR%lu already in use\n", __func__, mr_n);
+			if(return_type != NULL || has_sublabel) {
+				fprintf(stderr, "\t(this operation has");
+				if(return_type != NULL) fprintf(stderr, " a return type");
+				if(return_type != NULL && has_sublabel) {
+					fprintf(stderr, " and");
+				}
+				if(has_sublabel) fprintf(stderr, " a sublabel");
+				fprintf(stderr, ", occupying the first %d registers.)\n",
+					(has_sublabel ? 1 : 0) + (return_type == NULL ? 0
+						: size_in_words(return_type)));
+			}
 			goto fail;
 		}
 		reg_in_use[mr_n] = true;
@@ -454,7 +496,7 @@ static struct message_info *build_message(
 	/* then the non-compound types (since there is no alternative encoding for
 	 * them)
 	 */
-	int next_u = has_sublabel ? 2 : 1, num_compound = 0;
+	int num_compound = 0;
 	GLIST_FOREACH(cur, untyped) {
 		struct msg_param *u = cur->data;
 		if(u->X.untyped.reg_manual) continue;
@@ -545,7 +587,7 @@ static struct message_info *build_message(
 	GLIST_FOREACH(c, untyped_remove) {
 		untyped = g_list_delete_link(untyped, c->data);
 	}
-	g_list_free(untyped_remove);
+	if(untyped_remove != NULL) g_list_free(untyped_remove);
 
 	inf->untyped = untyped;
 	inf->tag_u = has_sublabel ? 1 : 0;
@@ -701,18 +743,9 @@ struct method_info *analyse_op_dcl(
 	inf->num_reply_msgs = num_replies;
 	inf->return_type = return_type;
 
-	/* the request message consists of in-parameters and the in-halves of inout
-	 * parameters.
-	 */
-	IDL_tree pbuf[IDL_list_length(param_list) + 1];
-	int nparms = 0;
-	for(IDL_tree cur = param_list; cur != NULL; cur = IDL_LIST(cur).next) {
-		IDL_tree param = IDL_LIST(cur).data;
-		if(IDL_PARAM_DCL(param).attr != IDL_PARAM_OUT) {
-			pbuf[nparms++] = param;
-		}
-	}
-	inf->request = build_message(NULL, pbuf, nparms, op_has_sublabel(method));
+	/* build the request. */
+	inf->request = build_message(NULL, param_list, op_has_sublabel(method),
+		false);
 	if(inf->request == NULL) goto fail;
 	inf->request->node = method;
 	if(!get_msg_label(inf->request, IDL_OP_DCL(method).ident)) {
@@ -733,18 +766,12 @@ struct method_info *analyse_op_dcl(
 
 	if(num_replies > 0) {
 		/* the usual reply: return type and out, inout out-halves */
-		nparms = 0;
-		for(IDL_tree c = param_list; c != NULL; c = IDL_LIST(c).next) {
-			IDL_tree param = IDL_LIST(c).data;
-			if(IDL_PARAM_DCL(param).attr != IDL_PARAM_IN) {
-				pbuf[nparms++] = param;
-			}
-		}
-		inf->replies[0] = build_message(return_type, pbuf, nparms,
-			op_has_sublabel(method));
+		inf->replies[0] = build_message(return_type, param_list,
+			false, true);
 		inf->replies[0]->node = method;
 		inf->replies[0]->label = 0;
 		inf->replies[0]->tagmask = NO_TAGMASK;
+		inf->replies[0]->sublabel = NO_SUBLABEL;
 	}
 
 	if(num_replies > 1) {
