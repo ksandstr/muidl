@@ -38,6 +38,12 @@
 /* FIXME: make this per-target, i.e. independent of the current platform. */
 #define BITS_PER_WORD 32
 
+/* this applies to in- and out-halves of operation separately. it's the maximum
+ * length of "args" arrays, such as are passed to build_msg_encoder() and the
+ * like.
+ */
+#define MAX_PARMS_PER_OP 32
+
 
 /* utilities for libIDL */
 #define IFACE_REPO_ID(t) IDL_IDENT_REPO_ID(IDL_INTERFACE((t)).ident)
@@ -609,5 +615,31 @@ extern void decode_packed_struct_fncall(
 /* from common.c */
 
 extern gboolean iter_build_common_module(IDL_tree_func_data *, void *);
+
+
+/* from message.c */
+
+/* returns # of MRs used.
+ *
+ * when is_value_type(ctyp), @val[0] is a C representation of @ctyp.
+ * when is_rigid_type(..., ctyp) || IS_MAPGRANT_TYPE(ctyp), @val[0] is a
+ * pointer to the same.
+ * otherwise, @val[0] is a pointer to the first element, and @val[1] is the
+ * number of elements as i32.
+ */
+extern int build_write_ipc_parameter_ixval(
+	struct llvm_ctx *ctx,
+	const LLVMValueRef *val,
+	IDL_tree ctyp,
+	LLVMValueRef ixval);
+
+/* turn a sequence of out-parameters into L4 instructions that store the
+ * appropriate values, including the message tag, in the message registers.
+ */
+void build_msg_encoder(
+	struct llvm_ctx *ctx,
+	const struct message_info *msg,
+	const LLVMValueRef *args,
+	bool is_out_half);
 
 #endif

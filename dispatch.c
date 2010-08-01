@@ -30,20 +30,6 @@
 #include "llvmutil.h"
 
 
-/* NOTE: offset is in _words_, since that's the unit the UTCB is addressed
- * with.
- */
-static LLVMValueRef build_utcb_address(
-	struct llvm_ctx *ctx,
-	int offset,
-	const char *name)
-{
-	LLVMValueRef off = LLVMConstInt(ctx->wordt, abs(offset), 0);
-	if(offset < 0) off = LLVMBuildNeg(ctx->builder, off, "utcboffset");
-	return LLVMBuildGEP(ctx->builder, ctx->utcb, &off, 1, name);
-}
-
-
 static LLVMValueRef build_ipcfailed_cond(
 	struct llvm_ctx *ctx,
 	LLVMValueRef mr0)
@@ -75,7 +61,7 @@ static LLVMValueRef build_ipc_input_val(struct llvm_ctx *ctx, int mr)
 	else if(mr == 2) return ctx->mr2;
 	else {
 		return LLVMBuildLoad(ctx->builder,
-			build_utcb_address(ctx, mr, "mr.addr"),
+			UTCB_ADDR_VAL(ctx, CONST_INT(mr), "mr.addr"),
 			tmp_f(ctx->pr, "mr%d", mr));
 	}
 }
@@ -121,53 +107,6 @@ static void build_read_ipc_parameter(
 		/* genuinely not defined */
 		NOTDEFINED(ctyp);
 	}
-}
-
-
-
-
-/* returns # of MRs used.
- *
- * when is_value_type(ctyp), @val[0] is a C representation of @ctyp.
- * when is_rigid_type(..., ctyp) || IS_MAPGRANT_TYPE(ctyp), @val[0] is a
- * pointer to the same.
- * otherwise, @val[0] is a pointer to the first element, and @val[1] is the
- * number of elements as i32.
- */
-static int build_write_ipc_parameter(
-	struct llvm_ctx *ctx,
-	const LLVMValueRef *val,
-	IDL_tree ctyp,
-	int first_mr)
-{
-	/* double-word types (TODO) */
-	if(IS_LONGLONG_TYPE(ctyp)) {
-		abort();
-	} else if(IS_LONGDOUBLE_TYPE(ctyp)) {
-		abort();
-	} else if(IS_MAPGRANT_TYPE(ctyp)) {
-		for(int i=0; i<2; i++) {
-			LLVMBuildStore(ctx->builder,
-				LLVMBuildLoad(ctx->builder,
-					LLVMBuildStructGEP(ctx->builder, val[0], i,
-						tmp_f(ctx->pr, "mg.field%d.ptr", i)),
-					tmp_f(ctx->pr, "mg.field%d.val", i)),
-				build_utcb_address(ctx, first_mr + i, "mg.store.addr"));
-		}
-		return 2;
-	}
-
-	/* single-word types */
-	LLVMValueRef reg;
-	if(is_integral_type(ctyp)) {
-		reg = WORD(val[0]);
-	} else {
-		/* TODO! */
-		NOTDEFINED(ctyp);
-	}
-	LLVMBuildStore(ctx->builder, reg,
-		build_utcb_address(ctx, first_mr, "store.mr.addr"));
-	return 1;
 }
 
 
@@ -310,7 +249,7 @@ static LLVMBasicBlockRef get_msgerr_bb(struct llvm_ctx *ctx)
 			CONST_WORD(1), CONST_WORD(1 << 16), "msgerr.tag");
 		LLVMBuildStore(ctx->builder,
 			LLVMBuildNeg(ctx->builder, ctx->fncall_phi, "rcneg.val"),
-			build_utcb_address(ctx, 1, "mr1.addr"));
+			UTCB_ADDR_VAL(ctx, CONST_INT(1), "mr1.addr"));
 		branch_set_phi(ctx, ctx->reply_tag, msgerr_tag);
 		LLVMBuildBr(ctx->builder, ctx->reply_bb);
 
@@ -487,23 +426,6 @@ static void emit_out_param(
 }
 
 
-static int first_arg_index(IDL_tree op, IDL_tree pdecl)
-{
-	int ix = 0;
-	for(IDL_tree cur = IDL_OP_DCL(op).parameter_dcls;
-		cur != NULL;
-		cur = IDL_LIST(cur).next)
-	{
-		IDL_tree p = IDL_LIST(cur).data;
-		if(p == pdecl) return ix;
-		IDL_tree type = get_type_spec(IDL_PARAM_DCL(p).param_type_spec);
-		/* sequences are 2 args. everything else is just one. */
-		ix += IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE ? 2 : 1;
-	}
-	return -1;
-}
-
-
 static LLVMBasicBlockRef build_op_decode(
 	struct llvm_ctx *ctx,
 	LLVMValueRef function,
@@ -534,7 +456,7 @@ static LLVMBasicBlockRef build_op_decode(
 		tag_u_val, build_t_from_tag(ctx, ctx->tag), "tmax");
 	ctx->tpos = LLVMBuildAdd(ctx->builder, LLVMConstInt(ctx->i32t, 1, 0),
 		tag_u_val, "tpos.initial");
-	const int num_args_max = g_list_length(req->untyped) + 1
+	const int num_args_max = 1 + g_list_length(req->untyped)
 		+ 2 * g_list_length(req->seq) + 2 * g_list_length(req->_long);
 	LLVMValueRef args[num_args_max], retvalptr = NULL;
 	int arg_pos = 0;
@@ -623,7 +545,6 @@ static LLVMBasicBlockRef build_op_decode(
 	assert(inf->num_reply_msgs > 0);
 	assert(!IS_EXN_MSG(inf->replies[0]));
 	const struct message_info *reply = inf->replies[0];
-	int mr_pos = 1;
 	/* return value */
 	if(inf->return_type != NULL) {
 		LLVMValueRef val[2];
@@ -644,9 +565,13 @@ static LLVMBasicBlockRef build_op_decode(
 			/* TODO: add the other types */
 			NOTDEFINED(inf->return_type);
 		}
-		mr_pos += build_write_ipc_parameter(ctx, val,
-			inf->return_type, mr_pos);
+		build_write_ipc_parameter_ixval(ctx, val,
+			inf->return_type, CONST_INT(1));
 	}
+	/* the rest in a more generic way. */
+	build_msg_encoder(ctx, reply, args, true);
+
+#if !1
 	/* those out-parameters and out-halves of inout parameters which are
 	 * either value or rigid types, i.e. a fixed number of words each.
 	 */
@@ -666,13 +591,14 @@ static LLVMBasicBlockRef build_op_decode(
 		if(is_value_type(typ)) {
 			LLVMValueRef rval = LLVMBuildLoad(ctx->builder,
 				args[arg_ix], tmp_f(ctx->pr, "arg%d.raw", arg_ix));
-			mr_pos += build_write_ipc_parameter(ctx, &rval, typ, mr_pos);
+			mr_pos += build_write_ipc_parameter_ixval(ctx, &rval, typ,
+				CONST_INT(mr_pos));
 		} else if(IS_MAPGRANT_TYPE(typ) || is_rigid_type(ctx->ns, typ)) {
 			/* TODO: distinguish between inline rigid types and those passed as
 			 * string items due to size or content or something
 			 */
-			mr_pos += build_write_ipc_parameter(ctx, &args[arg_ix], typ,
-				mr_pos);
+			mr_pos += build_write_ipc_parameter_ixval(ctx, &args[arg_ix], typ,
+				CONST_INT(mr_pos));
 		}
 	}
 
@@ -702,6 +628,7 @@ static LLVMBasicBlockRef build_op_decode(
 		tag = WORD(u_val);	/* simple. */
 	branch_set_phi(ctx, ctx->reply_tag, tag);
 	LLVMBuildBr(ctx->builder, ctx->reply_bb);
+#endif
 
 	return bb;
 }
@@ -735,8 +662,8 @@ static void build_store_br(
 	int br)
 {
 	assert(br <= 32 && br >= 0);
-	LLVMValueRef br_addr = build_utcb_address(ctx,
-		br * -4 - 64, tmp_f(ctx->pr, "br%d.ptr", br));
+	LLVMValueRef br_addr = UTCB_ADDR_VAL(ctx,
+		CONST_INT(br * -4 - 64), tmp_f(ctx->pr, "br%d.ptr", br));
 	LLVMBuildStore(ctx->builder, value, br_addr);
 }
 
@@ -801,7 +728,8 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 	/* store xfer timeouts at point of entry, i.e. as they are given by the
 	 * caller.
 	 */
-	LLVMValueRef xfer_timeouts_addr = build_utcb_address(ctx, -8, "xferto.addr"),
+	LLVMValueRef xfer_timeouts_addr = UTCB_ADDR_VAL(ctx, CONST_INT(-8),
+			"xferto.addr"),
 		stored_timeouts = LLVMBuildLoad(ctx->builder, xfer_timeouts_addr,
 			"stored_timeouts");
 	/* string buffers */
@@ -862,7 +790,7 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 	/* return L4_ErrorCode(); */
 	LLVMPositionBuilderAtEnd(ctx->builder, ret_ec_bb);
 	LLVMValueRef errorcode = LLVMBuildLoad(ctx->builder,
-		build_utcb_address(ctx, -9, "errcode.addr"), "errcode");
+		UTCB_ADDR_VAL(ctx, CONST_INT(-9), "errcode.addr"), "errcode");
 	LLVMAddIncoming(retval, &errorcode, &ret_ec_bb, 1);
 	LLVMBuildBr(ctx->builder, exit_bb);
 

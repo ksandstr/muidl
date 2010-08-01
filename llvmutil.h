@@ -45,6 +45,13 @@
 /* casting */
 #define WORD(v) LLVMBuildZExtOrBitCast(ctx->builder, (v), ctx->wordt, "cast.w")
 
+/* NOTE: offset is in _words_, since that's the unit the UTCB is addressed
+ * with.
+ */
+#define UTCB_ADDR_VAL(ctx, offset, name) \
+	({ V _off = (offset); \
+	   LLVMBuildGEP((ctx)->builder, (ctx)->utcb, &_off, 1, (name)); })
+
 
 /* helper functions from llvmutil.c */
 

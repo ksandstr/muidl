@@ -32,8 +32,9 @@ check:
 	./autotest.pl $(AUTOTEST_FILES)
 
 
-muidl: muidl.o util.o analyse.o verify.o llvmutil.o dispatch.o l4x2.o \
-		sequence.o types.o struct.o header.o common.o gen-stubs.o
+muidl: muidl.o util.o analyse.o verify.o llvmutil.o l4x2.o \
+		message.o sequence.o types.o struct.o header.o common.o \
+		dispatch.o gen-stubs.o
 	$(CXX) -o $@ $^ $(CFLAGS) $(LIBS)
 
 

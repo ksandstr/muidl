@@ -37,6 +37,7 @@ struct slimkitten {
 [StubPrefix(__countserv)]
 interface Countserv
 {
+#if 0
 	[Label(5)]
 	void hang_in_there(
 		in short what,
@@ -45,7 +46,6 @@ interface Countserv
 		in slimkitten the_annoying_thing,
 		in fatcat el_parametro_grande);
 
-#if 0
 	typedef henchman small_crew[5];
 
 	[Label(23)]
@@ -59,9 +59,8 @@ interface Countserv
 	long bump();
 
 	[Label(667)]
-	void set(in long value);
+	long reset(in long value);		/* "returns old value", or some such */
 
-#if 0
 	[Label(668)]
 	void read(out long value);
 
@@ -75,6 +74,7 @@ interface Countserv
 	void may_fail(in short what, in long how, in octet when)
 		raises(Posix::Errno);
 
+#if 0
 	[Label(671)]
 	unsigned short may_fail_with_retval(
 		in short what,
