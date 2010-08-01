@@ -539,6 +539,9 @@ extern LLVMValueRef build_encode_inline_sequence(
 
 /* from types.c */
 
+extern bool is_signed(IDL_tree type);
+extern bool is_integral_type(IDL_tree type);
+
 extern LLVMTypeRef llvm_value_type(struct llvm_ctx *ctx, IDL_tree type);
 extern LLVMTypeRef llvm_rigid_type(struct llvm_ctx *ctx, IDL_tree type);
 

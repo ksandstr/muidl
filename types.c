@@ -28,6 +28,32 @@
 #include "llvmutil.h"
 
 
+bool is_integral_type(IDL_tree typ)
+{
+	switch(IDL_NODE_TYPE(typ)) {
+		case IDLN_TYPE_INTEGER:
+		case IDLN_TYPE_OCTET:
+		case IDLN_TYPE_BOOLEAN:
+			return true;
+
+		default:
+			return IS_WORD_TYPE(typ);
+	}
+}
+
+
+#if 0
+bool is_signed(IDL_tree typ)
+{
+	assert(is_integral_type(typ));
+	return IDL_NODE_TYPE(typ) == IDLN_TYPE_CHAR
+		|| IDL_NODE_TYPE(typ) == IDLN_TYPE_WIDE_CHAR
+		|| (IDL_NODE_TYPE(typ) == IDLN_TYPE_INTEGER
+			&& IDL_TYPE_INTEGER(typ).f_signed);
+}
+#endif
+
+
 /* returns a LLVM representation corresponding to the C translation of the
  * given IDL type.
  */

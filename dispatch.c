@@ -124,31 +124,6 @@ static void build_read_ipc_parameter(
 }
 
 
-/* FIXME: move to util.c or types.c or somewhere */
-static bool is_integral_type(IDL_tree typ)
-{
-	switch(IDL_NODE_TYPE(typ)) {
-		case IDLN_TYPE_INTEGER:
-		case IDLN_TYPE_OCTET:
-		case IDLN_TYPE_BOOLEAN:
-			return true;
-
-		default:
-			return IS_WORD_TYPE(typ);
-	}
-}
-
-
-#if 0
-static bool is_signed(IDL_tree typ)
-{
-	assert(is_integral_type(typ));
-	return IDL_NODE_TYPE(typ) == IDLN_TYPE_CHAR
-		|| IDL_NODE_TYPE(typ) == IDLN_TYPE_WIDE_CHAR
-		|| (IDL_NODE_TYPE(typ) == IDLN_TYPE_INTEGER
-			&& IDL_TYPE_INTEGER(typ).f_signed);
-}
-#endif
 
 
 /* returns # of MRs used.
