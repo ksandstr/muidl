@@ -627,20 +627,6 @@ extern gboolean iter_build_common_module(IDL_tree_func_data *, void *);
 
 /* from message.c */
 
-/* returns # of MRs used.
- *
- * when is_value_type(ctyp), @val[0] is a C representation of @ctyp.
- * when is_rigid_type(..., ctyp) || IS_MAPGRANT_TYPE(ctyp), @val[0] is a
- * pointer to the same.
- * otherwise, @val[0] is a pointer to the first element, and @val[1] is the
- * number of elements as i32.
- */
-extern int build_write_ipc_parameter_ixval(
-	struct llvm_ctx *ctx,
-	const LLVMValueRef *val,
-	IDL_tree ctyp,
-	LLVMValueRef ixval);
-
 /* turn a sequence of out-parameters into L4 instructions that store the
  * appropriate values, including the message tag, in the message registers.
  */

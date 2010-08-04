@@ -26,17 +26,22 @@
 #include "llvmutil.h"
 
 
-int build_write_ipc_parameter_ixval(
+/* similar interface as build_read_ipc_parameter_ixval():
+ * for value types, val[0] is the value itself.
+ * for rigid types, val[0] is a pointer to the value.
+ * for sequence types, val[0] is a pointer to the first value and val[1] is the
+ * length value (i32).
+ */
+static void build_write_ipc_parameter(
 	struct llvm_ctx *ctx,
 	const LLVMValueRef *val,
 	IDL_tree ctyp,
 	LLVMValueRef ixval)
 {
-	/* double-word types (TODO) */
 	if(IS_LONGLONG_TYPE(ctyp)) {
-		abort();
+		abort();		/* TODO */
 	} else if(IS_LONGDOUBLE_TYPE(ctyp)) {
-		abort();
+		abort();		/* TODO */
 	} else if(IS_MAPGRANT_TYPE(ctyp)) {
 		for(int i=0; i<2; i++) {
 			LLVMBuildStore(ctx->builder,
@@ -47,20 +52,21 @@ int build_write_ipc_parameter_ixval(
 				UTCB_ADDR_VAL(ctx, LLVMBuildAdd(ctx->builder, ixval, CONST_INT(i),
 					"mg.store.offs"), "mg.store.addr"));
 		}
-		return 2;
-	}
-
-	/* single-word types */
-	LLVMValueRef reg;
-	if(is_integral_type(ctyp)) {
-		reg = WORD(val[0]);
+	} else if(is_value_type(ctyp)) {
+		/* the other value types */
+		LLVMValueRef reg;
+		if(is_integral_type(ctyp)) {
+			reg = WORD(val[0]);
+		} else {
+			/* TODO: type promotions for other single-word encodings */
+			NOTDEFINED(ctyp);
+		}
+		LLVMBuildStore(ctx->builder, reg,
+			UTCB_ADDR_VAL(ctx, ixval, "store.mr.addr"));
 	} else {
-		/* TODO! */
+		/* TODO: add nicer things */
 		NOTDEFINED(ctyp);
 	}
-	LLVMBuildStore(ctx->builder, reg,
-		UTCB_ADDR_VAL(ctx, ixval, "store.mr.addr"));
-	return 1;
 }
 
 
@@ -77,11 +83,11 @@ void build_msg_encoder(
 		int first_reg = msg->sublabel == NO_SUBLABEL ? 1 : 2;
 		if(!msg->ret_by_ref) {
 			/* by-val types are always value types, which are used by value by
-			 * build_write_ipc_parameter_ixval()
+			 * build_write_ipc_parameter()
 			 */
 			assert(is_value_type(msg->ret_type));
-			build_write_ipc_parameter_ixval(ctx, &args[0],
-				msg->ret_type, CONST_INT(first_reg));
+			build_write_ipc_parameter(ctx, &args[0], msg->ret_type,
+				CONST_INT(first_reg));
 		} else {
 			/* must load value types. */
 			V raw;
@@ -91,7 +97,7 @@ void build_msg_encoder(
 				/* keep the pointerishness. */
 				raw = args[0];
 			}
-			build_write_ipc_parameter_ixval(ctx, &raw, msg->ret_type,
+			build_write_ipc_parameter(ctx, &raw, msg->ret_type,
 				CONST_INT(first_reg));
 		}
 	}
@@ -100,13 +106,11 @@ void build_msg_encoder(
 	GLIST_FOREACH(cur, msg->untyped) {
 		const struct msg_param *u = cur->data;
 		IDL_tree type = u->X.untyped.type;
-		const int first_reg = u->X.untyped.first_reg,
-			last_reg = u->X.untyped.last_reg;
+		const int first_reg = u->X.untyped.first_reg;
 		assert(IDL_PARAM_DCL(u->param_dcl).attr != IDL_PARAM_IN);
 //		printf("param %p: arg_ix %d, regs [%d..%d], argval %p, type <%s>\n",
 //			u, u->arg_ix, first_reg, last_reg, args[u->arg_ix],
 //			IDL_NODE_TYPE_NAME(type));
-		int num;
 		if(is_value_type(type)) {
 			V raw;
 			if(is_out_half) {
@@ -116,7 +120,7 @@ void build_msg_encoder(
 				/* already flat. */
 				raw = args[u->arg_ix];
 			}
-			num = build_write_ipc_parameter_ixval(ctx, &raw, type,
+			build_write_ipc_parameter(ctx, &raw, type,
 				CONST_INT(first_reg));
 		} else if(IS_MAPGRANT_TYPE(type) || is_rigid_type(ctx->ns, type)) {
 			/* TODO: mapgrantitems are currently always untyped, so we pass
@@ -124,14 +128,13 @@ void build_msg_encoder(
 			 * or granting items should depend on a [map] or [grant] attribute
 			 * on the parameter declaration.
 			 */
-			num = build_write_ipc_parameter_ixval(ctx, &args[u->arg_ix],
-				type, CONST_INT(first_reg));
+			build_write_ipc_parameter(ctx, &args[u->arg_ix], type,
+				CONST_INT(first_reg));
 		} else {
 			/* anything else... shouldn't appear! */
 			/* FIXME: structs, arrays, unions before here though. */
 			NOTDEFINED(type);
 		}
-		assert(num + first_reg - 1 == last_reg);
 	}
 
 	/* inline sequences */
@@ -145,6 +148,10 @@ void build_msg_encoder(
 
 	/* TODO: typed words (strings, sequences, long structs, unions, arrays,
 	 * and wide strings; also map & grant items)
+	 *
+	 * NOTE: when encoding out-sequences, the second argument is a pointer to
+	 * the length value and should be flattened before the call to
+	 * build_write_ipc_parameter().
 	 */
 
 	/* epilogue */
