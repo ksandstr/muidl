@@ -81,14 +81,14 @@ interface Countserv
 	void may_fail(in short what, in long how, in octet when)
 		raises(Posix::Errno);
 
-#if 0
 	[Label(671)]
 	unsigned short may_fail_with_retval(
 		in short what,
 		in long how,
-		in octet when)
+		inout octet when)
 			raises(Posix::Errno);
 
+#if 0
 	typedef sequence<long, 20> something;
 	typedef sequence<short, 20> packed_something;
 	typedef sequence<octet, 32> fiddly_something;

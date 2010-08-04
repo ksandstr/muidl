@@ -74,7 +74,7 @@ void build_msg_encoder(
 	bool is_out_half)
 {
 	if(is_out_half && msg->ret_type != NULL) {
-		int first_reg = msg->sublabel != NO_SUBLABEL ? 1 : 2;
+		int first_reg = msg->sublabel == NO_SUBLABEL ? 1 : 2;
 		if(!msg->ret_by_ref) {
 			/* by-val types are always value types, which are used by value by
 			 * build_write_ipc_parameter_ixval()
