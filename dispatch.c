@@ -405,7 +405,7 @@ static void emit_out_param(
 {
 	if(is_value_type(ptyp)) {
 		args[(*arg_pos_p)++] = build_local_storage(ctx,
-			llvm_value_type(ctx, ptyp), NULL, "outparam.mem");
+			llvm_value_type(ctx, ptyp), NULL, "out.val.mem");
 	} else if(IDL_NODE_TYPE(ptyp) == IDLN_TYPE_SEQUENCE) {
 		IDL_tree seqtype = get_type_spec(
 			IDL_TYPE_SEQUENCE(ptyp).simple_type_spec);
@@ -414,16 +414,16 @@ static void emit_out_param(
 		args[(*arg_pos_p)++] = build_local_storage(ctx,
 			llvm_value_type(ctx, seqtype),
 			LLVMConstInt(ctx->i32t, max_size, 0),
-			"outparam.seq.mem");
+			"out.seq.mem");
 		args[(*arg_pos_p)++] = build_local_storage(ctx,
-			ctx->i32t, NULL, "outparam.seq.len.mem");
+			ctx->i32t, NULL, "out.seq.len.mem");
 	} else if(IS_MAPGRANT_TYPE(ptyp)) {
 		/* this is just a pointer to a struct of 2 words. */
 		args[(*arg_pos_p)++] = build_local_storage(ctx,
-			ctx->mapgrant, NULL, "outparam.mapgrant.mem");
+			ctx->mapgrant, NULL, "out.mapgrant.mem");
 	} else {
-		printf("can't hack seq/long out-parameter\n");
-		abort();
+		/* TODO: add the rest! */
+		NOTDEFINED(ptyp);
 	}
 }
 
