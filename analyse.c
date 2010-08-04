@@ -380,6 +380,9 @@ static struct message_info *build_message(
 	struct message_info *inf = NULL;
 	GList *untyped = NULL, *seq = NULL, *_long = NULL;	/* <struct msg_param *> */
 
+	/* return types are only noted for the out-half. */
+	assert(return_type == NULL || is_outhalf);
+
 	/* classify parameters and construct msg_param structures for them.
 	 *
 	 * the return value, where present, occupies the first argument slot. this
@@ -754,7 +757,7 @@ struct method_info *analyse_op_dcl(
 	inf->num_reply_msgs = num_replies;
 
 	/* build the request. */
-	inf->request = build_message(return_type, param_list,
+	inf->request = build_message(NULL, param_list,
 		op_has_sublabel(method), false);
 	if(inf->request == NULL) goto fail;
 	inf->request->node = method;
