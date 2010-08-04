@@ -567,7 +567,7 @@ static LLVMBasicBlockRef build_op_decode(
 		/* fixup a by-val return value */
 		assert(is_value_type(reply->ret_type));
 		assert(args[0] == NULL);
-		args[0] = LLVMBuildZExtOrBitCast(ctx->builder, fncall,
+		args[0] = LLVMBuildTruncOrBitCast(ctx->builder, fncall,
 			llvm_value_type(ctx, reply->ret_type),
 			tmp_f(pr, "%s.retval", opname));
 	}
