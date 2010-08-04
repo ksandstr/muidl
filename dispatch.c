@@ -447,8 +447,14 @@ static LLVMBasicBlockRef build_op_decode(
 	LLVMPositionBuilderAtEnd(ctx->builder, bb);
 
 	/* collection of arguments according to op decl. */
-	const struct message_info *req = inf->request;
 	LLVMTypeRef rv_type = vtable_return_type(ctx, inf->node, NULL);
+	const bool oneway = IDL_OP_DCL(inf->node).f_oneway;
+	const struct message_info *req = inf->request, *reply = NULL;
+	if(!oneway) {
+		assert(inf->num_reply_msgs > 0);
+		assert(!IS_EXN_MSG(inf->replies[0]));
+		reply = inf->replies[0];
+	}
 
 	ctx->inline_seq_pos = LLVMConstInt(ctx->i32t,
 		inf->request->tag_u + 1, 0);
@@ -462,14 +468,14 @@ static LLVMBasicBlockRef build_op_decode(
 	LLVMValueRef args[num_args_max];
 	int arg_pos = 0;
 	bool have_ret_by_val = false;
-	if(req->ret_type != NULL) {
+	if(!oneway && reply->ret_type != NULL) {
 		/* a parameter for the return value. */
-		if(!req->ret_by_ref) {
+		if(!reply->ret_by_ref) {
 			args[0] = NULL;		/* will be filled in with fncall value */
 			arg_pos++;
 			have_ret_by_val = true;
 		} else {
-			emit_out_param(ctx, args, &arg_pos, req->ret_type);
+			emit_out_param(ctx, args, &arg_pos, reply->ret_type);
 		}
 	}
 	for(IDL_tree cur = IDL_OP_DCL(inf->node).parameter_dcls;
@@ -532,7 +538,7 @@ static LLVMBasicBlockRef build_op_decode(
 	V fncall = LLVMBuildCall(ctx->builder, fnptr, call_args, call_num_args,
 		IS_VOID_TYPEREF(rv_type) ? "" : tmp_f(pr, "%s.call", opname));
 
-	if(IDL_OP_DCL(inf->node).f_oneway) {
+	if(oneway) {
 		LLVMBuildBr(ctx->builder, ctx->wait_bb);
 		return bb;
 	}
@@ -557,9 +563,6 @@ static LLVMBasicBlockRef build_op_decode(
 
 	/* pack results from the non-exceptional return. */
 	LLVMPositionBuilderAtEnd(ctx->builder, pr_bb);
-	assert(inf->num_reply_msgs > 0);
-	assert(!IS_EXN_MSG(inf->replies[0]));
-	const struct message_info *reply = inf->replies[0];
 	if(have_ret_by_val) {
 		/* fixup a by-val return value */
 		assert(is_value_type(reply->ret_type));
@@ -570,6 +573,7 @@ static LLVMBasicBlockRef build_op_decode(
 	}
 	build_msg_encoder(ctx, reply, args, true);
 
+	/* FIXME: move this gack into message.c */
 #if !1
 	/* those out-parameters and out-halves of inout parameters which are
 	 * either value or rigid types, i.e. a fixed number of words each.
