@@ -573,66 +573,6 @@ static LLVMBasicBlockRef build_op_decode(
 	}
 	build_msg_encoder(ctx, reply, args, true);
 
-	/* FIXME: move this gack into message.c */
-#if !1
-	/* those out-parameters and out-halves of inout parameters which are
-	 * either value or rigid types, i.e. a fixed number of words each.
-	 */
-	int arg_ix = 0;
-	for(IDL_tree cur = IDL_OP_DCL(reply->node).parameter_dcls;
-		cur != NULL;
-		cur = IDL_LIST(cur).next, arg_ix++)
-	{
-		IDL_tree p = IDL_LIST(cur).data;
-		if(IDL_PARAM_DCL(p).attr == IDL_PARAM_IN) continue;
-		IDL_tree typ = get_type_spec(IDL_PARAM_DCL(p).param_type_spec);
-		/* TODO: mapgrantitems are currently always typed (so we skip them
-		 * here), but this should really depend on whether there's a [map]
-		 * attribute in the parameter declaration.
-		 */
-		if(IS_MAPGRANT_TYPE(typ)) continue;
-		if(is_value_type(typ)) {
-			LLVMValueRef rval = LLVMBuildLoad(ctx->builder,
-				args[arg_ix], tmp_f(ctx->pr, "arg%d.raw", arg_ix));
-			mr_pos += build_write_ipc_parameter_ixval(ctx, &rval, typ,
-				CONST_INT(mr_pos));
-		} else if(IS_MAPGRANT_TYPE(typ) || is_rigid_type(ctx->ns, typ)) {
-			/* TODO: distinguish between inline rigid types and those passed as
-			 * string items due to size or content or something
-			 */
-			mr_pos += build_write_ipc_parameter_ixval(ctx, &args[arg_ix], typ,
-				CONST_INT(mr_pos));
-		}
-	}
-
-	/* inline sequences */
-	/* FIXME: make sure reply->untyped_words + 1 == mr_pos; otherwise
-	 * cruel overwriting will occur
-	 */
-	ctx->inline_seq_pos = LLVMConstInt(ctx->i32t, reply->tag_u + 1, 0);
-	GLIST_FOREACH(cur, reply->seq) {
-		const struct msg_param *seq = cur->data;
-		int first_arg = first_arg_index(reply->node, seq->param_dcl);
-		assert(first_arg >= 0);
-		ctx->inline_seq_pos = build_encode_inline_sequence(ctx,
-			args[first_arg], args[first_arg + 1], seq,
-			ctx->inline_seq_pos, g_list_next(cur) == NULL);
-	}
-
-	/* TODO: encode typed words (long & complex sequences, strings, wide
-	 * strings)
-	 */
-
-	/* epilogue */
-	/* flags = 0, u = inline_seq_pos - 1, label = 0, t = 0 */
-	LLVMValueRef u_val = LLVMBuildSub(ctx->builder, ctx->inline_seq_pos,
-			LLVMConstInt(ctx->i32t, 1, 0),
-			tmp_f(ctx->pr, "%s.reply.u", opname)),
-		tag = WORD(u_val);	/* simple. */
-	branch_set_phi(ctx, ctx->reply_tag, tag);
-	LLVMBuildBr(ctx->builder, ctx->reply_bb);
-#endif
-
 	return bb;
 }
 
