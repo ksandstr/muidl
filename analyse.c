@@ -372,7 +372,7 @@ static bool is_bounded_seq(IDL_tree type)
  * ranges and long types appear in transmission order.
  */
 static struct message_info *build_message(
-	IDL_tree return_type,		/* not IDL_PARAM_DCL, therefore separate */
+	IDL_tree return_type,		/* separate because not IDL_PARAM_DCL */
 	IDL_tree param_list,
 	bool has_sublabel,
 	bool is_outhalf)
@@ -386,7 +386,7 @@ static struct message_info *build_message(
 	 * function doesn't allocate a msg_param for it, because return values are
 	 * a bit special against the C ABI.
 	 */
-	int arg_pos = (return_type != NULL ? 1 : 0), param_ix = 0;
+	int arg_pos = (is_outhalf && return_type != NULL ? 1 : 0), param_ix = 0;
 	for(IDL_tree cur = param_list;
 		cur != NULL;
 		cur = IDL_LIST(cur).next, param_ix++)
@@ -439,6 +439,7 @@ static struct message_info *build_message(
 	 * we're going to use, before inline sequences are allocated.
 	 */
 	bool reg_in_use[64];
+	reg_in_use[0] = true;		/* message tag, always present */
 	for(int i=1; i<64; i++) reg_in_use[i] = false;
 	int next_u = 1;
 	if(has_sublabel) reg_in_use[next_u++] = true;
@@ -590,8 +591,8 @@ static struct message_info *build_message(
 	if(untyped_remove != NULL) g_list_free(untyped_remove);
 
 	inf->untyped = untyped;
-	inf->tag_u = has_sublabel ? 1 : 0;
-	for(int i = inf->tag_u + 1; i < 64; i++) {
+	inf->tag_u = 0;
+	for(int i = 1; i < 64; i++) {
 		if(reg_in_use[i]) inf->tag_u = i;
 	}
 	GLIST_FOREACH(cur, inf->untyped) {
@@ -655,6 +656,16 @@ static struct message_info *build_message(
 		inf->long_params[inf->num_long++] = p;
 	}
 #endif
+
+	IDL_tree op = NULL;
+	if(return_type != NULL) {
+		op = IDL_get_parent_node(return_type, IDLN_OP_DCL, NULL);
+		assert(op != NULL);
+	}
+	inf->ret_type = return_type;
+	inf->ret_by_ref = !is_value_type(return_type)
+		|| (op != NULL && find_neg_exn(op) != NULL
+			&& !is_real_nre_return_type(return_type));
 
 	return inf;
 
@@ -741,11 +752,10 @@ struct method_info *analyse_op_dcl(
 	inf->node = method;
 	inf->name = IDL_IDENT(IDL_OP_DCL(method).ident).str;
 	inf->num_reply_msgs = num_replies;
-	inf->return_type = return_type;
 
 	/* build the request. */
-	inf->request = build_message(NULL, param_list, op_has_sublabel(method),
-		false);
+	inf->request = build_message(return_type, param_list,
+		op_has_sublabel(method), false);
 	if(inf->request == NULL) goto fail;
 	inf->request->node = method;
 	if(!get_msg_label(inf->request, IDL_OP_DCL(method).ident)) {

@@ -54,6 +54,13 @@ interface Countserv
 		in small_crew whatsits);
 #endif
 
+	[Label(123)]
+	long outsy_with_rv(
+		in octet something,
+		out long whatever,
+		out short the_other_one,
+		inout octet status_flag_mask_thing);
+
 	/* you may hyperventilate! */
 	[Label(666)]
 	long bump();

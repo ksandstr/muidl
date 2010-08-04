@@ -73,23 +73,48 @@ void build_msg_encoder(
 	const LLVMValueRef *args,
 	bool is_out_half)
 {
+	if(is_out_half && msg->ret_type != NULL) {
+		int first_reg = msg->sublabel != NO_SUBLABEL ? 1 : 2;
+		if(!msg->ret_by_ref) {
+			/* by-val types are always value types, which are used by value by
+			 * build_write_ipc_parameter_ixval()
+			 */
+			assert(is_value_type(msg->ret_type));
+			build_write_ipc_parameter_ixval(ctx, &args[0],
+				msg->ret_type, CONST_INT(first_reg));
+		} else {
+			/* must load value types. */
+			V raw;
+			if(is_value_type(msg->ret_type)) {
+				raw = LLVMBuildLoad(ctx->builder, args[0], "retp.deref");
+			} else {
+				/* keep the pointerishness. */
+				raw = args[0];
+			}
+			build_write_ipc_parameter_ixval(ctx, &raw, msg->ret_type,
+				CONST_INT(first_reg));
+		}
+	}
+
 	/* untyped words. */
 	GLIST_FOREACH(cur, msg->untyped) {
 		const struct msg_param *u = cur->data;
 		IDL_tree type = u->X.untyped.type;
-		const int p_ix = u->arg_ix, first_reg = u->X.untyped.first_reg,
+		const int first_reg = u->X.untyped.first_reg,
 			last_reg = u->X.untyped.last_reg;
 		assert(IDL_PARAM_DCL(u->param_dcl).attr != IDL_PARAM_IN);
-		assert(p_ix < MAX_PARMS_PER_OP);
+//		printf("param %p: arg_ix %d, regs [%d..%d], argval %p, type <%s>\n",
+//			u, u->arg_ix, first_reg, last_reg, args[u->arg_ix],
+//			IDL_NODE_TYPE_NAME(type));
 		int num;
 		if(is_value_type(type)) {
 			V raw;
 			if(is_out_half) {
 				/* flatten the pointer. */
-				raw = LLVMBuildLoad(ctx->builder, args[p_ix], "outp.flat");
+				raw = LLVMBuildLoad(ctx->builder, args[u->arg_ix], "outp.flat");
 			} else {
 				/* already flat. */
-				raw = args[p_ix];
+				raw = args[u->arg_ix];
 			}
 			num = build_write_ipc_parameter_ixval(ctx, &raw, type,
 				CONST_INT(first_reg));
@@ -99,8 +124,8 @@ void build_msg_encoder(
 			 * or granting items should depend on a [map] or [grant] attribute
 			 * on the parameter declaration.
 			 */
-			num = build_write_ipc_parameter_ixval(ctx, &args[p_ix], type,
-				CONST_INT(first_reg));
+			num = build_write_ipc_parameter_ixval(ctx, &args[u->arg_ix],
+				type, CONST_INT(first_reg));
 		} else {
 			/* anything else... shouldn't appear! */
 			/* FIXME: structs, arrays, unions before here though. */

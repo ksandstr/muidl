@@ -200,8 +200,10 @@ static LLVMTypeRef get_vtable_type(struct llvm_ctx *ctx, IDL_tree iface)
 		int arg_pos = 0;
 		bool ret_actual = false;
 		LLVMTypeRef rettyp = vtable_return_type(ctx, op, &ret_actual);
-		if(!ret_actual && idl_rettyp != NULL) {
+		if(idl_rettyp != NULL && !ret_actual) {
 			vtable_out_param_type(ctx, arg_types, &arg_pos, idl_rettyp);
+			if(find_neg_exn(op) != NULL) rettyp = ctx->i32t;
+			else rettyp = LLVMVoidTypeInContext(ctx->ctx);
 		}
 		for(IDL_tree p_cur = param_list;
 			p_cur != NULL;
@@ -225,7 +227,7 @@ static LLVMTypeRef get_vtable_type(struct llvm_ctx *ctx, IDL_tree iface)
 			}
 		}
 
-		cur = cur->next;
+		cur = g_list_next(cur);
 		field_types[f_offs++] = LLVMPointerType(
 			LLVMFunctionType(rettyp, arg_types, arg_pos, 0), 0);
 	}
@@ -446,8 +448,7 @@ static LLVMBasicBlockRef build_op_decode(
 
 	/* collection of arguments according to op decl. */
 	const struct message_info *req = inf->request;
-	bool rv_actual = false;
-	LLVMTypeRef rv_type = vtable_return_type(ctx, inf->node, &rv_actual);
+	LLVMTypeRef rv_type = vtable_return_type(ctx, inf->node, NULL);
 
 	ctx->inline_seq_pos = LLVMConstInt(ctx->i32t,
 		inf->request->tag_u + 1, 0);
@@ -458,12 +459,18 @@ static LLVMBasicBlockRef build_op_decode(
 		tag_u_val, "tpos.initial");
 	const int num_args_max = 1 + g_list_length(req->untyped)
 		+ 2 * g_list_length(req->seq) + 2 * g_list_length(req->_long);
-	LLVMValueRef args[num_args_max], retvalptr = NULL;
+	LLVMValueRef args[num_args_max];
 	int arg_pos = 0;
-	if(inf->return_type != NULL && !rv_actual) {
+	bool have_ret_by_val = false;
+	if(req->ret_type != NULL) {
 		/* a parameter for the return value. */
-		emit_out_param(ctx, args, &arg_pos, inf->return_type);
-		if(arg_pos > 0) retvalptr = args[0];
+		if(!req->ret_by_ref) {
+			args[0] = NULL;		/* will be filled in with fncall value */
+			arg_pos++;
+			have_ret_by_val = true;
+		} else {
+			emit_out_param(ctx, args, &arg_pos, req->ret_type);
+		}
 	}
 	for(IDL_tree cur = IDL_OP_DCL(inf->node).parameter_dcls;
 		cur != NULL;
@@ -510,11 +517,19 @@ static LLVMBasicBlockRef build_op_decode(
 	assert(arg_pos >= IDL_list_length(IDL_OP_DCL(inf->node).parameter_dcls));
 
 	/* the function call. */
-	LLVMValueRef fnptr = LLVMBuildLoad(ctx->builder,
+	V *call_args = args;
+	int call_num_args = arg_pos;
+	if(have_ret_by_val) {
+		/* skip the return value argument. */
+		assert(arg_pos >= 1);
+		call_args = &args[1];
+		call_num_args = arg_pos - 1;
+	}
+	V fnptr = LLVMBuildLoad(ctx->builder,
 		LLVMBuildStructGEP(ctx->builder, ctx->vtab_arg, inf->vtab_offset,
 				tmp_f(pr, "%s.offs", opname)),
 			tmp_f(pr, "%s.fnptr", opname));
-	LLVMValueRef fncall = LLVMBuildCall(ctx->builder, fnptr, args, arg_pos,
+	V fncall = LLVMBuildCall(ctx->builder, fnptr, call_args, call_num_args,
 		IS_VOID_TYPEREF(rv_type) ? "" : tmp_f(pr, "%s.call", opname));
 
 	if(IDL_OP_DCL(inf->node).f_oneway) {
@@ -545,30 +560,14 @@ static LLVMBasicBlockRef build_op_decode(
 	assert(inf->num_reply_msgs > 0);
 	assert(!IS_EXN_MSG(inf->replies[0]));
 	const struct message_info *reply = inf->replies[0];
-	/* return value */
-	if(inf->return_type != NULL) {
-		LLVMValueRef val[2];
-		char *rv_name = tmp_f(pr, "%s.retval", opname);
-		if(is_value_type(inf->return_type)) {
-			if(rv_actual) {
-				val[0] = LLVMBuildTruncOrBitCast(ctx->builder, fncall,
-					llvm_value_type(ctx, inf->return_type), rv_name);
-			} else {
-				assert(retvalptr != NULL);
-				val[0] = LLVMBuildLoad(ctx->builder, retvalptr, rv_name);
-			}
-		} else if(IS_MAPGRANT_TYPE(inf->return_type)
-			|| is_rigid_type(ctx->ns, inf->return_type))
-		{
-			val[0] = retvalptr;
-		} else {
-			/* TODO: add the other types */
-			NOTDEFINED(inf->return_type);
-		}
-		build_write_ipc_parameter_ixval(ctx, val,
-			inf->return_type, CONST_INT(1));
+	if(have_ret_by_val) {
+		/* fixup a by-val return value */
+		assert(is_value_type(reply->ret_type));
+		assert(args[0] == NULL);
+		args[0] = LLVMBuildZExtOrBitCast(ctx->builder, fncall,
+			llvm_value_type(ctx, reply->ret_type),
+			tmp_f(pr, "%s.retval", opname));
 	}
-	/* the rest in a more generic way. */
 	build_msg_encoder(ctx, reply, args, true);
 
 #if !1

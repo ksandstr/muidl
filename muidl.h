@@ -205,10 +205,18 @@ struct message_info
 	uint16_t label;
 	uint32_t tagmask;		/* tag mask, or NO_TAGMASK if not set */
 	uint32_t sublabel;		/* MR1 label, or NO_SUBLABEL if not applicable */
-	int tag_u;				/* before inline sequences */
+	int tag_u;				/* before inline sequences, incl. label & retval */
 	int tag_t;
 
 	IDL_tree node;			/* IDL_{EXCEPT,OP}_DCL */
+
+	/* return value spec. ret_type == NULL if void.
+	 *
+	 * the return value starts at MR1 if sublabel == NO_SUBLABEL, and at MR2
+	 * otherwise.
+	 */
+	IDL_tree ret_type;
+	bool ret_by_ref;		/* pass retval by ref or value in args[0]? */
 
 	/* parameters that are passed in untyped words. may contain multi-word
 	 * types such as constant-length structs that are encoded as words, or
@@ -233,7 +241,7 @@ struct method_info
 {
 	int vtab_offset;
 	const char *name;
-	IDL_tree node, return_type;
+	IDL_tree node;
 	struct message_info *request;
 
 	int num_reply_msgs;	/* oneway ? 0 : 1 + len(raises_list) */
