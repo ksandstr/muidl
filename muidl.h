@@ -594,9 +594,13 @@ extern void build_read_ipc_parameter_ixval(
  */
 extern const struct packed_format *packed_format_of(IDL_tree struct_type);
 
-extern LLVMValueRef get_struct_decoder_fn(
+extern LLVMValueRef get_struct_fn(
 	struct llvm_ctx *ctx,
-	IDL_tree structtype);
+	IDL_tree structtype,
+	bool for_encode);
+
+#define get_struct_decoder_fn(c, s) get_struct_fn((c), (s), false)
+#define get_struct_encoder_fn(c, s) get_struct_fn((c), (s), true)
 
 extern void decode_packed_struct(
 	struct llvm_ctx *ctx,

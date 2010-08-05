@@ -21,6 +21,7 @@
 #include <glib.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>
@@ -318,38 +319,6 @@ const struct packed_format *packed_format_of(IDL_tree stype)
 }
 
 
-LLVMValueRef get_struct_decoder_fn(struct llvm_ctx *ctx, IDL_tree ctyp)
-{
-	const char *s_id = IDL_IDENT(IDL_TYPE_STRUCT(ctyp).ident).repo_id;
-	LLVMValueRef fn = g_hash_table_lookup(ctx->struct_decoder_fns, s_id);
-	if(fn == NULL) {
-		const struct packed_format *fmt = packed_format_of(ctyp);
-		assert(fmt != NULL);	/* only sane for packable structs */
-		int namelen = strlen(s_id);
-		char flatname[namelen + 1];
-		/* FIXME: make this proper, i.e. use a name mangler that works */
-		for(int i=0; i < namelen; i++) {
-			flatname[i] = s_id[i];
-			if(!isalnum(flatname[i])) flatname[i] = '_';
-		}
-		flatname[namelen] = '\0';
-		T types[3] = {
-			LLVMPointerType(llvm_rigid_type(ctx, ctyp), 0),
-			ctx->i32t,
-			ctx->i32t,
-		};
-		T fntype = LLVMFunctionType(LLVMVoidTypeInContext(ctx->ctx),
-			types, fmt->num_bits < BITS_PER_WORD ? 3 : 2, 0);
-		char *fnname = g_strdup_printf("__muidl_idl_decode__%s", flatname);
-		fn = LLVMAddFunction(ctx->module, fnname, fntype);
-		LLVMSetLinkage(fn, LLVMExternalLinkage);
-		g_free(fnname);
-		g_hash_table_insert(ctx->struct_decoder_fns, g_strdup(s_id), fn);
-	}
-	return fn;
-}
-
-
 void decode_packed_struct_inline(
 	struct llvm_ctx *ctx,
 	LLVMValueRef dst,
@@ -492,4 +461,41 @@ void decode_packed_struct(
 	} else {
 		decode_packed_struct_fncall(ctx, *dst_p, ctyp, first_mr, bit_offset);
 	}
+}
+
+
+LLVMValueRef get_struct_fn(
+	struct llvm_ctx *ctx,
+	IDL_tree ctyp,
+	bool for_encode)
+{
+	const char *s_id = IDL_IDENT(IDL_TYPE_STRUCT(ctyp).ident).repo_id;
+	LLVMValueRef fn = g_hash_table_lookup(ctx->struct_decoder_fns, s_id);
+	if(fn != NULL) return fn;
+
+	const struct packed_format *fmt = packed_format_of(ctyp);
+	assert(fmt != NULL);	/* only sane for packable structs */
+	int namelen = strlen(s_id);
+	char flatname[namelen + 1];
+	/* FIXME: make this proper, i.e. use a name mangler that works */
+	for(int i=0; i < namelen; i++) {
+		flatname[i] = s_id[i];
+		if(!isalnum(flatname[i])) flatname[i] = '_';
+	}
+	flatname[namelen] = '\0';
+	T types[3] = {
+		LLVMPointerType(llvm_rigid_type(ctx, ctyp), 0),
+		ctx->i32t,
+		ctx->i32t,
+	};
+	T fntype = LLVMFunctionType(LLVMVoidTypeInContext(ctx->ctx),
+		types, fmt->num_bits < BITS_PER_WORD ? 3 : 2, 0);
+	char *fnname = g_strdup_printf("__muidl_idl_%scode__%s",
+		for_encode ? "en" : "de", flatname);
+	fn = LLVMAddFunction(ctx->module, fnname, fntype);
+	LLVMSetLinkage(fn, LLVMExternalLinkage);
+	g_free(fnname);
+	g_hash_table_insert(ctx->struct_decoder_fns, g_strdup(s_id), fn);
+
+	return fn;
 }
