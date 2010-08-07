@@ -26,20 +26,24 @@
 #include "llvmutil.h"
 
 
-/* similar interface as build_read_ipc_parameter_ixval():
- * for value types, val[0] is the value itself.
- * for rigid types, val[0] is a pointer to the value.
- * for sequence types, val[0] is a pointer to the first value and val[1] is the
- * length value (i32).
- */
-static void build_write_ipc_parameter(
+void build_write_ipc_parameter(
 	struct llvm_ctx *ctx,
-	const LLVMValueRef *val,
+	LLVMValueRef ixval,
 	IDL_tree ctyp,
-	LLVMValueRef ixval)
+	const LLVMValueRef *val)
 {
-	if(IS_LONGLONG_TYPE(ctyp)) {
-		abort();		/* TODO */
+	if(BITS_PER_WORD < 64 && IS_LONGLONG_TYPE(ctyp)) {
+		V high = LLVMBuildLShr(ctx->builder, val[0],
+				LLVMConstInt(LLVMInt64TypeInContext(ctx->ctx), 32, 0),
+				"i64.high"),
+			low = LLVMBuildTrunc(ctx->builder, val[0], ctx->wordt, "i64.low");
+		high = LLVMBuildTrunc(ctx->builder, high, ctx->wordt, "i64.high.tr");
+		/* little end first. */
+		LLVMBuildStore(ctx->builder, low,
+			UTCB_ADDR_VAL(ctx, ixval, "i64.mr.low"));
+		LLVMBuildStore(ctx->builder, high,
+			UTCB_ADDR_VAL(ctx, LLVMBuildAdd(ctx->builder, ixval,
+				CONST_INT(1), "foo"), "i64.mr.high"));
 	} else if(IS_LONGDOUBLE_TYPE(ctyp)) {
 		abort();		/* TODO */
 	} else if(IS_MAPGRANT_TYPE(ctyp)) {
@@ -86,8 +90,8 @@ void build_msg_encoder(
 			 * build_write_ipc_parameter()
 			 */
 			assert(is_value_type(msg->ret_type));
-			build_write_ipc_parameter(ctx, &args[0], msg->ret_type,
-				CONST_INT(first_reg));
+			build_write_ipc_parameter(ctx, CONST_INT(first_reg),
+				msg->ret_type, &args[0]);
 		} else {
 			/* must load value types. */
 			V raw;
@@ -97,8 +101,8 @@ void build_msg_encoder(
 				/* keep the pointerishness. */
 				raw = args[0];
 			}
-			build_write_ipc_parameter(ctx, &raw, msg->ret_type,
-				CONST_INT(first_reg));
+			build_write_ipc_parameter(ctx, CONST_INT(first_reg),
+				msg->ret_type, &raw);
 		}
 	}
 
@@ -120,16 +124,15 @@ void build_msg_encoder(
 				/* already flat. */
 				raw = args[u->arg_ix];
 			}
-			build_write_ipc_parameter(ctx, &raw, type,
-				CONST_INT(first_reg));
+			build_write_ipc_parameter(ctx, CONST_INT(first_reg), type, &raw);
 		} else if(IS_MAPGRANT_TYPE(type) || is_rigid_type(ctx->ns, type)) {
 			/* TODO: mapgrantitems are currently always untyped, so we pass
 			 * them here. however whether they're map-item literals or mapping
 			 * or granting items should depend on a [map] or [grant] attribute
 			 * on the parameter declaration.
 			 */
-			build_write_ipc_parameter(ctx, &args[u->arg_ix], type,
-				CONST_INT(first_reg));
+			build_write_ipc_parameter(ctx, CONST_INT(first_reg), type,
+				&args[u->arg_ix]);
 		} else {
 			/* anything else... shouldn't appear! */
 			/* FIXME: structs, arrays, unions before here though. */

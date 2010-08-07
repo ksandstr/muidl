@@ -588,6 +588,18 @@ extern void build_read_ipc_parameter_ixval(
 	IDL_tree ctyp,
 	LLVMValueRef first_mr);
 
+/* similar interface as build_read_ipc_parameter_ixval():
+ * for value types, val[0] is the value itself.
+ * for rigid types, val[0] is a pointer to the value.
+ * for sequence types, val[0] is a pointer to the first value and val[1] is the
+ * length value (i32).
+ */
+extern void build_write_ipc_parameter(
+	struct llvm_ctx *ctx,
+	LLVMValueRef first_mr,
+	IDL_tree ctyp,
+	const LLVMValueRef *val);
+
 
 /* from struct.c */
 
