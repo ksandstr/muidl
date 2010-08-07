@@ -46,6 +46,7 @@ interface Countserv
 		in fatcat el_parametro_grande);
 
 #if 0
+	/* NOTE: this won't work until array parameters are encoded properly. */
 	typedef henchman small_crew[5];
 
 	[Label(23)]

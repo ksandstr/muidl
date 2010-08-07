@@ -635,8 +635,7 @@ LLVMValueRef get_struct_fn(
 	bool for_encode)
 {
 	const char *s_id = IDL_IDENT(IDL_TYPE_STRUCT(ctyp).ident).repo_id;
-	char *lookup_name = g_strdup_printf("%s__%s",
-		for_encode ? "en" : "de", s_id);
+	char *lookup_name = g_strdup_printf("%c%s", for_encode ? 'e' : 'd', s_id);
 	LLVMValueRef fn = g_hash_table_lookup(ctx->struct_decoder_fns,
 		lookup_name);
 	if(fn != NULL) {
