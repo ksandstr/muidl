@@ -56,6 +56,8 @@ void build_write_ipc_parameter(
 				UTCB_ADDR_VAL(ctx, LLVMBuildAdd(ctx->builder, ixval, CONST_INT(i),
 					"mg.store.offs"), "mg.store.addr"));
 		}
+	} else if(IDL_NODE_TYPE(ctyp) == IDLN_TYPE_STRUCT) {
+		encode_packed_struct(ctx, ixval, NULL, ctyp, val[0]);
 	} else if(is_value_type(ctyp)) {
 		/* the other value types */
 		LLVMValueRef reg;

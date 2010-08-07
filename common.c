@@ -57,6 +57,43 @@ static void build_packed_struct_decoder(struct llvm_ctx *ctx, IDL_tree styp)
 }
 
 
+static void build_packed_struct_encoder(struct llvm_ctx *ctx, IDL_tree styp)
+{
+	V fn = get_struct_encoder_fn(ctx, styp);
+
+	ctx->builder = LLVMCreateBuilderInContext(ctx->ctx);
+	BB entry_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "EntryBlock"),
+		pack_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "pack");
+	ctx->alloc_bb = entry_bb;
+
+	LLVMPositionBuilderAtEnd(ctx->builder, pack_bb);
+	ctx->utcb = build_utcb_get(ctx);
+	ctx->zero = CONST_WORD(0);
+	V params[3], retval;
+	LLVMGetParams(fn, params);
+	const struct packed_format *fmt = packed_format_of(styp);
+	assert(fmt != NULL);
+	if(fmt->num_bits < BITS_PER_WORD) {
+		retval = encode_packed_struct_inline(ctx, params[1], params[2],
+			styp, params[0]);
+	} else {
+		encode_packed_struct_inline(ctx, params[1], NULL, styp, params[0]);
+		retval = NULL;
+	}
+
+	/* return. */
+	build_free_mallocs(ctx);
+	if(retval != NULL) LLVMBuildRet(ctx->builder, retval);
+	else LLVMBuildRetVoid(ctx->builder);
+
+	/* close off the alloc block. */
+	LLVMPositionBuilderAtEnd(ctx->builder, entry_bb);
+	LLVMBuildBr(ctx->builder, pack_bb);
+
+	LLVMDisposeBuilder(ctx->builder);
+}
+
+
 gboolean iter_build_common_module(IDL_tree_func_data *tf, void *ud)
 {
 	struct llvm_ctx *ctx = ud;
@@ -70,7 +107,11 @@ gboolean iter_build_common_module(IDL_tree_func_data *tf, void *ud)
 			return TRUE;
 
 		case IDLN_TYPE_STRUCT:
+			/* TODO: limit this to just those structs that are used, directly
+			 * or not, in op decls.
+			 */
 			build_packed_struct_decoder(ctx, tf->tree);
+			build_packed_struct_encoder(ctx, tf->tree);
 			return FALSE;
 	}
 }

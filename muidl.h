@@ -637,6 +637,33 @@ extern void decode_packed_struct_fncall(
 	LLVMValueRef first_mr,
 	LLVMValueRef bit_offset);
 
+/* if bit_offset != NULL, the sub-word structure is encoded into first_mr_word,
+ * and the result is returned.
+ *
+ * otherwise, the super-word structure is encoded into words and stored under
+ * words starting from first_mr, and NULL is returned.
+ */
+extern LLVMValueRef encode_packed_struct(
+	struct llvm_ctx *ctx,
+	LLVMValueRef first_mr_word,
+	LLVMValueRef bit_offset,
+	IDL_tree ctyp,
+	LLVMValueRef src_base);
+
+extern LLVMValueRef encode_packed_struct_inline(
+	struct llvm_ctx *ctx,
+	LLVMValueRef first_mr_word,
+	LLVMValueRef bit_offset,
+	IDL_tree ctyp,
+	LLVMValueRef src_base);
+
+extern LLVMValueRef encode_packed_struct_fncall(
+	struct llvm_ctx *ctx,
+	LLVMValueRef first_mr_word,
+	LLVMValueRef bit_offset,
+	IDL_tree ctyp,
+	LLVMValueRef src_base);
+
 
 /* from common.c */
 

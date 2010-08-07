@@ -468,6 +468,164 @@ void decode_packed_struct(
 }
 
 
+/* struct encoding. */
+
+LLVMValueRef encode_packed_struct_inline(
+	struct llvm_ctx *ctx,
+	LLVMValueRef first_mr_word,
+	LLVMValueRef bit_offset,
+	IDL_tree ctyp,
+	LLVMValueRef src_base)
+{
+	const struct packed_format *fmt = packed_format_of(ctyp);
+	assert(fmt != NULL);
+
+	assert(bit_offset == NULL || (fmt->num_bits < BITS_PER_WORD
+		&& fmt->num_words == 1));
+	assert(bit_offset != NULL || fmt->num_bits >= BITS_PER_WORD);
+
+	char **names = NULL;
+	T s_type = llvm_struct_type(ctx, &names, ctyp);
+	int names_len = 0;
+	while(names[names_len] != NULL) names_len++;
+	assert(names_len == fmt->num_items);
+	assert(LLVMCountStructElementTypes(s_type) == names_len);
+	T types[names_len];
+	LLVMGetStructElementTypes(s_type, types);
+	int cur_word = 0;
+	V wordval = bit_offset != NULL ? first_mr_word : CONST_WORD(0);
+	for(int i=0; i<fmt->num_items; i++) {
+		const struct packed_item *pi = fmt->items[i];
+		assert(bit_offset == NULL || pi->word == 0);
+		int field_ix = 0;
+		while(names[field_ix] != NULL
+			&& strcmp(names[field_ix], pi->name) != 0)
+		{
+			field_ix++;
+		}
+		if(names[field_ix] == NULL) {
+			fprintf(stderr, "%s: not the way to go.\n", __func__);
+			abort();
+		}
+
+		V start_mr = NULL;
+		if(bit_offset == NULL) {
+			start_mr = LLVMBuildAdd(ctx->builder, first_mr_word,
+				CONST_INT(pi->word), "word.ix");
+		}
+
+		/* flush previous word? */
+		if(bit_offset == NULL && cur_word != pi->word) {
+			V mr_ix = LLVMBuildAdd(ctx->builder, first_mr_word,
+				CONST_INT(cur_word), tmp_f(ctx->pr, "flush.w%d.ix", cur_word));
+			LLVMBuildStore(ctx->builder, wordval, UTCB_ADDR_VAL(ctx, mr_ix,
+				tmp_f(ctx->pr, "flush.w%d.addr", cur_word)));
+			wordval = CONST_WORD(0);
+			cur_word = pi->word;
+		}
+
+		V valptr = LLVMBuildStructGEP(ctx->builder, src_base, field_ix,
+			tmp_f(ctx->pr, "%s.start.ptr", pi->name));
+		if(pi->dim > 1) {
+			/* array types. TODO */
+			fprintf(stderr, "%s: struct-member arrays not implemented\n",
+				__func__);
+			abort();
+		} else if(IDL_NODE_TYPE(pi->type) == IDLN_TYPE_STRUCT) {
+			if(bit_offset != NULL) {
+				wordval = encode_packed_struct(ctx, wordval, bit_offset,
+					pi->type, valptr);
+			} else {
+				encode_packed_struct(ctx, start_mr, NULL, pi->type, valptr);
+			}
+		} else if(IDL_NODE_TYPE(pi->type) == IDLN_TYPE_UNION) {
+			fprintf(stderr, "%s: union-member types not implemented\n",
+				__func__);
+			abort();
+		} else if(IS_LONGLONG_TYPE(pi->type)) {
+			assert(bit_offset == NULL);
+			V val = LLVMBuildLoad(ctx->builder, valptr, "longlong.fld");
+			build_write_ipc_parameter(ctx, start_mr, pi->type, &val);
+		} else if(is_value_type(pi->type)) {
+			/* word-size and smaller items. */
+			V val = LLVMBuildLoad(ctx->builder, valptr,
+				tmp_f(ctx->pr, "fld.%s.val", pi->name));
+			val = LLVMBuildZExtOrBitCast(ctx->builder, val, ctx->wordt,
+				tmp_f(ctx->pr, "fld.%s.word", pi->name));
+			V bitoffs = CONST_INT(pi->bit);
+			if(bit_offset != NULL) {
+				bitoffs = LLVMBuildAdd(ctx->builder, bitoffs, bit_offset,
+					"bitoffs.bump");
+				bit_offset = bitoffs;
+			}
+			V shifted = LLVMBuildShl(ctx->builder, val, bitoffs,
+				tmp_f(ctx->pr, "fld.%s.shifted", pi->name));
+			wordval = LLVMBuildOr(ctx->builder, shifted, wordval,
+				tmp_f(ctx->pr, "word%d.%s.merged", cur_word, pi->name));
+		} else {
+			NOTDEFINED(pi->type);
+		}
+	}
+
+	/* flush final word */
+	if(bit_offset == NULL) {
+		V mr_ix = LLVMBuildAdd(ctx->builder, first_mr_word,
+			CONST_INT(cur_word), tmp_f(ctx->pr, "flush.w%d.ix", cur_word));
+		LLVMBuildStore(ctx->builder, wordval, UTCB_ADDR_VAL(ctx, mr_ix,
+			tmp_f(ctx->pr, "flush.w%d.addr", cur_word)));
+	}
+
+	g_strfreev(names);
+
+	return (bit_offset == NULL ? NULL : wordval);
+}
+
+
+LLVMValueRef encode_packed_struct_fncall(
+	struct llvm_ctx *ctx,
+	LLVMValueRef first_mr_word,
+	LLVMValueRef bit_offset,
+	IDL_tree ctyp,
+	LLVMValueRef src_base)
+{
+	V fn = get_struct_encoder_fn(ctx, ctyp);
+	const struct packed_format *fmt = packed_format_of(ctyp);
+	assert(fmt != NULL);
+	if(fmt->num_bits < BITS_PER_WORD) {
+		/* subword structure; pass bit offset & value. */
+		if(bit_offset == NULL) bit_offset = CONST_INT(0);
+		/* NOTE: (word) const void *, word, i32 */
+		V parms[3] = { src_base, first_mr_word, bit_offset };
+		return LLVMBuildCall(ctx->builder, fn, parms, 3, "wordval.next");
+	} else {
+		assert(bit_offset == NULL);
+		/* NOTE: (void) const void *, i32 */
+		V parms[2] = { src_base, first_mr_word };
+		LLVMBuildCall(ctx->builder, fn, parms, 2, "");
+		return NULL;
+	}
+}
+
+
+LLVMValueRef encode_packed_struct(
+	struct llvm_ctx *ctx,
+	LLVMValueRef first_mr_word,
+	LLVMValueRef bit_offset,
+	IDL_tree ctyp,
+	LLVMValueRef src_base)
+{
+	const struct packed_format *fmt = packed_format_of(ctyp);
+	assert(fmt != NULL);
+	if(is_short_fmt(fmt)) {
+		return encode_packed_struct_inline(ctx, first_mr_word, bit_offset,
+			ctyp, src_base);
+	} else {
+		return encode_packed_struct_fncall(ctx, first_mr_word, bit_offset,
+			ctyp, src_base);
+	}
+}
+
+
 /* function hash wrangling. */
 
 LLVMValueRef get_struct_fn(
