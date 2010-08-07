@@ -493,7 +493,7 @@ LLVMValueRef encode_packed_struct_inline(
 	T types[names_len];
 	LLVMGetStructElementTypes(s_type, types);
 	int cur_word = 0;
-	V wordval = bit_offset != NULL ? first_mr_word : CONST_WORD(0);
+	V wordval = CONST_WORD(0);
 	for(int i=0; i<fmt->num_items; i++) {
 		const struct packed_item *pi = fmt->items[i];
 		assert(bit_offset == NULL || pi->word == 0);
@@ -532,9 +532,9 @@ LLVMValueRef encode_packed_struct_inline(
 				__func__);
 			abort();
 		} else if(IDL_NODE_TYPE(pi->type) == IDLN_TYPE_STRUCT) {
-			if(bit_offset != NULL) {
-				wordval = encode_packed_struct(ctx, wordval, bit_offset,
-					pi->type, valptr);
+			if(pi->len < BITS_PER_WORD) {
+				wordval = encode_packed_struct(ctx, wordval,
+					CONST_INT(pi->bit), pi->type, valptr);
 			} else {
 				encode_packed_struct(ctx, start_mr, NULL, pi->type, valptr);
 			}
@@ -553,11 +553,6 @@ LLVMValueRef encode_packed_struct_inline(
 			val = LLVMBuildZExtOrBitCast(ctx->builder, val, ctx->wordt,
 				tmp_f(ctx->pr, "fld.%s.word", pi->name));
 			V bitoffs = CONST_INT(pi->bit);
-			if(bit_offset != NULL) {
-				bitoffs = LLVMBuildAdd(ctx->builder, bitoffs, bit_offset,
-					"bitoffs.bump");
-				bit_offset = bitoffs;
-			}
 			V shifted = LLVMBuildShl(ctx->builder, val, bitoffs,
 				tmp_f(ctx->pr, "fld.%s.shifted", pi->name));
 			wordval = LLVMBuildOr(ctx->builder, shifted, wordval,
@@ -567,17 +562,23 @@ LLVMValueRef encode_packed_struct_inline(
 		}
 	}
 
-	/* flush final word */
 	if(bit_offset == NULL) {
+		/* flush final word */
 		V mr_ix = LLVMBuildAdd(ctx->builder, first_mr_word,
 			CONST_INT(cur_word), tmp_f(ctx->pr, "flush.w%d.ix", cur_word));
 		LLVMBuildStore(ctx->builder, wordval, UTCB_ADDR_VAL(ctx, mr_ix,
 			tmp_f(ctx->pr, "flush.w%d.addr", cur_word)));
+		wordval = NULL;
+	} else {
+		/* shift and merge */
+		wordval = LLVMBuildOr(ctx->builder, first_mr_word,
+			LLVMBuildShl(ctx->builder, wordval, bit_offset, "short.shifted"),
+			"rv.merged");
 	}
 
 	g_strfreev(names);
 
-	return (bit_offset == NULL ? NULL : wordval);
+	return wordval;
 }
 
 

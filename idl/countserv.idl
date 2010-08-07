@@ -37,7 +37,6 @@ struct slimkitten {
 [StubPrefix(__countserv)]
 interface Countserv
 {
-#if 0
 	[Label(5)]
 	void hang_in_there(
 		in short what,
@@ -46,6 +45,7 @@ interface Countserv
 		in slimkitten the_annoying_thing,
 		in fatcat el_parametro_grande);
 
+#if 0
 	typedef henchman small_crew[5];
 
 	[Label(23)]
