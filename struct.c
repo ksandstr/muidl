@@ -319,6 +319,8 @@ const struct packed_format *packed_format_of(IDL_tree stype)
 }
 
 
+/* struct decoding. */
+
 void decode_packed_struct_inline(
 	struct llvm_ctx *ctx,
 	LLVMValueRef dst,
@@ -369,7 +371,7 @@ void decode_packed_struct_inline(
 			abort();
 		} else if(IS_LONGLONG_TYPE(pi->type)) {
 			/* long long on a 32-bit architecture. can be #ifdef'd out for
-			 * 64-bit targets.
+			 * 64-bit targets, where it'd be just a value type.
 			 */
 			V dtmp = NULL;
 			build_read_ipc_parameter_ixval(ctx, &dtmp, pi->type,
@@ -429,6 +431,18 @@ void decode_packed_struct_fncall(
 }
 
 
+/* see if the packed format is short enough to en/decode inline. */
+static bool is_short_fmt(const struct packed_format *fmt)
+{
+	for(int i=0, sub=0; i < fmt->num_items; i++) {
+		const struct packed_item *item = fmt->items[i];
+		if(item->len < BITS_PER_WORD) sub++;
+		if(i >= 3 || sub >= 2) return false;
+	}
+	return true;
+}
+
+
 void decode_packed_struct(
 	struct llvm_ctx *ctx,
 	LLVMValueRef *dst_p,
@@ -436,27 +450,17 @@ void decode_packed_struct(
 	LLVMValueRef first_mr,
 	LLVMValueRef bit_offset)
 {
-	const char *s_name = IDL_IDENT(IDL_TYPE_STRUCT(ctyp).ident).str;
 	if(*dst_p == NULL) {
 		/* TODO: fold this allocation with struct fields from other decoders,
 		 * if invoked from a dispatcher. somehow. (v2?)
 		 */
 		T s_type = llvm_struct_type(ctx, NULL, ctyp);
+		const char *s_name = IDL_IDENT(IDL_TYPE_STRUCT(ctyp).ident).str;
 		*dst_p = build_local_storage(ctx, s_type, NULL, s_name);
 	}
 	const struct packed_format *fmt = packed_format_of(ctyp);
 	assert(fmt != NULL);
-	/* see if the structure is short enough to decode inline. */
-	bool is_short = true;
-	for(int i=0, sub=0; i < fmt->num_items; i++) {
-		const struct packed_item *item = fmt->items[i];
-		if(item->len < BITS_PER_WORD) sub++;
-		if(i >= 3 || sub >= 2) {
-			is_short = false;
-			break;
-		}
-	}
-	if(is_short) {
+	if(is_short_fmt(fmt)) {
 		decode_packed_struct_inline(ctx, *dst_p, ctyp, first_mr, bit_offset);
 	} else {
 		decode_packed_struct_fncall(ctx, *dst_p, ctyp, first_mr, bit_offset);
