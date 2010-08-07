@@ -660,7 +660,7 @@ LLVMValueRef get_struct_fn(
 		/* decoder */
 		types[1] = ctx->i32t;
 		types[2] = ctx->i32t;
-		nparms = 3;
+		nparms = fmt->num_bits < BITS_PER_WORD ? 3 : 2;
 	} else if(fmt->num_bits < BITS_PER_WORD) {
 		/* subword encoder */
 		rettyp = ctx->wordt;
