@@ -152,6 +152,8 @@ struct llvm_ctx
 
 	/* key: char * of struct repo id, value: LLVMValueRef of fn. key is
 	 * freed.
+	 *
+	 * (also contains the encoder functions.)
 	 */
 	GHashTable *struct_decoder_fns;
 

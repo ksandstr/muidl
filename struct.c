@@ -468,14 +468,22 @@ void decode_packed_struct(
 }
 
 
+/* function hash wrangling. */
+
 LLVMValueRef get_struct_fn(
 	struct llvm_ctx *ctx,
 	IDL_tree ctyp,
 	bool for_encode)
 {
 	const char *s_id = IDL_IDENT(IDL_TYPE_STRUCT(ctyp).ident).repo_id;
-	LLVMValueRef fn = g_hash_table_lookup(ctx->struct_decoder_fns, s_id);
-	if(fn != NULL) return fn;
+	char *lookup_name = g_strdup_printf("%s__%s",
+		for_encode ? "en" : "de", s_id);
+	LLVMValueRef fn = g_hash_table_lookup(ctx->struct_decoder_fns,
+		lookup_name);
+	if(fn != NULL) {
+		g_free(lookup_name);
+		return fn;
+	}
 
 	const struct packed_format *fmt = packed_format_of(ctyp);
 	assert(fmt != NULL);	/* only sane for packable structs */
@@ -487,19 +495,32 @@ LLVMValueRef get_struct_fn(
 		if(!isalnum(flatname[i])) flatname[i] = '_';
 	}
 	flatname[namelen] = '\0';
-	T types[3] = {
-		LLVMPointerType(llvm_rigid_type(ctx, ctyp), 0),
-		ctx->i32t,
-		ctx->i32t,
-	};
-	T fntype = LLVMFunctionType(LLVMVoidTypeInContext(ctx->ctx),
-		types, fmt->num_bits < BITS_PER_WORD ? 3 : 2, 0);
+	T types[3], rettyp = LLVMVoidTypeInContext(ctx->ctx);
+	types[0] = LLVMPointerType(llvm_rigid_type(ctx, ctyp), 0);
+	int nparms;
+	if(!for_encode) {
+		/* decoder */
+		types[1] = ctx->i32t;
+		types[2] = ctx->i32t;
+		nparms = 3;
+	} else if(fmt->num_bits < BITS_PER_WORD) {
+		/* subword encoder */
+		rettyp = ctx->wordt;
+		types[1] = ctx->wordt;
+		types[2] = ctx->i32t;
+		nparms = 3;
+	} else {
+		/* non-subword encoder */
+		types[1] = ctx->i32t;
+		nparms = 2;
+	}
+	T fntype = LLVMFunctionType(rettyp, types, nparms, 0);
 	char *fnname = g_strdup_printf("__muidl_idl_%scode__%s",
 		for_encode ? "en" : "de", flatname);
 	fn = LLVMAddFunction(ctx->module, fnname, fntype);
 	LLVMSetLinkage(fn, LLVMExternalLinkage);
 	g_free(fnname);
-	g_hash_table_insert(ctx->struct_decoder_fns, g_strdup(s_id), fn);
+	g_hash_table_insert(ctx->struct_decoder_fns, lookup_name, fn);
 
 	return fn;
 }
