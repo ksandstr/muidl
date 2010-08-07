@@ -456,8 +456,13 @@ static LLVMBasicBlockRef build_op_decode(
 		reply = inf->replies[0];
 	}
 
-	ctx->inline_seq_pos = LLVMConstInt(ctx->i32t,
-		inf->request->tag_u + 1, 0);
+	/* find the positions of the first inline sequence */
+	if(req->seq == NULL) ctx->inline_seq_pos = NULL;
+	else {
+		/* determined by IDL; we don't depend on the runtime tag value. */
+		ctx->inline_seq_pos = CONST_INT(req->tag_u + 1);
+	}
+	/* and that of the first typed word. */
 	LLVMValueRef tag_u_val = build_u_from_tag(ctx, ctx->tag);
 	ctx->tmax = LLVMBuildAdd(ctx->builder,
 		tag_u_val, build_t_from_tag(ctx, ctx->tag), "tmax");
