@@ -677,6 +677,12 @@ LLVMValueRef get_struct_fn(
 		for_encode ? "en" : "de", flatname);
 	fn = LLVMAddFunction(ctx->module, fnname, fntype);
 	LLVMSetLinkage(fn, LLVMExternalLinkage);
+	V params[nparms];
+	assert(LLVMCountParams(fn) == nparms);
+	LLVMGetParams(fn, params);
+	for(int i=0; i<nparms; i++) {
+		LLVMAddAttribute(params[i], LLVMInRegAttribute);
+	}
 	g_free(fnname);
 	g_hash_table_insert(ctx->struct_decoder_fns, lookup_name, fn);
 
