@@ -680,6 +680,8 @@ LLVMValueRef get_struct_fn(
 	V params[nparms];
 	assert(LLVMCountParams(fn) == nparms);
 	LLVMGetParams(fn, params);
+	LLVMAddAttribute(params[0], LLVMNoAliasAttribute);
+	LLVMAddAttribute(params[0], LLVMNoCaptureAttribute);
 	for(int i=0; i<nparms; i++) {
 		LLVMAddAttribute(params[i], LLVMInRegAttribute);
 	}
