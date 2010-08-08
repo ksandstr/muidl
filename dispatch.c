@@ -238,30 +238,6 @@ static LLVMTypeRef get_vtable_type(struct llvm_ctx *ctx, IDL_tree iface)
 }
 
 
-/* NOTE: this function must be called before referencing ctx->fncall_phi! */
-static LLVMBasicBlockRef get_msgerr_bb(struct llvm_ctx *ctx)
-{
-	if(ctx->msgerr_bb == NULL) {
-		ctx->msgerr_bb = add_sibling_block(ctx, "msgerr");
-
-		BB prior = LLVMGetInsertBlock(ctx->builder);
-		LLVMPositionBuilderAtEnd(ctx->builder, ctx->msgerr_bb);
-		ctx->fncall_phi = LLVMBuildPhi(ctx->builder, ctx->i32t, "fncall.phi");
-		LLVMValueRef msgerr_tag = LLVMBuildOr(ctx->builder,
-			CONST_WORD(1), CONST_WORD(1 << 16), "msgerr.tag");
-		LLVMBuildStore(ctx->builder,
-			LLVMBuildNeg(ctx->builder, ctx->fncall_phi, "rcneg.val"),
-			UTCB_ADDR_VAL(ctx, CONST_INT(1), "mr1.addr"));
-		branch_set_phi(ctx, ctx->reply_tag, msgerr_tag);
-		LLVMBuildBr(ctx->builder, ctx->reply_bb);
-
-		LLVMPositionBuilderAtEnd(ctx->builder, prior);
-	}
-
-	return ctx->msgerr_bb;
-}
-
-
 static struct msg_param *find_pdecl(GList *list, IDL_tree pdecl)
 {
 	GLIST_FOREACH(cur, list) {
@@ -300,7 +276,7 @@ static void emit_in_param(
 		LLVMValueRef new_upos = build_decode_inline_sequence(ctx,
 			args, arg_pos_p, seq, ctx->inline_seq_pos,
 			seq == g_list_last(req->seq)->data,
-			ctx->fncall_phi, err_bb);
+			ctx->errval_phi, err_bb);
 		ctx->inline_seq_pos = new_upos;
 		return;
 	}
@@ -334,7 +310,7 @@ static void emit_in_param(
 		/* precondition: tpos <= tmax + 1 */
 		LLVMValueRef tpos_pc = LLVMBuildICmp(ctx->builder, LLVMIntULE,
 			ctx->tpos, tmax_plus_one, "stritem.precond");
-		branch_set_phi(ctx, ctx->fncall_phi, einval);
+		branch_set_phi(ctx, ctx->errval_phi, einval);
 		LLVMBuildCondBr(ctx->builder, tpos_pc, pre_ok_bb, msgerr_bb);
 
 		/* call lenfn, branch off to msgerr if retval indicates failure */
@@ -343,7 +319,7 @@ static void emit_in_param(
 		ctx->tpos = build_recv_stritem_len(ctx, &item_len_bytes, ctx->tpos);
 		LLVMValueRef fail_cond = LLVMBuildICmp(ctx->builder, LLVMIntUGT,
 			ctx->tpos, tmax_plus_one, "stritem.fail.cond");
-		LLVMAddIncoming(ctx->fncall_phi, &einval, &pre_ok_bb, 1);
+		LLVMAddIncoming(ctx->errval_phi, &einval, &pre_ok_bb, 1);
 		LLVMBuildCondBr(ctx->builder, fail_cond, msgerr_bb, cont_bb);
 
 		/* the actual sequence decode. */
@@ -562,7 +538,7 @@ static LLVMBasicBlockRef build_op_decode(
 			LLVMConstInt(ctx->i32t, 0, 1), "rcneg.cond");
 		LLVMBasicBlockRef current_bb = LLVMGetInsertBlock(ctx->builder),
 			msgerr_bb = get_msgerr_bb(ctx);
-		LLVMAddIncoming(ctx->fncall_phi, &fncall, &current_bb, 1);
+		LLVMAddIncoming(ctx->errval_phi, &fncall, &current_bb, 1);
 		LLVMBuildCondBr(ctx->builder, ok_cond, ex_chain_bb, msgerr_bb);
 	}
 
@@ -646,6 +622,18 @@ static gint method_by_tagmask_cmp(gconstpointer ap, gconstpointer bp)
 }
 
 
+static void build_dispatcher_msgerr(struct llvm_ctx *ctx)
+{
+	LLVMValueRef msgerr_tag = LLVMBuildOr(ctx->builder,
+		CONST_WORD(1), CONST_WORD(1 << 16), "msgerr.tag");
+	LLVMBuildStore(ctx->builder,
+		LLVMBuildNeg(ctx->builder, ctx->errval_phi, "rcneg.val"),
+		UTCB_ADDR_VAL(ctx, CONST_INT(1), "mr1.addr"));
+	branch_set_phi(ctx, ctx->reply_tag, msgerr_tag);
+	LLVMBuildBr(ctx->builder, ctx->reply_bb);
+}
+
+
 LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 {
 	GList *tagmask_list = NULL,
@@ -667,6 +655,8 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 		dispatch_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "dispatch");
 	ctx->wait_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "wait");
 	ctx->reply_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "reply");
+
+	ctx->build_msgerr_bb = &build_dispatcher_msgerr;
 
 	/* the entry block. */
 	LLVMPositionBuilderAtEnd(ctx->builder, bb);

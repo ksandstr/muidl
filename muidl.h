@@ -157,13 +157,15 @@ struct llvm_ctx
 	 */
 	GHashTable *struct_decoder_fns;
 
+	void (*build_msgerr_bb)(struct llvm_ctx *);
+
 	/* used by dispatcher building etc; common L4 IPC stuff */
 	LLVMValueRef utcb;		/* address of UTCB; <L4_Word_t *> */
 	LLVMValueRef from, mr1, mr2, tag;	/* IPC receive regs */
 
 	/* dispatcher-specific things */
 	LLVMBasicBlockRef reply_bb, msgerr_bb, wait_bb, alloc_bb;
-	LLVMValueRef vtab_arg, reply_tag, fncall_phi, inline_seq_pos;
+	LLVMValueRef vtab_arg, reply_tag, errval_phi, inline_seq_pos;
 	LLVMValueRef tpos, tmax;
 	LLVMValueRef stritem_len_fn;
 };

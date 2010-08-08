@@ -48,6 +48,22 @@ LLVMBasicBlockRef add_sibling_block(
 }
 
 
+LLVMBasicBlockRef get_msgerr_bb(struct llvm_ctx *ctx)
+{
+	if(ctx->msgerr_bb == NULL) {
+		ctx->msgerr_bb = add_sibling_block(ctx, "msgerr");
+
+		BB prior = LLVMGetInsertBlock(ctx->builder);
+		LLVMPositionBuilderAtEnd(ctx->builder, ctx->msgerr_bb);
+		ctx->errval_phi = LLVMBuildPhi(ctx->builder, ctx->i32t, "errval.phi");
+		(*ctx->build_msgerr_bb)(ctx);
+		LLVMPositionBuilderAtEnd(ctx->builder, prior);
+	}
+
+	return ctx->msgerr_bb;
+}
+
+
 void build_free_mallocs(struct llvm_ctx *ctx)
 {
 	if(ctx->malloc_ptrs == NULL) return;

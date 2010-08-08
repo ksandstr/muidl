@@ -71,4 +71,10 @@ extern LLVMBasicBlockRef add_sibling_block(
  */
 extern void build_free_mallocs(struct llvm_ctx *ctx);
 
+/* get the msgerr basic block. this function must be called before
+ * ctx->errval_phi is referenced.
+ */
+extern LLVMBasicBlockRef get_msgerr_bb(struct llvm_ctx *ctx);
+
+
 #endif
