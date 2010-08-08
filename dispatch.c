@@ -274,7 +274,7 @@ static LLVMBasicBlockRef build_op_decode(
 		IDL_tree pdecl = IDL_LIST(cur).data,
 			type = get_type_spec(IDL_PARAM_DCL(pdecl).param_type_spec);
 		enum IDL_param_attr attr = IDL_PARAM_DCL(pdecl).attr;
-		int nargs = is_rigid_type(ctx->ns, type) ? 2 : 1;
+		int nargs = IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE ? 2 : 1;
 		if(attr == IDL_PARAM_IN) {
 			struct msg_param *p = find_pdecl(req->params, pdecl);
 			assert(p != NULL);
@@ -283,12 +283,12 @@ static LLVMBasicBlockRef build_op_decode(
 			 * "boom, segfault")
 			 */
 			for(int i=0; i<nargs; i++) args[p->arg_ix + i] = NULL;
-			max_arg = p->arg_ix + nargs - 1;
+			max_arg = MAX(max_arg, p->arg_ix + nargs - 1);
 		} else /* out, inout */ {
 			assert(!oneway);
 			struct msg_param *p = find_pdecl(reply->params, pdecl);
 			emit_out_param(ctx, &args[p->arg_ix], type);
-			max_arg = p->arg_ix + nargs - 1;
+			max_arg = MAX(max_arg, p->arg_ix + nargs - 1);
 		}
 	}
 
