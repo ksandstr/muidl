@@ -689,4 +689,11 @@ void build_msg_encoder(
 	const LLVMValueRef *args,
 	bool is_out_half);
 
+void build_msg_decoder(
+	struct llvm_ctx *ctx,
+	LLVMValueRef *dst_args,
+	const struct message_info *msg,
+	const struct stritem_info *stritems,
+	bool is_out_half);
+
 #endif

@@ -18,7 +18,10 @@
  * along with µiX.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <stdbool.h>
+#include <errno.h>
 #include <libIDL/IDL.h>
 #include <llvm-c/Core.h>
 
@@ -176,4 +179,232 @@ void build_msg_encoder(
 	}
 	branch_set_phi(ctx, ctx->reply_tag, tag);
 	LLVMBuildBr(ctx->builder, ctx->reply_bb);
+}
+
+
+static LLVMValueRef build_ipc_input_val(struct llvm_ctx *ctx, int mr)
+{
+	if(mr == 0) return ctx->tag;
+	else if(mr == 1) return ctx->mr1;
+	else if(mr == 2) return ctx->mr2;
+	else {
+		return LLVMBuildLoad(ctx->builder,
+			UTCB_ADDR_VAL(ctx, CONST_INT(mr), "mr.addr"),
+			tmp_f(ctx->pr, "mr%d", mr));
+	}
+}
+
+
+/* (see build_read_ipc_parameter_ixval() comment in muidl.h)
+ *
+ * (also note that this function is most likely a pointless optimization as LLVM
+ * seems quite capable of recognizing values that don't need to be computed at
+ * run time.)
+ */
+static void build_read_ipc_parameter(
+	struct llvm_ctx *ctx,
+	LLVMValueRef *dst,
+	IDL_tree ctyp,
+	int first_mr)
+{
+	if(IS_LONGLONG_TYPE(ctyp)) {
+		/* unpack a two-word parameter. */
+		LLVMValueRef low = build_ipc_input_val(ctx, first_mr),
+			high = build_ipc_input_val(ctx, first_mr + 1);
+		LLVMTypeRef i64t = LLVMInt64TypeInContext(ctx->ctx);
+		low = LLVMBuildBitCast(ctx->builder, low, i64t,
+			"longparm.lo.cast");
+		high = LLVMBuildBitCast(ctx->builder, high, i64t,
+			"longparm.hi.cast");
+		dst[0] = LLVMBuildOr(ctx->builder, low,
+				LLVMBuildShl(ctx->builder, high, LLVMConstInt(i64t, 32, 0),
+					"longparm.hi.shift"),
+				"longparm.value");
+	} else if(IS_LONGDOUBLE_TYPE(ctyp)) {
+		fprintf(stderr, "%s: long doubles are TODO\n", __func__);
+		abort();
+	} else if(is_value_type(ctyp)) {
+		/* appropriate for all value types. */
+		dst[0] = LLVMBuildTruncOrBitCast(ctx->builder,
+			build_ipc_input_val(ctx, first_mr),
+			llvm_value_type(ctx, ctyp), "shortparm");
+	} else if(is_rigid_type(ctx->ns, ctyp)) {
+		build_read_ipc_parameter_ixval(ctx, dst, ctyp,
+			CONST_INT(first_mr));
+	} else {
+		/* genuinely not defined */
+		NOTDEFINED(ctyp);
+	}
+}
+
+
+/* TODO: rework this into build_msg_decoder(), where parameters are handled in
+ * order.
+ */
+static void emit_in_param(
+	struct llvm_ctx *ctx,
+	LLVMValueRef *args,
+	int *arg_pos_p,
+	const struct method_info *inf,
+	const struct stritem_info *stritems,
+	IDL_tree pdecl)
+{
+	const struct message_info *req = inf->request;
+
+	struct msg_param *u = find_pdecl(req->untyped, pdecl);
+	if(u != NULL) {
+		build_read_ipc_parameter(ctx, &args[(*arg_pos_p)++],
+			u->X.untyped.type, u->X.untyped.first_reg);
+		return;
+	}
+
+	/* inline sequence? */
+	struct msg_param *seq = find_pdecl(req->seq, pdecl);
+	if(seq != NULL) {
+		/* this only works if inline sequences appear as parameters to this
+		 * function in the same order as they were in IDL. if not,
+		 * inline_seq_pos will be wrong.
+		 */
+		LLVMBasicBlockRef err_bb = get_msgerr_bb(ctx);
+		LLVMValueRef new_upos = build_decode_inline_sequence(ctx,
+			args, arg_pos_p, seq, ctx->inline_seq_pos,
+			seq == g_list_last(req->seq)->data,
+			ctx->errval_phi, err_bb);
+		ctx->inline_seq_pos = new_upos;
+		return;
+	}
+
+	/* long parameter? */
+	struct msg_param *lp = NULL;
+	int lp_offset = 0;
+	GLIST_FOREACH(cur, req->_long) {
+		struct msg_param *p = cur->data;
+		if(p->param_dcl == pdecl) {
+			lp = p;
+			break;
+		}
+		lp_offset++;
+	}
+	if(lp != NULL) {
+		assert(stritems != NULL);
+		/* every long parameter is carried in a string item. therefore there
+		 * must be at least one; make sure this is true, and fuck off into the
+		 * msgerr block if it's not. (the length function returns tpos > tmax +
+		 * 1 to indicate this.)
+		 */
+		IDL_tree type = lp->X._long.type;
+		/* TODO: get EINVAL from µiX header rather than <errno.h> */
+		LLVMValueRef einval = LLVMConstInt(ctx->i32t, -EINVAL, 0),
+			tmax_plus_one = LLVMBuildAdd(ctx->builder, ctx->tmax,
+				LLVMConstInt(ctx->i32t, 1, 0), "tmax.plus.one");
+		LLVMBasicBlockRef msgerr_bb = get_msgerr_bb(ctx),
+			pre_ok_bb = add_sibling_block(ctx, "stritem.preok"),
+			cont_bb = add_sibling_block(ctx, "stritem.cont");
+		/* precondition: tpos <= tmax + 1 */
+		LLVMValueRef tpos_pc = LLVMBuildICmp(ctx->builder, LLVMIntULE,
+			ctx->tpos, tmax_plus_one, "stritem.precond");
+		branch_set_phi(ctx, ctx->errval_phi, einval);
+		LLVMBuildCondBr(ctx->builder, tpos_pc, pre_ok_bb, msgerr_bb);
+
+		/* call lenfn, branch off to msgerr if retval indicates failure */
+		LLVMPositionBuilderAtEnd(ctx->builder, pre_ok_bb);
+		LLVMValueRef item_len_bytes = NULL;
+		ctx->tpos = build_recv_stritem_len(ctx, &item_len_bytes, ctx->tpos);
+		LLVMValueRef fail_cond = LLVMBuildICmp(ctx->builder, LLVMIntUGT,
+			ctx->tpos, tmax_plus_one, "stritem.fail.cond");
+		LLVMAddIncoming(ctx->errval_phi, &einval, &pre_ok_bb, 1);
+		LLVMBuildCondBr(ctx->builder, fail_cond, msgerr_bb, cont_bb);
+
+		/* the actual sequence decode. */
+		LLVMPositionBuilderAtEnd(ctx->builder, cont_bb);
+		switch(IDL_NODE_TYPE(type)) {
+			case IDLN_TYPE_STRING: {
+				/* <i8 *> is exactly what we need. */
+				args[(*arg_pos_p)++] = stritems[lp_offset].memptr;
+				/* null-terminate it, though. */
+				LLVMBuildStore(ctx->builder,
+					LLVMConstInt(LLVMInt8TypeInContext(ctx->ctx), 0, 0),
+					LLVMBuildGEP(ctx->builder, stritems[lp_offset].memptr,
+						&item_len_bytes, 1, "str.nullpo"));	/* ガ！ */
+				break;
+			}
+
+			case IDLN_TYPE_SEQUENCE: {
+				/* two arguments. */
+				IDL_tree typ = get_type_spec(
+					IDL_TYPE_SEQUENCE(type).simple_type_spec);
+				/* TODO: use a llvm_rigid_type() instead! */
+				LLVMTypeRef itemtype = llvm_value_type(ctx, typ);
+				LLVMValueRef ptr = LLVMBuildPointerCast(ctx->builder,
+					stritems[lp_offset].memptr,
+					LLVMPointerType(itemtype, 0),
+					"seq.ptr");
+				LLVMValueRef len = LLVMBuildUDiv(ctx->builder,
+					item_len_bytes,
+					LLVMBuildTruncOrBitCast(ctx->builder,
+						LLVMSizeOf(itemtype), ctx->i32t, "seq.item.len.cast"),
+					"seq.len");
+				args[(*arg_pos_p)++] = ptr;
+				args[(*arg_pos_p)++] = len;
+				break;
+			}
+
+			case IDLN_TYPE_WIDE_STRING:
+			case IDLN_TYPE_STRUCT:
+			case IDLN_TYPE_UNION:
+			case IDLN_TYPE_ARRAY:
+				/* TODO */
+
+			default:
+				NOTDEFINED(type);
+		}
+		return;
+	}
+
+	fprintf(stderr, "can't hax this in-parameter\n");
+	abort();
+}
+
+
+void build_msg_decoder(
+	struct llvm_ctx *ctx,
+	LLVMValueRef *dst_args,
+	const struct message_info *msg,
+	const struct stritem_info *stritems,
+	bool is_out_half)
+{
+#if 0
+		} else /* inout */ {
+			assert(!oneway);
+			struct msg_param *p = find_pdecl(req->params, pdecl);
+			assert(p == find_pdecl(reply->params, pdecl));
+			/* hax! */
+			int start = arg_pos;
+			emit_out_param(ctx, &args[p->arg_ix], type);
+			LLVMValueRef in_args[2];
+			int in_arg_pos = 0;
+			emit_in_param(ctx, in_args, &in_arg_pos, inf, stritems, p);
+			assert(in_arg_pos == arg_pos - start);
+			/* insert tab A in slot B */
+			for(int i=0; i<in_arg_pos; i++) {
+				if(is_value_type(typ)) {
+					/* just a value */
+					LLVMBuildStore(ctx->builder, in_args[i], args[start + i]);
+				} else if(IDL_NODE_TYPE(typ) == IDLN_TYPE_SEQUENCE) {
+					/* a pointer and a length value. */
+					assert(i + 1 < in_arg_pos);
+					args[start + i] = in_args[i];
+					LLVMBuildStore(ctx->builder, in_args[i + 1],
+						args[start + i + 1]);
+					i++;
+				} else {
+					/* single pointer arguments encode structs (whether rigid
+					 * or not), mapgrant items, arrays, strings, and wide
+					 * strings. convenient, huh?
+					 */
+					args[start + i] = in_args[i];
+				}
+			}
+		}
+#endif
 }
