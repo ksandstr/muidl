@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <errno.h>
+#include <glib.h>
 #include <libIDL/IDL.h>
 #include <llvm-c/Core.h>
 
@@ -371,11 +372,49 @@ static void emit_in_param(
 
 void build_msg_decoder(
 	struct llvm_ctx *ctx,
-	LLVMValueRef *dst_args,
+	LLVMValueRef *args,
 	const struct message_info *msg,
 	const struct stritem_info *stritems,
 	bool is_out_half)
 {
+	assert(is_out_half || msg->ret_type == NULL);
+
+	if(is_out_half && msg->ret_type != NULL) {
+		/* TODO: decode return value (for the stub post-ipc part) */
+	}
+
+	GLIST_FOREACH(cur, msg->untyped) {
+		struct msg_param *u = cur->data;
+		IDL_tree type = u->X.untyped.type;
+		V tmp[2];
+		build_read_ipc_parameter(ctx, tmp, type, u->X.untyped.first_reg);
+		enum IDL_param_attr attr = IDL_PARAM_DCL(u->param_dcl).attr;
+		/* (TODO: is this right?) */
+		int nargs = IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE ? 2 : 1;
+		if(attr == IDL_PARAM_IN) {
+			/* by value. */
+			for(int i=0; i<nargs; i++) args[u->arg_ix + i] = tmp[i];
+		} else if(attr == IDL_PARAM_INOUT) {
+			/* by reference. */
+			for(int i=0; i<nargs; i++) {
+				LLVMBuildStore(ctx->builder, tmp[i], args[u->arg_ix + i]);
+			}
+		} else {
+			g_assert_not_reached();
+		}
+	}
+
+	GLIST_FOREACH(cur, msg->seq) {
+		struct msg_param *seq = cur->data;
+		BB err_bb = get_msgerr_bb(ctx);
+		V new_upos = build_decode_inline_sequence(ctx,
+			&args[seq->arg_ix], seq, ctx->inline_seq_pos,
+			g_list_next(cur) == NULL, ctx->errval_phi, err_bb);
+		ctx->inline_seq_pos = new_upos;
+	}
+
+	/* TODO: long parameters */
+
 #if 0
 		} else /* inout */ {
 			assert(!oneway);

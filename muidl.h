@@ -543,10 +543,9 @@ LLVMValueRef build_recv_stritem_len(
 /* returns new upos. */
 extern LLVMValueRef build_decode_inline_sequence(
 	struct llvm_ctx *ctx,
-	LLVMValueRef *dst,
-	int *dst_pos_p,
+	LLVMValueRef *dst,			/* must have room for two items */
 	const struct msg_param *seq,
-	LLVMValueRef upos,		/* i32 # of first unclaimed u-word */
+	LLVMValueRef upos,			/* i32 # of first unclaimed u-word */
 	bool is_last,
 	LLVMValueRef errval_phi,	/* adds incoming of -errno */
 	LLVMBasicBlockRef err_bb);	/* ... and branches here to pop error */

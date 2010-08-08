@@ -28,7 +28,6 @@
 LLVMValueRef build_decode_inline_sequence(
 	struct llvm_ctx *ctx,
 	LLVMValueRef *args,
-	int *arg_pos_p,
 	const struct msg_param *seq,
 	LLVMValueRef upos,
 	bool is_last,
@@ -189,8 +188,8 @@ LLVMValueRef build_decode_inline_sequence(
 
 	LLVMPositionBuilderAtEnd(ctx->builder, exit_bb);
 
-	args[(*arg_pos_p)++] = seq_mem;
-	args[(*arg_pos_p)++] = seq_len;
+	args[0] = seq_mem;
+	args[1] = seq_len;
 
 	return ret;
 }
