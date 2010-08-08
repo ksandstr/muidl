@@ -238,6 +238,7 @@ static void build_read_ipc_parameter(
 }
 
 
+#if !1
 /* TODO: rework this into build_msg_decoder(), where parameters are handled in
  * order.
  */
@@ -267,9 +268,10 @@ static void emit_in_param(
 		 */
 		LLVMBasicBlockRef err_bb = get_msgerr_bb(ctx);
 		LLVMValueRef new_upos = build_decode_inline_sequence(ctx,
-			args, arg_pos_p, seq, ctx->inline_seq_pos,
+			&args[*arg_pos_p], seq, ctx->inline_seq_pos,
 			seq == g_list_last(req->seq)->data,
 			ctx->errval_phi, err_bb);
+		(*arg_pos_p) += 2;
 		ctx->inline_seq_pos = new_upos;
 		return;
 	}
@@ -364,6 +366,7 @@ static void emit_in_param(
 	fprintf(stderr, "can't hax this in-parameter\n");
 	abort();
 }
+#endif
 
 
 void build_msg_decoder(

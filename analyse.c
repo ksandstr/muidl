@@ -381,16 +381,12 @@ static struct message_info *build_message(
 	/* of <struct msg_param *>, freed by "params" */
 	GList *params = NULL, *untyped = NULL, *seq = NULL, *_long = NULL;
 
-	/* return types are only noted for the out-half. */
-	assert(return_type == NULL || is_outhalf);
-
 	/* classify parameters and construct msg_param structures for them.
 	 *
 	 * the return value, where present, occupies the first argument slot. this
-	 * function doesn't allocate a msg_param for it, because return values are
-	 * a bit special against the C ABI.
+	 * is a bit special so it's handled separately.
 	 */
-	int arg_pos = (is_outhalf && return_type != NULL ? 1 : 0), param_ix = 0;
+	int arg_pos = return_type != NULL ? 1 : 0, param_ix = 0;
 	for(IDL_tree cur = param_list;
 		cur != NULL;
 		cur = IDL_LIST(cur).next, param_ix++)
@@ -671,7 +667,7 @@ static struct message_info *build_message(
 		op = IDL_get_parent_node(return_type, IDLN_OP_DCL, NULL);
 		assert(op != NULL);
 	}
-	inf->ret_type = return_type;
+	inf->ret_type = is_outhalf ? return_type : NULL;
 	inf->ret_by_ref = !is_value_type(return_type)
 		|| (op != NULL && find_neg_exn(op) != NULL
 			&& !is_real_nre_return_type(return_type));
@@ -763,7 +759,7 @@ struct method_info *analyse_op_dcl(
 	inf->num_reply_msgs = num_replies;
 
 	/* build the request. */
-	inf->request = build_message(NULL, param_list,
+	inf->request = build_message(return_type, param_list,
 		op_has_sublabel(method), false);
 	if(inf->request == NULL) goto fail;
 	inf->request->node = method;
