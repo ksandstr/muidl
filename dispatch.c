@@ -238,16 +238,6 @@ static LLVMTypeRef get_vtable_type(struct llvm_ctx *ctx, IDL_tree iface)
 }
 
 
-static struct msg_param *find_pdecl(GList *list, IDL_tree pdecl)
-{
-	GLIST_FOREACH(cur, list) {
-		struct msg_param *p = cur->data;
-		if(p->param_dcl == pdecl) return p;
-	}
-	return NULL;
-}
-
-
 static void emit_in_param(
 	struct llvm_ctx *ctx,
 	LLVMValueRef *args,

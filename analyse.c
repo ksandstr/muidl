@@ -378,7 +378,8 @@ static struct message_info *build_message(
 	bool is_outhalf)
 {
 	struct message_info *inf = NULL;
-	GList *untyped = NULL, *seq = NULL, *_long = NULL;	/* <struct msg_param *> */
+	/* of <struct msg_param *>, freed by "params" */
+	GList *params = NULL, *untyped = NULL, *seq = NULL, *_long = NULL;
 
 	/* return types are only noted for the out-half. */
 	assert(return_type == NULL || is_outhalf);
@@ -409,6 +410,7 @@ static struct message_info *build_message(
 				struct msg_param *u = new_untyped(name, type, p, param_ix);
 				u->arg_ix = arg_pos;
 				untyped = g_list_prepend(untyped, u);
+				params = g_list_prepend(params, u);
 			}
 		} else if(is_bounded_seq(type)) {
 			nargs = 2;
@@ -421,6 +423,7 @@ static struct message_info *build_message(
 					param_ix);
 				s->arg_ix = arg_pos;
 				seq = g_list_prepend(seq, s);
+				params = g_list_prepend(params, s);
 			}
 		} else {
 			nargs = 2;
@@ -430,6 +433,7 @@ static struct message_info *build_message(
 					param_ix);
 				l->arg_ix = arg_pos;
 				_long = g_list_prepend(_long, l);
+				params = g_list_prepend(params, l);
 			}
 		}
 		arg_pos += nargs;
@@ -437,6 +441,7 @@ static struct message_info *build_message(
 	untyped = g_list_reverse(untyped);
 	seq = g_list_reverse(seq);
 	_long = g_list_reverse(_long);
+	params = g_list_reverse(params);
 
 	/* assign untyped words. also figure out how many typed and untyped words
 	 * we're going to use, before inline sequences are allocated.
@@ -542,6 +547,7 @@ static struct message_info *build_message(
 	 * problem would have to be proven optimal to fit as well. (v2 todo?)
 	 */
 	inf = g_new0(struct message_info, 1);		/* 0'd for g_free() safety */
+	inf->params = params;
 	int num_seq = g_list_length(seq), num_long = g_list_length(_long);
 
 	GList *untyped_remove = NULL;

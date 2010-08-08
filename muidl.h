@@ -222,6 +222,9 @@ struct message_info
 	IDL_tree ret_type;
 	bool ret_by_ref;		/* pass retval by ref or value in args[0]? */
 
+	/* all parameters in IDL order. */
+	GList *params;
+
 	/* parameters that are passed in untyped words. may contain multi-word
 	 * types such as constant-length structs that are encoded as words, or
 	 * arrays of word-packable types.
@@ -384,6 +387,9 @@ extern bool warn_once(const char *fmt, ...)
 
 /* reset the warn_once() "already printed" set. */
 extern void reset_warn_once(void);
+
+/* find x, where x->param_dcl == pdecl, or return NULL. */
+extern struct msg_param *find_pdecl(GList *params, IDL_tree pdecl);
 
 
 /* these allocate from pr->tmpstrchunk. strings are valid until the next outer

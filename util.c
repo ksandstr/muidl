@@ -43,9 +43,10 @@ void free_message_info(struct message_info *inf)
 {
 	if(inf == NULL) return;
 
-	list_dispose(inf->untyped);
-	list_dispose(inf->seq);
-	list_dispose(inf->_long);
+	list_dispose(inf->params);
+	g_list_free(inf->untyped);
+	g_list_free(inf->seq);
+	g_list_free(inf->_long);
 	g_free(inf);
 }
 
@@ -91,6 +92,16 @@ void reset_warn_once(void)
 	if(warn_once_hash != NULL) {
 		g_hash_table_remove_all(warn_once_hash);
 	}
+}
+
+
+struct msg_param *find_pdecl(GList *list, IDL_tree pdecl)
+{
+	GLIST_FOREACH(cur, list) {
+		struct msg_param *p = cur->data;
+		if(p->param_dcl == pdecl) return p;
+	}
+	return NULL;
 }
 
 
