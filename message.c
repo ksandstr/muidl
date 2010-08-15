@@ -239,57 +239,62 @@ static void build_read_ipc_parameter(
 }
 
 
-#if !1
-/* TODO: rework this into build_msg_decoder(), where parameters are handled in
- * order.
- */
-static void emit_in_param(
+static void set_decode_arg(
+	struct llvm_ctx *ctx,
+	const struct msg_param *param,
+	LLVMValueRef *arg_ptr,
+	LLVMValueRef value)
+{
+	if(IDL_PARAM_DCL(param->param_dcl).attr == IDL_PARAM_IN) {
+		/* by value. */
+		*arg_ptr = value;
+	} else {
+		assert(IDL_PARAM_DCL(param->param_dcl).attr == IDL_PARAM_INOUT);
+		/* by reference. */
+		LLVMBuildStore(ctx->builder, value, *arg_ptr);
+	}
+}
+
+
+void build_msg_decoder(
 	struct llvm_ctx *ctx,
 	LLVMValueRef *args,
-	int *arg_pos_p,
-	const struct method_info *inf,
+	const struct message_info *msg,
 	const struct stritem_info *stritems,
-	IDL_tree pdecl)
+	bool is_out_half)
 {
-	const struct message_info *req = inf->request;
+	assert(is_out_half || msg->ret_type == NULL);
 
-	struct msg_param *u = find_pdecl(req->untyped, pdecl);
-	if(u != NULL) {
-		build_read_ipc_parameter(ctx, &args[(*arg_pos_p)++],
-			u->X.untyped.type, u->X.untyped.first_reg);
-		return;
+	if(is_out_half && msg->ret_type != NULL) {
+		/* TODO: decode return value (for the stub post-ipc part) */
 	}
 
-	/* inline sequence? */
-	struct msg_param *seq = find_pdecl(req->seq, pdecl);
-	if(seq != NULL) {
-		/* this only works if inline sequences appear as parameters to this
-		 * function in the same order as they were in IDL. if not,
-		 * inline_seq_pos will be wrong.
-		 */
-		LLVMBasicBlockRef err_bb = get_msgerr_bb(ctx);
-		LLVMValueRef new_upos = build_decode_inline_sequence(ctx,
-			&args[*arg_pos_p], seq, ctx->inline_seq_pos,
-			seq == g_list_last(req->seq)->data,
-			ctx->errval_phi, err_bb);
-		(*arg_pos_p) += 2;
-		ctx->inline_seq_pos = new_upos;
-		return;
-	}
-
-	/* long parameter? */
-	struct msg_param *lp = NULL;
-	int lp_offset = 0;
-	GLIST_FOREACH(cur, req->_long) {
-		struct msg_param *p = cur->data;
-		if(p->param_dcl == pdecl) {
-			lp = p;
-			break;
+	GLIST_FOREACH(cur, msg->untyped) {
+		struct msg_param *u = cur->data;
+		IDL_tree type = u->X.untyped.type;
+		V tmp[2];
+		build_read_ipc_parameter(ctx, tmp, type, u->X.untyped.first_reg);
+		/* (TODO: this should be in a separate function.) */
+		int nargs = IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE ? 2 : 1;
+		for(int i=0; i<nargs; i++) {
+			set_decode_arg(ctx, u, &args[u->arg_ix + i], tmp[i]);
 		}
-		lp_offset++;
 	}
-	if(lp != NULL) {
-		assert(stritems != NULL);
+
+	GLIST_FOREACH(cur, msg->seq) {
+		struct msg_param *seq = cur->data;
+		BB err_bb = get_msgerr_bb(ctx);
+		V new_upos = build_decode_inline_sequence(ctx,
+			&args[seq->arg_ix], seq, ctx->inline_seq_pos,
+			g_list_next(cur) == NULL, ctx->errval_phi, err_bb);
+		ctx->inline_seq_pos = new_upos;
+	}
+
+	assert(msg->_long == NULL || stritems != NULL);
+	int lp_offset = -1;
+	GLIST_FOREACH(cur, msg->_long) {
+		struct msg_param *lp = cur->data;
+		lp_offset++;
 		/* every long parameter is carried in a string item. therefore there
 		 * must be at least one; make sure this is true, and fuck off into the
 		 * msgerr block if it's not. (the length function returns tpos > tmax +
@@ -322,13 +327,13 @@ static void emit_in_param(
 		LLVMPositionBuilderAtEnd(ctx->builder, cont_bb);
 		switch(IDL_NODE_TYPE(type)) {
 			case IDLN_TYPE_STRING: {
-				/* <i8 *> is exactly what we need. */
-				args[(*arg_pos_p)++] = stritems[lp_offset].memptr;
-				/* null-terminate it, though. */
+				/* terminate. */
 				LLVMBuildStore(ctx->builder,
 					LLVMConstInt(LLVMInt8TypeInContext(ctx->ctx), 0, 0),
 					LLVMBuildGEP(ctx->builder, stritems[lp_offset].memptr,
 						&item_len_bytes, 1, "str.nullpo"));	/* ガ！ */
+				set_decode_arg(ctx, lp, &args[lp->arg_ix],
+					stritems[lp_offset].memptr);
 				break;
 			}
 
@@ -347,8 +352,8 @@ static void emit_in_param(
 					LLVMBuildTruncOrBitCast(ctx->builder,
 						LLVMSizeOf(itemtype), ctx->i32t, "seq.item.len.cast"),
 					"seq.len");
-				args[(*arg_pos_p)++] = ptr;
-				args[(*arg_pos_p)++] = len;
+				set_decode_arg(ctx, lp, &args[lp->arg_ix + 0], ptr);
+				set_decode_arg(ctx, lp, &args[lp->arg_ix + 1], len);
 				break;
 			}
 
@@ -357,64 +362,18 @@ static void emit_in_param(
 			case IDLN_TYPE_UNION:
 			case IDLN_TYPE_ARRAY:
 				/* TODO */
+				fprintf(stderr, "%s: <%s> as l-param not implemented (yet)\n",
+					__func__, IDL_NODE_TYPE_NAME(type));
+				abort();
 
 			default:
 				NOTDEFINED(type);
 		}
-		return;
 	}
 
-	fprintf(stderr, "can't hax this in-parameter\n");
-	abort();
-}
-#endif
-
-
-void build_msg_decoder(
-	struct llvm_ctx *ctx,
-	LLVMValueRef *args,
-	const struct message_info *msg,
-	const struct stritem_info *stritems,
-	bool is_out_half)
-{
-	assert(is_out_half || msg->ret_type == NULL);
-
-	if(is_out_half && msg->ret_type != NULL) {
-		/* TODO: decode return value (for the stub post-ipc part) */
-	}
-
-	GLIST_FOREACH(cur, msg->untyped) {
-		struct msg_param *u = cur->data;
-		IDL_tree type = u->X.untyped.type;
-		V tmp[2];
-		build_read_ipc_parameter(ctx, tmp, type, u->X.untyped.first_reg);
-		enum IDL_param_attr attr = IDL_PARAM_DCL(u->param_dcl).attr;
-		/* (TODO: is this right?) */
-		int nargs = IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE ? 2 : 1;
-		if(attr == IDL_PARAM_IN) {
-			/* by value. */
-			for(int i=0; i<nargs; i++) args[u->arg_ix + i] = tmp[i];
-		} else if(attr == IDL_PARAM_INOUT) {
-			/* by reference. */
-			for(int i=0; i<nargs; i++) {
-				LLVMBuildStore(ctx->builder, tmp[i], args[u->arg_ix + i]);
-			}
-		} else {
-			g_assert_not_reached();
-		}
-	}
-
-	GLIST_FOREACH(cur, msg->seq) {
-		struct msg_param *seq = cur->data;
-		BB err_bb = get_msgerr_bb(ctx);
-		V new_upos = build_decode_inline_sequence(ctx,
-			&args[seq->arg_ix], seq, ctx->inline_seq_pos,
-			g_list_next(cur) == NULL, ctx->errval_phi, err_bb);
-		ctx->inline_seq_pos = new_upos;
-	}
-
-	/* TODO: long parameters */
-
+/* TODO: this fragment is replaced entirely by the build_msg_decoder(),
+ * build_msg_encoder() pattern in dispatch.c, and should therefore be removed.
+ */
 #if 0
 		} else /* inout */ {
 			assert(!oneway);
