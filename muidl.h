@@ -487,11 +487,14 @@ extern void print_generic_stub_decl(
 	int timeout_kind);		/* nonzero adds _timeout to stub name */
 
 
+/* from common.c */
+
+extern gboolean iter_build_common_module(IDL_tree_func_data *, void *);
+
+
 /* from dispatch.c */
 
-extern LLVMValueRef build_dispatcher_function(
-	struct llvm_ctx *ctx,
-	IDL_tree iface);
+extern gboolean iter_build_dispatchers(IDL_tree_func_data *tf, void *ctx);
 
 
 /* from stub.c */
@@ -675,11 +678,6 @@ extern LLVMValueRef encode_packed_struct_fncall(
 	LLVMValueRef bit_offset,
 	IDL_tree ctyp,
 	LLVMValueRef src_base);
-
-
-/* from common.c */
-
-extern gboolean iter_build_common_module(IDL_tree_func_data *, void *);
 
 
 /* from message.c */

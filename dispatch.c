@@ -426,7 +426,7 @@ static void build_dispatcher_msgerr(struct llvm_ctx *ctx)
 }
 
 
-LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
+static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 {
 	GList *tagmask_list = NULL,
 		*methods = analyse_methods_of_iface(ctx->pr, &tagmask_list, iface);
@@ -660,4 +660,28 @@ LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 	g_list_free(tagmask_list);
 	g_free(stritems);
 	return fn;
+}
+
+
+gboolean iter_build_dispatchers(IDL_tree_func_data *tf, void *ud)
+{
+	struct llvm_ctx *ctx = ud;
+
+	/* TODO: add extern functions to the module on first invocation,
+	 * somehow
+	 */
+
+	switch(IDL_NODE_TYPE(tf->tree)) {
+		case IDLN_LIST:
+		case IDLN_MODULE:
+		case IDLN_SRCFILE:
+			return TRUE;
+
+		default: return FALSE;
+
+		case IDLN_INTERFACE:
+			/* TODO: consider exceptions. */
+			build_dispatcher_function(ctx, tf->tree);
+			return FALSE;
+	}
 }
