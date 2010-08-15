@@ -117,13 +117,13 @@ void build_msg_encoder(
 		const struct msg_param *u = cur->data;
 		IDL_tree type = u->X.untyped.type;
 		const int first_reg = u->X.untyped.first_reg;
-		assert(IDL_PARAM_DCL(u->param_dcl).attr != IDL_PARAM_IN);
+		bool inout = IDL_PARAM_DCL(u->param_dcl).attr == IDL_PARAM_INOUT;
 //		printf("param %p: arg_ix %d, regs [%d..%d], argval %p, type <%s>\n",
 //			u, u->arg_ix, first_reg, last_reg, args[u->arg_ix],
 //			IDL_NODE_TYPE_NAME(type));
 		if(is_value_type(type)) {
 			V raw;
-			if(is_out_half) {
+			if(is_out_half || inout) {
 				/* flatten the pointer. */
 				raw = LLVMBuildLoad(ctx->builder, args[u->arg_ix], "outp.flat");
 			} else {
