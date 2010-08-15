@@ -193,9 +193,9 @@ static int pack_items(
 		items_per_size[sz] = g_list_prepend(items_per_size[sz], ci);
 	}
 
-
 	if(best_wn == -1) {
 		/* no solution down here. */
+		g_ptr_array_free(best_output, TRUE);
 		return max_sol + 1;
 	} else {
 		assert(best_size > 0 && best_wn >= 0);
@@ -649,8 +649,7 @@ LLVMValueRef get_struct_fn(
 	char flatname[namelen + 1];
 	/* FIXME: make this proper, i.e. use a name mangler that works */
 	for(int i=0; i < namelen; i++) {
-		flatname[i] = s_id[i];
-		if(!isalnum(flatname[i])) flatname[i] = '_';
+		flatname[i] = isalnum(s_id[i]) ? s_id[i] : '_';
 	}
 	flatname[namelen] = '\0';
 	T types[3], rettyp = LLVMVoidTypeInContext(ctx->ctx);
