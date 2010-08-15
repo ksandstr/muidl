@@ -370,42 +370,4 @@ void build_msg_decoder(
 				NOTDEFINED(type);
 		}
 	}
-
-/* TODO: this fragment is replaced entirely by the build_msg_decoder(),
- * build_msg_encoder() pattern in dispatch.c, and should therefore be removed.
- */
-#if 0
-		} else /* inout */ {
-			assert(!oneway);
-			struct msg_param *p = find_pdecl(req->params, pdecl);
-			assert(p == find_pdecl(reply->params, pdecl));
-			/* hax! */
-			int start = arg_pos;
-			emit_out_param(ctx, &args[p->arg_ix], type);
-			LLVMValueRef in_args[2];
-			int in_arg_pos = 0;
-			emit_in_param(ctx, in_args, &in_arg_pos, inf, stritems, p);
-			assert(in_arg_pos == arg_pos - start);
-			/* insert tab A in slot B */
-			for(int i=0; i<in_arg_pos; i++) {
-				if(is_value_type(typ)) {
-					/* just a value */
-					LLVMBuildStore(ctx->builder, in_args[i], args[start + i]);
-				} else if(IDL_NODE_TYPE(typ) == IDLN_TYPE_SEQUENCE) {
-					/* a pointer and a length value. */
-					assert(i + 1 < in_arg_pos);
-					args[start + i] = in_args[i];
-					LLVMBuildStore(ctx->builder, in_args[i + 1],
-						args[start + i + 1]);
-					i++;
-				} else {
-					/* single pointer arguments encode structs (whether rigid
-					 * or not), mapgrant items, arrays, strings, and wide
-					 * strings. convenient, huh?
-					 */
-					args[start + i] = in_args[i];
-				}
-			}
-		}
-#endif
 }
