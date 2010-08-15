@@ -139,6 +139,9 @@ struct print_ctx
 };
 
 
+/* TODO: rename this structure. it's not actually a LLVM context; call it a
+ * build_ctx instead or something.
+ */
 struct llvm_ctx
 {
 	struct print_ctx *pr;

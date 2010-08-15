@@ -19,6 +19,9 @@
  */
 
 #include <stdarg.h>
+#include <glib.h>
+#include <libIDL/IDL.h>
+#include <llvm-c/Core.h>
 
 #include "muidl.h"
 #include "llvmutil.h"
@@ -77,4 +80,33 @@ void build_free_mallocs(struct llvm_ctx *ctx)
 	}
 	g_list_free(ctx->malloc_ptrs);
 	ctx->malloc_ptrs = NULL;
+}
+
+
+/* TODO: [v2] get the word type from target info */
+struct llvm_ctx *create_llvm_ctx(struct print_ctx *pr)
+{
+	struct llvm_ctx *ctx = g_new0(struct llvm_ctx, 1);
+
+	ctx->pr = pr;
+	ctx->ns = pr->ns;
+	ctx->ctx = LLVMContextCreate();
+	ctx->struct_decoder_fns = g_hash_table_new_full(
+		&g_str_hash, &g_str_equal, &g_free, NULL);
+	ctx->i32t = LLVMInt32TypeInContext(ctx->ctx);
+	ctx->wordt = ctx->i32t;
+	ctx->voidptrt = LLVMPointerType(LLVMInt8TypeInContext(ctx->ctx), 0);
+	ctx->zero = LLVMConstInt(ctx->i32t, 0, 0);
+	T mapgrant_fields[] = { ctx->wordt, ctx->wordt };
+	ctx->mapgrant = LLVMStructTypeInContext(ctx->ctx, mapgrant_fields, 2, 1);
+
+	return ctx;
+}
+
+
+void dispose_llvm_ctx(struct llvm_ctx *ctx)
+{
+	g_hash_table_destroy(ctx->struct_decoder_fns);
+	LLVMContextDispose(ctx->ctx);
+	g_free(ctx);
 }

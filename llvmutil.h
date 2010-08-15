@@ -76,5 +76,8 @@ extern void build_free_mallocs(struct llvm_ctx *ctx);
  */
 extern LLVMBasicBlockRef get_msgerr_bb(struct llvm_ctx *ctx);
 
+/* context management. */
+extern struct llvm_ctx *create_llvm_ctx(struct print_ctx *pr);
+extern void dispose_llvm_ctx(struct llvm_ctx *ctx);
 
 #endif

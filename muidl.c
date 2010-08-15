@@ -39,6 +39,7 @@
 #include <llvm-c/BitWriter.h>
 
 #include "muidl.h"
+#include "llvmutil.h"
 
 
 /* command-line arguments */
@@ -1008,39 +1009,27 @@ bool do_idl_file(const char *cppopts, const char *filename)
 		.common_header_name = commonname,
 		.tmpstrchunk = g_string_chunk_new(1024),
 	};
-	/* FIXME: make this governed by a sane commandline interface */
-	struct llvm_ctx lc = {
-		.pr = &print_ctx,
-		.ns = ns,
-		.ctx = LLVMContextCreate(),
-		.struct_decoder_fns = g_hash_table_new_full(
-			&g_str_hash, &g_str_equal, &g_free, NULL),
-	};
-	lc.i32t = LLVMInt32TypeInContext(lc.ctx);
-	lc.wordt = lc.i32t;
-	lc.voidptrt = LLVMPointerType(LLVMInt8TypeInContext(lc.ctx), 0);
-	lc.zero = LLVMConstInt(lc.i32t, 0, 0);
-	LLVMTypeRef mapgrant_fields[] = { lc.wordt, lc.wordt };
-	lc.mapgrant = LLVMStructTypeInContext(lc.ctx, mapgrant_fields, 2, 1);
+
+	struct llvm_ctx *lc = create_llvm_ctx(&print_ctx);
 
 	if(!arg_service_only && !arg_client_only) {
 		print_into(commonname, &print_common_header, &print_ctx);
 
-		LLVMModuleRef mod = make_llvm_module(&lc, basename,
+		LLVMModuleRef mod = make_llvm_module(lc, basename,
 			&iter_build_common_module);
 		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-common.S",
 			basename));
 		LLVMDisposeModule(mod);
 	}
 	if(!arg_defs_only && !arg_client_only) {
-		LLVMModuleRef mod = make_llvm_module(&lc, basename,
+		LLVMModuleRef mod = make_llvm_module(lc, basename,
 			&iter_build_dispatchers);
 		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-service.S",
 			basename));
 		LLVMDisposeModule(mod);
 	}
 	if(!arg_defs_only && !arg_service_only) {
-		LLVMModuleRef mod = make_llvm_module(&lc, basename,
+		LLVMModuleRef mod = make_llvm_module(lc, basename,
 			&iter_build_stubs);
 		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-client.S",
 			basename));
@@ -1051,7 +1040,7 @@ bool do_idl_file(const char *cppopts, const char *filename)
 	g_hash_table_destroy(ifaces);
 	g_free(commonname);
 
-	g_hash_table_destroy(lc.struct_decoder_fns);
+	dispose_llvm_ctx(lc);
 
 	IDL_ns_free(ns);
 	IDL_tree_free(tree);
