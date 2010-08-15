@@ -33,6 +33,22 @@ struct slimkitten {
 	toy mouse, ball, horse;
 };
 
+/* this struct should not have functions emitted for it in the common
+ * module, because it's not referenced from any op decl.
+ */
+struct unseen {
+	boolean whatever;
+	boolean its_not_like_it_matters;
+	octet feh;
+};
+
+struct invisible {
+	octet imperceptible;
+	unseen first, second;
+	long transparent;
+	short ephemeral;
+};
+
 
 [StubPrefix(__countserv)]
 interface Countserv

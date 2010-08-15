@@ -94,6 +94,66 @@ static void build_packed_struct_encoder(struct llvm_ctx *ctx, IDL_tree styp)
 }
 
 
+/* TODO: this could be quicker if results were memoized by stype->repo_id,
+ * but meh.
+ */
+static bool is_struct_used(
+	struct llvm_ctx *ctx,
+	IDL_tree parent,
+	IDL_tree stype)
+{
+	/* fuck clang. */
+	bool found = false;
+	const char *ref_id = IDL_IDENT(IDL_TYPE_STRUCT(stype).ident).repo_id;
+	gboolean see_if_struct(IDL_tree_func_data *tf, void *ud) {
+		if(found) return FALSE;
+		else if(IDL_NODE_TYPE(tf->tree) == IDLN_TYPE_STRUCT
+			&& tf->tree != stype)
+		{
+			for(IDL_tree cur = IDL_TYPE_STRUCT(tf->tree).member_list;
+				cur != NULL;
+				cur = IDL_LIST(cur).next)
+			{
+				IDL_tree m = IDL_LIST(cur).data,
+					type = get_type_spec(IDL_MEMBER(m).type_spec);
+				if(IDL_NODE_TYPE(type) != IDLN_TYPE_STRUCT) continue;
+				const char *id = IDL_IDENT(
+					IDL_TYPE_STRUCT(type).ident).repo_id;
+				if(strcmp(ref_id, id) == 0) {
+					/* but this is only a hit if the other struct is used
+					 * itself.
+					 */
+					found = is_struct_used(ctx, parent, tf->tree);
+					break;
+				}
+			}
+			return FALSE;
+		} else if(IDL_NODE_TYPE(tf->tree) == IDLN_OP_DCL) {
+			for(IDL_tree cur = IDL_OP_DCL(tf->tree).parameter_dcls;
+				cur != NULL;
+				cur = IDL_LIST(cur).next)
+			{
+				IDL_tree p = IDL_LIST(cur).data,
+					type = get_type_spec(IDL_PARAM_DCL(p).param_type_spec);
+				if(IDL_NODE_TYPE(type) != IDLN_TYPE_STRUCT) continue;
+				const char *id = IDL_IDENT(
+					IDL_TYPE_STRUCT(type).ident).repo_id;
+				if(strcmp(ref_id, id) == 0) {
+					/* found a direct consumer, yay */
+					found = true;
+					break;
+				}
+			}
+			return FALSE;
+		} else {
+			return TRUE;
+		}
+	};
+	IDL_tree_walk_in_order(parent, &see_if_struct, NULL);
+	return found;
+}
+
+
 gboolean iter_build_common_module(IDL_tree_func_data *tf, void *ud)
 {
 	struct llvm_ctx *ctx = ud;
@@ -106,12 +166,25 @@ gboolean iter_build_common_module(IDL_tree_func_data *tf, void *ud)
 		case IDLN_INTERFACE:
 			return TRUE;
 
-		case IDLN_TYPE_STRUCT:
-			/* TODO: limit this to just those structs that are used, directly
-			 * or not, in op decls.
+		case IDLN_TYPE_STRUCT: {
+			/* only emit those structs that are mentioned in opdcl parameters,
+			 * or reachable structs, of the same module.
 			 */
-			build_packed_struct_decoder(ctx, tf->tree);
-			build_packed_struct_encoder(ctx, tf->tree);
+			IDL_tree mod = IDL_get_parent_node(tf->tree, IDLN_MODULE, NULL);
+			if(mod == NULL) {
+				/* ... if not inside a module, an interface is fine too. */
+				mod = IDL_get_parent_node(tf->tree, IDLN_INTERFACE, NULL);
+			}
+			if(mod == NULL) {
+				/* or just the toplevel list... */
+				mod = ctx->pr->tree;
+			}
+			assert(mod != NULL);
+			if(is_struct_used(ctx, mod, tf->tree)) {
+				build_packed_struct_decoder(ctx, tf->tree);
+				build_packed_struct_encoder(ctx, tf->tree);
+			}
 			return FALSE;
+		}
 	}
 }
