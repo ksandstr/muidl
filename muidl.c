@@ -1065,8 +1065,11 @@ bool do_idl_file(const char *cppopts, const char *filename)
 		LLVMDisposeModule(mod);
 	}
 	if(!arg_defs_only && !arg_service_only) {
-		print_into(tmp_f(&print_ctx, "%s-client.c", basename),
-			&print_stubs_file, &print_ctx);
+		LLVMModuleRef mod = make_llvm_module(&lc, basename,
+			&iter_build_stubs);
+		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-client.S",
+			basename));
+		LLVMDisposeModule(mod);
 	}
 
 	g_string_chunk_free(print_ctx.tmpstrchunk);

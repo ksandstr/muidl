@@ -1,5 +1,5 @@
 /*
- * dispatch.c -- emit a LLVM tree for an IDL interface
+ * dispatch.c -- build a dispatcher for an IDL interface
  * Copyright 2010  Kalle A. Sandström <ksandstr@iki.fi>
  *
  * This file is part of µiX.

@@ -494,6 +494,11 @@ extern LLVMValueRef build_dispatcher_function(
 	IDL_tree iface);
 
 
+/* from stub.c */
+
+extern gboolean iter_build_stubs(IDL_tree_func_data *tf, void *ctxptr);
+
+
 /* from l4x2.c */
 
 /* returned valueref is a <L4_Word_t *> of the UTCB address. */
