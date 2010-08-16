@@ -479,6 +479,8 @@ extern void print_common_header(struct print_ctx *pr);
 
 extern int op_timeout_kind(IDL_tree opdcl);	/* returns mask of TIMEOUT_* */
 
+extern char *get_stub_prefix(IDL_tree opdcl);
+
 
 /* from gen-stubs.c */
 

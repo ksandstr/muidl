@@ -175,6 +175,21 @@ static void print_extern_prototype(
 }
 
 
+char *get_stub_prefix(IDL_tree opdcl)
+{
+	const char *stubpfx = IDL_tree_property_get(
+		IDL_OP_DCL(opdcl).ident, "StubPrefix");
+	if(stubpfx == NULL) {
+		IDL_tree iface = IDL_get_parent_node(opdcl, IDLN_INTERFACE, NULL);
+		if(iface != NULL) {
+			stubpfx = IDL_tree_property_get(IDL_INTERFACE(iface).ident,
+				"StubPrefix");
+		}
+	}
+	return g_strdup(stubpfx);
+}
+
+
 static gboolean print_stub_protos(IDL_tree_func_data *tf, gpointer userdata)
 {
 	struct print_ctx *pr = userdata;
@@ -194,22 +209,14 @@ static gboolean print_stub_protos(IDL_tree_func_data *tf, gpointer userdata)
 
 	IDL_tree opdcl = tf->tree;
 
-	const char *stubpfx = IDL_tree_property_get(
-		IDL_OP_DCL(opdcl).ident, "StubPrefix");
-	if(stubpfx == NULL) {
-		IDL_tree iface = IDL_get_parent_node(tf->tree, IDLN_INTERFACE, NULL);
-		if(iface != NULL) {
-			stubpfx = IDL_tree_property_get(IDL_INTERFACE(iface).ident,
-				"StubPrefix");
-		}
-	}
-
+	char *stubpfx = get_stub_prefix(opdcl);
 	int tok = op_timeout_kind(opdcl);
 	if(tok != 0) print_extern_prototype(pr, stubpfx, tf->tree, tok);
 	/* (TODO: should there be an attribute for not generating the "wait
 	 * forever" default stub?)
 	 */
 	print_extern_prototype(pr, stubpfx, tf->tree, 0);
+	g_free(stubpfx);
 
 	/* looked at the op dcl already. */
 	return FALSE;
