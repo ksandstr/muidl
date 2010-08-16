@@ -80,10 +80,7 @@ void build_write_ipc_parameter(
 }
 
 
-/* turn a sequence of out-parameters into L4 instructions that store the
- * appropriate values, including the message tag, in the message registers.
- */
-void build_msg_encoder(
+extern LLVMValueRef build_msg_encoder(
 	struct llvm_ctx *ctx,
 	const struct message_info *msg,
 	const LLVMValueRef *args,
@@ -178,8 +175,7 @@ void build_msg_encoder(
 		LLVMBuildStore(ctx->builder, CONST_WORD(msg->sublabel),
 			UTCB_ADDR_VAL(ctx, CONST_INT(1), "mr1.addr"));
 	}
-	branch_set_phi(ctx, ctx->reply_tag, tag);
-	LLVMBuildBr(ctx->builder, ctx->reply_bb);
+	return tag;
 }
 
 

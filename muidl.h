@@ -686,15 +686,15 @@ extern LLVMValueRef encode_packed_struct_fncall(
 /* from message.c */
 
 /* turn a sequence of out-parameters into L4 instructions that store the
- * appropriate values, including the message tag, in the message registers.
+ * appropriate values in the message registers. returns the message tag.
  */
-void build_msg_encoder(
+extern LLVMValueRef build_msg_encoder(
 	struct llvm_ctx *ctx,
 	const struct message_info *msg,
 	const LLVMValueRef *args,
 	bool is_out_half);
 
-void build_msg_decoder(
+extern void build_msg_decoder(
 	struct llvm_ctx *ctx,
 	LLVMValueRef *dst_args,
 	const struct message_info *msg,

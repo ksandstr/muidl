@@ -344,7 +344,9 @@ static LLVMBasicBlockRef build_op_decode(
 			llvm_value_type(ctx, reply->ret_type),
 			tmp_f(pr, "%s.retval", opname));
 	}
-	build_msg_encoder(ctx, reply, args, true);
+	V enc_tag = build_msg_encoder(ctx, reply, args, true);
+	branch_set_phi(ctx, ctx->reply_tag, enc_tag);
+	LLVMBuildBr(ctx->builder, ctx->reply_bb);
 
 	return bb;
 }
