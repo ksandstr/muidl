@@ -637,26 +637,9 @@ static struct message_info *build_message(
 		min_mr += s->min_words;
 		max_mr += s->max_words;
 	}
-
-	/* long types: non-rigid and large structs, strings, wide strings,
-	 * sequences that can't be encoded inline, etc
-	 */
-	inf->num_long = num_long;
-	inf->long_params = g_new(struct long_param *, num_long);
-	GList *cur = g_list_first(_long);
-	for(int i=0; i<num_long; i++, cur = g_list_next(cur)) {
-		assert(cur != NULL);
-		struct long_param *l = cur->data;
-		IDL_tree param = l->param_dcl, type = l->type,
-			decl = IDL_PARAM_DCL(param).simple_declarator;
-
-		struct long_param *p = g_new(struct long_param, 1);
-		p->name = IDL_IDENT(decl).str;
-		p->type = type;
-		p->param_dcl = param;
-		inf->long_params[inf->num_long++] = p;
-	}
 #endif
+	inf->seq = seq;
+	inf->_long = _long;
 
 	IDL_tree op = NULL;
 	if(return_type != NULL) {
