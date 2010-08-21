@@ -195,14 +195,15 @@ static void build_ipc_stub(
 		}
 	}
 
-	/* FIXME: generate "stritems" from params, load buffer registers
-	 * FIXME: fill in the acceptor
-	 */
 	if(oneway) {
 		/* L4_nilthread == word(0) */
 		ctx->tag = build_l4_ipc_call(ctx, ipc_dest, timeouts,
 			CONST_WORD(0), tag, NULL, NULL, NULL);
 	} else {
+		/* load the acceptor. */
+		LLVMBuildStore(ctx->builder, CONST_WORD(0),
+			UTCB_ADDR_VAL(ctx, CONST_INT(BR_OFFSET(0)), "acceptor.addr"));
+		/* FIXME: generate "stritems" from params, load buffer registers */
 		ctx->tag = build_l4_ipc_call(ctx, ipc_dest, timeouts,
 			ipc_dest, tag, NULL, &ctx->mr1, &ctx->mr2);
 	}
