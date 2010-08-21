@@ -36,7 +36,7 @@ char *fixed_type(IDL_ns ns, IDL_tree type)
 }
 
 
-static bool has_pager_target(IDL_ns ns, IDL_tree op_dcl)
+bool has_pager_target(IDL_ns ns, IDL_tree op_dcl)
 {
 	IDL_tree prop_node = IDL_OP_DCL(op_dcl).ident;
 	const char *pt = IDL_tree_property_get(prop_node, "PagerTarget");

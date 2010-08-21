@@ -31,8 +31,6 @@ static LLVMTypeRef stub_fn_type(
 	struct llvm_ctx *ctx,
 	struct method_info *inf)
 {
-	printf("%s: for `%s'\n", __func__, METHOD_NAME(inf->node));
-
 	struct message_info *reply = NULL;
 	if(inf->num_reply_msgs > 0) reply = inf->replies[0];
 
@@ -40,22 +38,23 @@ static LLVMTypeRef stub_fn_type(
 		num_args = num_params * 2 + 2 + 1;
 	T arg_types[num_args];
 	for(int i=0; i<num_args; i++) arg_types[i] = NULL;
-	int max_arg = -1;
+	int max_arg = -1, arg_offset = 0;
 
-	/* TODO: support "implicit" IPC destinations */
-	arg_types[++max_arg] = ctx->wordt;	/* L4_ThreadId_t, peer */
-	int arg_offset = 1;
-	printf("%s: ipc destination goes in arg %d\n", __func__, max_arg);
+	/* IPC destination parameter */
+	if(!has_pager_target(ctx->ns, inf->node)) {
+		arg_types[++max_arg] = ctx->wordt;	/* L4_ThreadId_t, peer */
+		arg_offset++;
+	}
 
+	/* return value pointer */
 	if(reply != NULL && reply->ret_type != NULL) {
 		assert(IDL_NODE_TYPE(reply->ret_type) != IDLN_TYPE_SEQUENCE);
 		arg_types[++max_arg] = LLVMPointerType(llvm_rigid_type(ctx,
 			reply->ret_type), 0);
-		printf("%s: retval goes in arg %d\n", __func__, max_arg);
 		arg_offset++;
 	}
 
-	printf("%s: arg_offset is %d\n", __func__, arg_offset);
+	/* parameters */
 	T *at_base = &arg_types[arg_offset];
 	for(IDL_tree cur = IDL_OP_DCL(inf->node).parameter_dcls;
 		cur != NULL;
@@ -98,16 +97,12 @@ static LLVMTypeRef stub_fn_type(
 					llvm_rigid_type(ctx, type), 0);
 			}
 		}
-		printf("%s: param in arg slots %d + [%d..%d]\n", __func__,
-			arg_offset, p->arg_ix, p->arg_ix + nargs - 1);
 		max_arg = MAX(max_arg, p->arg_ix + nargs - 1 + arg_offset);
 	}
 
 	if(max_arg < 0) {
-		printf("%s: a very small stub! (void)\n", __func__);
 		return LLVMFunctionType(ctx->i32t, NULL, 0, 0);
 	} else {
-		printf("%s: au naturel (num %d)\n", __func__, max_arg + 1);
 		return LLVMFunctionType(ctx->i32t, arg_types, max_arg + 1, 0);
 	}
 }
@@ -141,14 +136,15 @@ static void build_ipc_stub(
 	ctx->builder = LLVMCreateBuilderInContext(ctx->ctx);
 	BB entry_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "EntryBlock");
 
-	int num_args = LLVMCountParams(fn);
+	int num_args = LLVMCountParams(fn), arg_offset = 0;
 	assert(num_args >= 1);
 	V *args = g_new(V, num_args);
 	LLVMGetParams(fn, args);
 
-	/* TODO: support implicit IPC destinations */
-	V ipc_dest = args[0];
-	int arg_offset = 1;
+	V ipc_dest = NULL;
+	if(!has_pager_target(ctx->ns, inf->node)) {
+		ipc_dest = args[arg_offset++];
+	}
 
 	V *ret_args = NULL;
 	if(reply != NULL && reply->ret_type != NULL) {
@@ -158,6 +154,13 @@ static void build_ipc_stub(
 	/* prelude. */
 	LLVMPositionBuilderAtEnd(ctx->builder, entry_bb);
 	ctx->utcb = build_utcb_get(ctx);
+	if(ipc_dest == NULL) {
+		assert(has_pager_target(ctx->ns, inf->node));
+		/* load the pager TCR. */
+		ipc_dest = LLVMBuildLoad(ctx->builder,
+			UTCB_ADDR_VAL(ctx, CONST_INT(-12), "pager.addr"),
+			"pager.tid");
+	}
 
 	/* function exit. */
 	BB exit_bb = add_sibling_block(ctx, "exit");
@@ -169,10 +172,18 @@ static void build_ipc_stub(
 	LLVMPositionBuilderAtEnd(ctx->builder, entry_bb);
 	V tag = build_msg_encoder(ctx, inf->request, NULL, &args[arg_offset],
 		false);
-	/* FIXME: generate "stritems" from params, load buffer registers */
+	/* FIXME: generate "stritems" from params, load buffer registers
+	 * FIXME: fill in the acceptor
+	 */
 	/* 0 is L4_Time_t for Never, in both timeout fields */
-	ctx->tag = build_l4_ipc_call(ctx, ipc_dest, CONST_WORD(0),
-		ipc_dest, tag, NULL, &ctx->mr1, &ctx->mr2);
+	if(IDL_OP_DCL(inf->node).f_oneway) {
+		/* L4_nilthread == word(0) */
+		ctx->tag = build_l4_ipc_call(ctx, ipc_dest, CONST_WORD(0),
+			CONST_WORD(0), tag, NULL, NULL, NULL);
+	} else {
+		ctx->tag = build_l4_ipc_call(ctx, ipc_dest, CONST_WORD(0),
+			ipc_dest, tag, NULL, &ctx->mr1, &ctx->mr2);
+	}
 	/* check for IPC errors. */
 	BB err_bb = add_sibling_block(ctx, "ipcerror"),
 		noerr_bb = add_sibling_block(ctx, "ipcok");

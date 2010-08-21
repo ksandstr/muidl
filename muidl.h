@@ -487,6 +487,8 @@ extern char *get_stub_prefix(IDL_tree opdcl);
 
 /* from gen-stubs.c */
 
+extern bool has_pager_target(IDL_ns ns, IDL_tree op_dcl);
+
 extern void print_stubs_file(struct print_ctx *pr);
 extern void print_generic_stub_decl(
 	struct print_ctx *pr,

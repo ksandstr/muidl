@@ -105,6 +105,9 @@ interface Countserv
 		inout octet when)
 			raises(Posix::Errno);
 
+	[Label(12345), PagerTarget]
+	oneway void poke_without_peeking(in long whatever);
+
 #if 0
 	typedef sequence<long, 20> something;
 	typedef sequence<short, 20> packed_something;
