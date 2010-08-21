@@ -119,8 +119,12 @@ static int each_stub_parameter(
 				tmp_f(pr, "unsigned int%s", !in_only ? " *" : ""),
 				tmp_f(pr, "%s_len%s", c_name, !in_only ? "_ptr" : ""),
 				is_last);
+		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_STRING) {
+			(*paramfn)(pr, pnum++, "char *", c_name, is_last);
+		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_WIDE_STRING) {
+			(*paramfn)(pr, pnum++, "wchar_t *", c_name, is_last);
 		} else {
-			/* TODO: handle structs, strings, arrays etc */
+			/* TODO: handle structs, unions, arrays, etc */
 			NOTDEFINED(type);
 		}
 		g_free(tmpstr);
