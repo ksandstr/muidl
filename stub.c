@@ -153,6 +153,7 @@ static void build_ipc_stub(
 	}
 
 	/* prelude. */
+	const bool oneway = IDL_OP_DCL(inf->node).f_oneway != 0;
 	LLVMPositionBuilderAtEnd(ctx->builder, entry_bb);
 	ctx->utcb = build_utcb_get(ctx);
 	if(ipc_dest == NULL) {
@@ -177,7 +178,7 @@ static void build_ipc_stub(
 	 * FIXME: fill in the acceptor
 	 */
 	/* 0 is L4_Time_t for Never, in both timeout fields */
-	if(IDL_OP_DCL(inf->node).f_oneway) {
+	if(oneway) {
 		/* L4_nilthread == word(0) */
 		ctx->tag = build_l4_ipc_call(ctx, ipc_dest, CONST_WORD(0),
 			CONST_WORD(0), tag, NULL, NULL, NULL);
@@ -203,6 +204,23 @@ static void build_ipc_stub(
 
 	/* IPC success path. */
 	LLVMPositionBuilderAtEnd(ctx->builder, noerr_bb);
+	if(find_neg_exn(inf->node) != NULL) {
+		/* the dreaded MSG_ERROR */
+		assert(!oneway);
+		V label = build_label_from_tag(ctx, ctx->tag),
+			matches = LLVMBuildICmp(ctx->builder, LLVMIntEQ,
+				label, CONST_WORD(1), "negexn.matches");
+		BB msgerr_bb = add_sibling_block(ctx, "msgerr.match"),
+			no_msgerr_bb = add_sibling_block(ctx, "no.msgerr");
+		LLVMBuildCondBr(ctx->builder, matches, msgerr_bb, no_msgerr_bb);
+
+		LLVMPositionBuilderAtEnd(ctx->builder, msgerr_bb);
+		branch_set_phi(ctx, retval_phi,
+			LLVMBuildNeg(ctx->builder, ctx->mr1, "msgerr.val.neg"));
+		LLVMBuildBr(ctx->builder, exit_bb);
+
+		LLVMPositionBuilderAtEnd(ctx->builder, no_msgerr_bb);
+	}
 	/* TODO: check for exceptions */
 	if(reply != NULL) {
 		build_msg_decoder(ctx, ret_args, &args[arg_offset], reply, NULL,
