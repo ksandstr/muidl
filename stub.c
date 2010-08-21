@@ -67,38 +67,40 @@ static LLVMTypeRef stub_fn_type(
 		enum IDL_param_attr attr = IDL_PARAM_DCL(pdecl).attr;
 		int nargs = 1;
 		struct msg_param *p;
+		bool out;
 		if(attr == IDL_PARAM_IN) {
 			p = find_pdecl(inf->request->params, pdecl);
-			assert(p != NULL);
-			if(is_value_type(type)) {
-				at_base[p->arg_ix] = llvm_value_type(ctx, type);
-			} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
-				IDL_tree subtype = get_type_spec(
-					IDL_TYPE_SEQUENCE(type).simple_type_spec);
-				at_base[p->arg_ix + 0] = LLVMPointerType(
-					llvm_rigid_type(ctx, subtype), 0);
-				at_base[p->arg_ix + 1] = ctx->i32t;
-				nargs = 2;
-			} else {
-				at_base[p->arg_ix] = LLVMPointerType(
-					llvm_rigid_type(ctx, type), 0);
-			}
-		} else /* out, inout */ {
-			assert(reply != NULL);
+			out = false;
+		} else {
 			p = find_pdecl(reply->params, pdecl);
-			assert(p != NULL);
-			if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
-				IDL_tree subtype = get_type_spec(
-					IDL_TYPE_SEQUENCE(type).simple_type_spec);
-				at_base[p->arg_ix + 0] = LLVMPointerType(
-					llvm_rigid_type(ctx, subtype), 0);
-				at_base[p->arg_ix + 1] = LLVMPointerType(ctx->i32t, 0);
-				nargs = 2;
-			} else {
-				at_base[p->arg_ix] = LLVMPointerType(
-					llvm_rigid_type(ctx, type), 0);
-			}
+			out = true;
 		}
+		assert(p != NULL);
+
+		if(is_value_type(type)) {
+			T typ = llvm_value_type(ctx, type);
+			if(out) typ = LLVMPointerType(typ, 0);
+			at_base[p->arg_ix] = typ;
+		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
+			IDL_tree subtype = get_type_spec(
+				IDL_TYPE_SEQUENCE(type).simple_type_spec);
+			at_base[p->arg_ix + 0] = LLVMPointerType(
+				llvm_rigid_type(ctx, subtype), 0);
+			T cttyp = ctx->i32t;
+			if(out) cttyp = LLVMPointerType(cttyp, 0);
+			at_base[p->arg_ix + 1] = cttyp;
+			nargs = 2;
+		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_STRING) {
+			at_base[p->arg_ix] = LLVMPointerType(
+				LLVMInt8TypeInContext(ctx->ctx), 0);
+		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_WIDE_STRING) {
+			/* TODO: use a wchar_t from the ABI */
+			at_base[p->arg_ix] = LLVMPointerType(ctx->i32t, 0);
+		} else if(is_rigid_type(ctx->ns, type)) {
+			at_base[p->arg_ix] = LLVMPointerType(
+				llvm_rigid_type(ctx, type), 0);
+		}
+
 		max_arg = MAX(max_arg, p->arg_ix + nargs - 1 + arg_offset);
 	}
 
