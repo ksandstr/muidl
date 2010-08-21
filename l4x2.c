@@ -107,6 +107,11 @@ LLVMValueRef build_t_from_tag(struct llvm_ctx *ctx, LLVMValueRef mr0)
 }
 
 
+LLVMValueRef build_label_from_tag(struct llvm_ctx *ctx, LLVMValueRef tag) {
+	return LLVMBuildLShr(ctx->builder, tag, CONST_WORD(16), "tag.label");
+}
+
+
 void build_simple_string_item(
 	struct llvm_ctx *ctx,
 	LLVMValueRef *dest,

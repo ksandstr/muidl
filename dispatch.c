@@ -43,18 +43,6 @@ static LLVMValueRef build_ipcfailed_cond(
 }
 
 
-static LLVMValueRef build_label_from_tag(
-	struct llvm_ctx *ctx,
-	LLVMValueRef mr0)
-{
-	return LLVMBuildLShr(ctx->builder,
-		LLVMBuildAnd(ctx->builder, mr0,
-			LLVMConstInt(ctx->wordt, 0xffff0000, 0), "label.shifted"),
-		LLVMConstInt(ctx->wordt, 16, 0),
-		"label");
-}
-
-
 /* dst should have two LLVMTypeRefs' worth of space to allow for sequences
  * (pointer + length).
  */

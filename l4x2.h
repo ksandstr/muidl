@@ -58,6 +58,9 @@ extern LLVMValueRef build_utcb_load(
 
 extern LLVMValueRef build_u_from_tag(struct llvm_ctx *ctx, LLVMValueRef tag);
 extern LLVMValueRef build_t_from_tag(struct llvm_ctx *ctx, LLVMValueRef tag);
+extern LLVMValueRef build_label_from_tag(
+	struct llvm_ctx *ctx,
+	LLVMValueRef tag);
 
 /* after return, dest[0] is the first word, dest[1] is the second word */
 extern void build_simple_string_item(
