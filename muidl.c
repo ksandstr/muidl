@@ -479,14 +479,6 @@ bool is_rigid_type(IDL_ns ns, IDL_tree type)
 		default: return is_value_type(type);
 		case IDLN_TYPE_STRUCT: return is_struct_rigid(ns, type);
 
-		case IDLN_TYPE_STRING:
-			/* only bounded strings are rigid. */
-			return IDL_TYPE_STRING(type).positive_int_const != NULL;
-
-		case IDLN_TYPE_WIDE_STRING:
-			/* same for wide strings. */
-			return IDL_TYPE_WIDE_STRING(type).positive_int_const != NULL;
-
 		case IDLN_TYPE_ARRAY:
 			/* is rigid if the element type is. */
 			return is_rigid_type(ns, get_array_type(type));
