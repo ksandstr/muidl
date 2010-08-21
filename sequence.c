@@ -23,6 +23,7 @@
 
 #include "muidl.h"
 #include "llvmutil.h"
+#include "l4x2.h"
 
 
 LLVMValueRef build_decode_inline_sequence(

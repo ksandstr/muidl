@@ -24,6 +24,7 @@
 
 #include "muidl.h"
 #include "llvmutil.h"
+#include "l4x2.h"
 
 
 static void build_packed_struct_decoder(struct llvm_ctx *ctx, IDL_tree styp)

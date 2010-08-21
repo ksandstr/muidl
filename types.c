@@ -26,6 +26,7 @@
 
 #include "muidl.h"
 #include "llvmutil.h"
+#include "l4x2.h"
 
 
 bool is_integral_type(IDL_tree typ)

@@ -29,6 +29,7 @@
 
 #include "muidl.h"
 #include "llvmutil.h"
+#include "l4x2.h"
 
 
 /* a single item, unpacked from the IDL format. */
