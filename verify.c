@@ -178,6 +178,32 @@ static gboolean supported_types_only(IDL_tree_func_data *tf, gpointer udptr)
 }
 
 
+static gboolean no_recv_timeout_in_oneway(
+	IDL_tree_func_data *tf,
+	gpointer udptr)
+{
+	struct ver_ctx *v = udptr;
+
+	switch(IDL_NODE_TYPE(tf->tree)) {
+		case IDLN_MODULE:
+		case IDLN_INTERFACE:
+			return TRUE;
+
+		case IDLN_OP_DCL:
+			if(IDL_OP_DCL(tf->tree).f_oneway
+				&& (op_timeout_kind(tf->tree) & TIMEOUT_RECV))
+			{
+				fail(v, "`%s': an oneway operation can't have a receive timeout",
+					IDL_IDENT(IDL_OP_DCL(tf->tree).ident).repo_id);
+			}
+			return FALSE;
+
+		default:
+			return FALSE;
+	}
+}
+
+
 /* true when everything's OK */
 bool verify_idl_input(IDL_ns ns, IDL_tree tree)
 {
@@ -193,6 +219,12 @@ bool verify_idl_input(IDL_ns ns, IDL_tree tree)
 	 * multidimensional arrays, unions, any types, and references)
 	 */
 	IDL_tree_walk_in_order(tree, &supported_types_only, &v);
+	if(v.failed) return false;
+
+	/* fail when an oneway opdcl has the StubRecvTimeout or StubTimeouts
+	 * attribute.
+	 */
+	IDL_tree_walk_in_order(tree, &no_recv_timeout_in_oneway, &v);
 	if(v.failed) return false;
 
 	/* succeed */

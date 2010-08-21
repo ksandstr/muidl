@@ -17,6 +17,13 @@ TagMask(u32/64) -- a mask applied to the raw representation of the message
 tag before it is compared with Label. This permits definition of handlers for
 the L4.X2 protocols. TODO
 
+StubSendTimeout, StubRecvTimeout -- if one or both of these are defined,
+a stub with timeout parameters is emitted. StubRecvTimeout cannot be specified
+for a oneway operation.
+
+StubTimeouts -- equivalent to StubSendTimeout and StubRecvTimeout at the same
+time.
+
 
 For operation parameters:
 
