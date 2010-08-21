@@ -179,7 +179,7 @@ static int array_size_in_words(IDL_tree type, IDL_tree dcl)
 
 	int len = IDL_INTEGER(IDL_LIST(size_list).data).value,
 		sib = size_in_bits(type);
-	assert(sib >= 0);
+	assert(sib > 0);
 	if(sib <= BITS_PER_WORD) {
 		/* short types. */
 		int epw = BITS_PER_WORD / sib;
