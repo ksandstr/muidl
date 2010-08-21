@@ -28,6 +28,7 @@
 
 #include "muidl.h"
 #include "llvmutil.h"
+#include "l4x2.h"
 
 
 static LLVMValueRef build_ipcfailed_cond(
@@ -388,7 +389,7 @@ static void build_store_br(
 {
 	assert(br <= 32 && br >= 0);
 	LLVMValueRef br_addr = UTCB_ADDR_VAL(ctx,
-		CONST_INT(br * -4 - 64), tmp_f(ctx->pr, "br%d.ptr", br));
+		CONST_INT(BR_OFFSET(br)), tmp_f(ctx->pr, "br%d.ptr", br));
 	LLVMBuildStore(ctx->builder, value, br_addr);
 }
 
@@ -429,7 +430,7 @@ static void build_dispatcher_msgerr(struct llvm_ctx *ctx)
 		CONST_WORD(1), CONST_WORD(1 << 16), "msgerr.tag");
 	LLVMBuildStore(ctx->builder,
 		LLVMBuildNeg(ctx->builder, ctx->errval_phi, "rcneg.val"),
-		UTCB_ADDR_VAL(ctx, CONST_INT(1), "mr1.addr"));
+		UTCB_ADDR_VAL(ctx, CONST_INT(MR_OFFSET(1)), "mr1.addr"));
 	branch_set_phi(ctx, ctx->reply_tag, msgerr_tag);
 	LLVMBuildBr(ctx->builder, ctx->reply_bb);
 }
@@ -467,8 +468,8 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 	/* store xfer timeouts at point of entry, i.e. as they are given by the
 	 * caller.
 	 */
-	LLVMValueRef xfer_timeouts_addr = UTCB_ADDR_VAL(ctx, CONST_INT(-8),
-			"xferto.addr"),
+	LLVMValueRef xfer_timeouts_addr = UTCB_ADDR_VAL(ctx,
+			CONST_INT(TCR_XFER_TIMEOUTS), "xferto.addr"),
 		stored_timeouts = LLVMBuildLoad(ctx->builder, xfer_timeouts_addr,
 			"stored_timeouts");
 	/* string buffers */
@@ -529,7 +530,7 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 	/* return L4_ErrorCode(); */
 	LLVMPositionBuilderAtEnd(ctx->builder, ret_ec_bb);
 	LLVMValueRef errorcode = LLVMBuildLoad(ctx->builder,
-		UTCB_ADDR_VAL(ctx, CONST_INT(-9), "errcode.addr"), "errcode");
+		UTCB_ADDR_VAL(ctx, CONST_INT(TCR_ERROR_CODE), "errcode.addr"), "ec");
 	LLVMAddIncoming(retval, &errorcode, &ret_ec_bb, 1);
 	LLVMBuildBr(ctx->builder, exit_bb);
 

@@ -28,6 +28,7 @@
 
 #include "muidl.h"
 #include "llvmutil.h"
+#include "l4x2.h"
 
 
 void build_write_ipc_parameter(
@@ -185,7 +186,7 @@ static LLVMValueRef build_ipc_input_val(struct llvm_ctx *ctx, int mr)
 	else if(mr == 2) return ctx->mr2;
 	else {
 		return LLVMBuildLoad(ctx->builder,
-			UTCB_ADDR_VAL(ctx, CONST_INT(mr), "mr.addr"),
+			UTCB_ADDR_VAL(ctx, CONST_INT(MR_OFFSET(mr)), "mr.addr"),
 			tmp_f(ctx->pr, "mr%d", mr));
 	}
 }

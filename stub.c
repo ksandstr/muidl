@@ -25,6 +25,7 @@
 
 #include "muidl.h"
 #include "llvmutil.h"
+#include "l4x2.h"
 
 
 static LLVMTypeRef stub_fn_type(
@@ -158,7 +159,7 @@ static void build_ipc_stub(
 		assert(has_pager_target(ctx->ns, inf->node));
 		/* load the pager TCR. */
 		ipc_dest = LLVMBuildLoad(ctx->builder,
-			UTCB_ADDR_VAL(ctx, CONST_INT(-12), "pager.addr"),
+			UTCB_ADDR_VAL(ctx, CONST_INT(TCR_PAGER), "pager.addr"),
 			"pager.tid");
 	}
 
@@ -195,7 +196,8 @@ static void build_ipc_stub(
 	/* IPC error handler. */
 	LLVMPositionBuilderAtEnd(ctx->builder, err_bb);
 	V errcode = LLVMBuildLoad(ctx->builder,
-		UTCB_ADDR_VAL(ctx, CONST_INT(-9), "ec.addr"), "ec.value");
+		UTCB_ADDR_VAL(ctx, CONST_INT(TCR_ERROR_CODE), "ec.addr"),
+		"ec.value");
 	branch_set_phi(ctx, retval_phi, errcode);
 	LLVMBuildBr(ctx->builder, exit_bb);
 
