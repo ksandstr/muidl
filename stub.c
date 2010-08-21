@@ -30,13 +30,14 @@
 
 static LLVMTypeRef stub_fn_type(
 	struct llvm_ctx *ctx,
-	struct method_info *inf)
+	struct method_info *inf,
+	int timeout_kind)
 {
 	struct message_info *reply = NULL;
 	if(inf->num_reply_msgs > 0) reply = inf->replies[0];
 
 	int num_params = IDL_list_length(IDL_OP_DCL(inf->node).parameter_dcls),
-		num_args = num_params * 2 + 2 + 1;
+		num_args = num_params * 2 + 2 + 1 + 2;
 	T arg_types[num_args];
 	for(int i=0; i<num_args; i++) arg_types[i] = NULL;
 	int max_arg = -1, arg_offset = 0;
@@ -101,6 +102,10 @@ static LLVMTypeRef stub_fn_type(
 		max_arg = MAX(max_arg, p->arg_ix + nargs - 1 + arg_offset);
 	}
 
+	T l4_time_t = LLVMInt16TypeInContext(ctx->ctx);
+	if(timeout_kind & TIMEOUT_SEND) arg_types[++max_arg] = l4_time_t;
+	if(timeout_kind & TIMEOUT_RECV) arg_types[++max_arg] = l4_time_t;
+
 	if(max_arg < 0) {
 		return LLVMFunctionType(ctx->i32t, NULL, 0, 0);
 	} else {
@@ -114,9 +119,6 @@ static void build_ipc_stub(
 	struct method_info *inf,
 	int timeout_kind)
 {
-	/* FIXME: support timeouted stubs, eventually */
-	assert(timeout_kind == 0);
-
 	char *stubpfx = get_stub_prefix(inf->node),
 		*opname = decapsify(METHOD_NAME(inf->node)),
 		*stubname = g_strconcat(
@@ -130,7 +132,7 @@ static void build_ipc_stub(
 
 	struct message_info *reply = NULL;
 	if(inf->num_reply_msgs > 0) reply = inf->replies[0];
-	T fn_type = stub_fn_type(ctx, inf);
+	T fn_type = stub_fn_type(ctx, inf, timeout_kind);
 	V fn = LLVMAddFunction(ctx->module, stubname, fn_type);
 	g_free(stubname);
 
@@ -174,16 +176,34 @@ static void build_ipc_stub(
 	LLVMPositionBuilderAtEnd(ctx->builder, entry_bb);
 	V tag = build_msg_encoder(ctx, inf->request, NULL, &args[arg_offset],
 		false);
+
+	/* 0 is L4_Time_t for Never, and goes in both timeout fields */
+	V timeouts = CONST_WORD(0);
+	if(timeout_kind != 0) {
+		int ix = num_args - 1;
+		if(timeout_kind & TIMEOUT_RECV) {
+			timeouts = LLVMBuildZExtOrBitCast(ctx->builder,
+				args[ix--], ctx->wordt, "to.w.recv");
+		}
+		if(timeout_kind & TIMEOUT_SEND) {
+			timeouts = LLVMBuildOr(ctx->builder, timeouts,
+				LLVMBuildShl(ctx->builder,
+					LLVMBuildZExtOrBitCast(ctx->builder, args[ix--],
+						ctx->wordt, "to.send"),
+					CONST_INT(16), "to.send.shifted"),
+				"to.w.send");
+		}
+	}
+
 	/* FIXME: generate "stritems" from params, load buffer registers
 	 * FIXME: fill in the acceptor
 	 */
-	/* 0 is L4_Time_t for Never, in both timeout fields */
 	if(oneway) {
 		/* L4_nilthread == word(0) */
-		ctx->tag = build_l4_ipc_call(ctx, ipc_dest, CONST_WORD(0),
+		ctx->tag = build_l4_ipc_call(ctx, ipc_dest, timeouts,
 			CONST_WORD(0), tag, NULL, NULL, NULL);
 	} else {
-		ctx->tag = build_l4_ipc_call(ctx, ipc_dest, CONST_WORD(0),
+		ctx->tag = build_l4_ipc_call(ctx, ipc_dest, timeouts,
 			ipc_dest, tag, NULL, &ctx->mr1, &ctx->mr2);
 	}
 	/* check for IPC errors. */
@@ -254,16 +274,11 @@ gboolean iter_build_stubs(IDL_tree_func_data *tf, void *ud)
 			GLIST_FOREACH(cur, methods) {
 				struct method_info *inf = cur->data;
 				/* (TODO: don't build the timeoutless variant if given an
-				 * attribute. see header.c for details.)
+				 * attribute not to do so. see header.c for details.)
 				 */
 				build_ipc_stub(ctx, inf, 0);
 				int tok = op_timeout_kind(inf->node);
-				if(tok != 0) {
-					/* TODO */
-#if 0
-					build_ipc_stub(ctx, inf, tok);
-#endif
-				}
+				if(tok != 0) build_ipc_stub(ctx, inf, tok);
 			}
 			g_list_foreach(methods, (GFunc)&free_method_info, NULL);
 			g_list_free(methods);
