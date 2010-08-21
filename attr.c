@@ -55,9 +55,18 @@ bool has_pager_target(IDL_ns ns, IDL_tree op_dcl)
 
 bool is_negs_exn(IDL_tree exn)
 {
+	assert(IDL_NODE_TYPE(exn) == IDLN_EXCEPT_DCL);
 	/* FIXME: once libIDL supports properties on exceptions, use
 	 * those to recognize this sort of thing.
 	 */
 	const char *rid = IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL(exn).ident);
 	return strcmp(rid, "IDL:Posix/Errno:1.0") == 0;
+}
+
+
+bool is_packed(IDL_tree struct_type)
+{
+	assert(IDL_NODE_TYPE(struct_type) == IDLN_TYPE_STRUCT);
+	IDL_tree prop_node = IDL_TYPE_STRUCT(struct_type).ident;
+	return IDL_tree_property_get(prop_node, "NoPacked") == NULL;
 }

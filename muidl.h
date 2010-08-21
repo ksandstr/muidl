@@ -476,7 +476,7 @@ extern bool verify_idl_input(IDL_ns ns, IDL_tree tree);
 /* from attr.c */
 
 extern bool has_pager_target(IDL_ns ns, IDL_tree op_dcl);
-
+extern bool is_packed(IDL_tree struct_type);
 extern int op_timeout_kind(IDL_tree opdcl);	/* returns mask of TIMEOUT_* */
 
 /* is this IDLN_EXCEPT_DCL a NegativeReturn exception? */

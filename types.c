@@ -165,9 +165,8 @@ LLVMTypeRef llvm_struct_type(
 		(*names_p) = namev;
 	}
 
-	/* TODO: examine a "packed" attribute */
 	T ret = LLVMStructTypeInContext(ctx->ctx, &g_array_index(types, T, 0),
-		types->len, 0);
+		types->len, is_packed(type) ? 1 : 0);
 	g_array_free(types, TRUE);
 	return ret;
 }

@@ -227,8 +227,7 @@ static gboolean print_struct_decls(IDL_tree_func_data *tf, gpointer userdata)
 	fprintf(of, "struct %s", l);
 	g_free(l);
 
-	IDL_tree prop_node = IDL_TYPE_STRUCT(tf->tree).ident;
-	const bool packed = IDL_tree_property_get(prop_node, "NoPacked") == NULL;
+	const bool packed = is_packed(tf->tree);
 	fprintf(of, "\n{\n");
 	for(IDL_tree cur = IDL_TYPE_STRUCT(tf->tree).member_list;
 		cur != NULL;
