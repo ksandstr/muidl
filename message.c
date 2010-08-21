@@ -80,29 +80,28 @@ void build_write_ipc_parameter(
 }
 
 
-extern LLVMValueRef build_msg_encoder(
+LLVMValueRef build_msg_encoder(
 	struct llvm_ctx *ctx,
 	const struct message_info *msg,
+	const LLVMValueRef *ret_args,
 	const LLVMValueRef *args,
 	bool is_out_half)
 {
 	if(is_out_half && msg->ret_type != NULL) {
+		assert(ret_args != NULL);
 		int first_reg = msg->sublabel == NO_SUBLABEL ? 1 : 2;
 		if(!msg->ret_by_ref) {
-			/* by-val types are always value types, which are used by value by
-			 * build_write_ipc_parameter()
-			 */
 			assert(is_value_type(msg->ret_type));
 			build_write_ipc_parameter(ctx, CONST_INT(first_reg),
-				msg->ret_type, &args[0]);
+				msg->ret_type, ret_args);
 		} else {
-			/* must load value types. */
 			V raw;
 			if(is_value_type(msg->ret_type)) {
-				raw = LLVMBuildLoad(ctx->builder, args[0], "retp.deref");
+				/* must load value types for bwip() */
+				raw = LLVMBuildLoad(ctx->builder, ret_args[0], "retp.deref");
 			} else {
 				/* keep the pointerishness. */
-				raw = args[0];
+				raw = ret_args[0];
 			}
 			build_write_ipc_parameter(ctx, CONST_INT(first_reg),
 				msg->ret_type, &raw);
@@ -115,9 +114,9 @@ extern LLVMValueRef build_msg_encoder(
 		IDL_tree type = u->X.untyped.type;
 		const int first_reg = u->X.untyped.first_reg;
 		bool inout = IDL_PARAM_DCL(u->param_dcl).attr == IDL_PARAM_INOUT;
-//		printf("param %p: arg_ix %d, regs [%d..%d], argval %p, type <%s>\n",
-//			u, u->arg_ix, first_reg, last_reg, args[u->arg_ix],
-//			IDL_NODE_TYPE_NAME(type));
+		printf("param %p: arg_ix %d, regs [%d..%d], argval %p, type <%s>\n",
+			u, u->arg_ix, first_reg, u->X.untyped.last_reg, args[u->arg_ix],
+			IDL_NODE_TYPE_NAME(type));
 		if(is_value_type(type)) {
 			V raw;
 			if(is_out_half || inout) {
@@ -225,12 +224,9 @@ static void build_read_ipc_parameter(
 		dst[0] = LLVMBuildTruncOrBitCast(ctx->builder,
 			build_ipc_input_val(ctx, first_mr),
 			llvm_value_type(ctx, ctyp), "shortparm");
-	} else if(is_rigid_type(ctx->ns, ctyp)) {
+	} else {
 		build_read_ipc_parameter_ixval(ctx, dst, ctyp,
 			CONST_INT(first_mr));
-	} else {
-		/* genuinely not defined */
-		NOTDEFINED(ctyp);
 	}
 }
 
@@ -245,7 +241,6 @@ static void set_decode_arg(
 		/* by value. */
 		*arg_ptr = value;
 	} else {
-		assert(IDL_PARAM_DCL(param->param_dcl).attr == IDL_PARAM_INOUT);
 		/* by reference. */
 		LLVMBuildStore(ctx->builder, value, *arg_ptr);
 	}
@@ -254,6 +249,7 @@ static void set_decode_arg(
 
 void build_msg_decoder(
 	struct llvm_ctx *ctx,
+	LLVMValueRef *ret_args,
 	LLVMValueRef *args,
 	const struct message_info *msg,
 	const struct stritem_info *stritems,
@@ -262,7 +258,12 @@ void build_msg_decoder(
 	assert(is_out_half || msg->ret_type == NULL);
 
 	if(is_out_half && msg->ret_type != NULL) {
-		/* TODO: decode return value (for the stub post-ipc part) */
+		assert(ret_args != NULL);
+		/* decode return value for the stub post-ipc part */
+		int ret_offs = msg->sublabel == NO_SUBLABEL ? 1 : 2;
+		V tmp[2];
+		build_read_ipc_parameter(ctx, tmp, msg->ret_type, ret_offs);
+		LLVMBuildStore(ctx->builder, tmp[0], ret_args[0]);
 	}
 
 	GLIST_FOREACH(cur, msg->untyped) {

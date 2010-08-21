@@ -381,12 +381,8 @@ static struct message_info *build_message(
 	/* of <struct msg_param *>, freed by "params" */
 	GList *params = NULL, *untyped = NULL, *seq = NULL, *_long = NULL;
 
-	/* classify parameters and construct msg_param structures for them.
-	 *
-	 * the return value, where present, occupies the first argument slot. this
-	 * is a bit special so it's handled separately.
-	 */
-	int arg_pos = return_type != NULL ? 1 : 0, param_ix = 0;
+	/* classify parameters and construct msg_param structures for them. */
+	int arg_pos = 0, param_ix = 0;
 	for(IDL_tree cur = param_list;
 		cur != NULL;
 		cur = IDL_LIST(cur).next, param_ix++)
@@ -668,9 +664,10 @@ static struct message_info *build_message(
 		assert(op != NULL);
 	}
 	inf->ret_type = is_outhalf ? return_type : NULL;
-	inf->ret_by_ref = !is_value_type(return_type)
-		|| (op != NULL && find_neg_exn(op) != NULL
-			&& !is_real_nre_return_type(return_type));
+	inf->ret_by_ref = return_type != NULL
+		&& (!is_value_type(return_type)
+			|| (op != NULL && find_neg_exn(op) != NULL
+				&& !is_real_nre_return_type(return_type)));
 
 	return inf;
 

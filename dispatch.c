@@ -252,10 +252,10 @@ static LLVMBasicBlockRef build_op_decode(
 		tag_u_val, "tpos.initial");
 
 	/* build the "args" array. */
-	const int num_args_max = 1 + g_list_length(req->untyped)
-		+ 2 * g_list_length(req->seq) + 2 * g_list_length(req->_long);
-	LLVMValueRef args[num_args_max];
-	int max_arg = -1;
+	const int num_args_max = 2 * IDL_list_length(
+		IDL_OP_DCL(inf->node).parameter_dcls) + 1;
+	V *args = g_new(V, num_args_max), *ret_args = NULL;
+	int max_arg = -1, arg_offset = 0;
 	bool have_ret_by_val = false;
 	if(!oneway && reply->ret_type != NULL) {
 		/* a parameter for the return value. */
@@ -266,7 +266,10 @@ static LLVMBasicBlockRef build_op_decode(
 		} else {
 			emit_out_param(ctx, &args[0], reply->ret_type);
 		}
+		ret_args = &args[0];
+		arg_offset = 1;
 	}
+	V *d_args = &args[arg_offset];
 	for(IDL_tree cur = IDL_OP_DCL(inf->node).parameter_dcls;
 		cur != NULL;
 		cur = IDL_LIST(cur).next)
@@ -274,26 +277,27 @@ static LLVMBasicBlockRef build_op_decode(
 		IDL_tree pdecl = IDL_LIST(cur).data,
 			type = get_type_spec(IDL_PARAM_DCL(pdecl).param_type_spec);
 		enum IDL_param_attr attr = IDL_PARAM_DCL(pdecl).attr;
-		int nargs = IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE ? 2 : 1;
+		int nd_args = IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE ? 2 : 1;
+		struct msg_param *p;
 		if(attr == IDL_PARAM_IN) {
-			struct msg_param *p = find_pdecl(req->params, pdecl);
+			p = find_pdecl(req->params, pdecl);
 			assert(p != NULL);
 			/* zero them off to be safe. (TODO: could use a value of a type
 			 * that is never valid here, to catch errors in a prettier way than
 			 * "boom, segfault")
 			 */
-			for(int i=0; i<nargs; i++) args[p->arg_ix + i] = NULL;
-			max_arg = MAX(max_arg, p->arg_ix + nargs - 1);
+			for(int i=0; i<nd_args; i++) d_args[p->arg_ix + i] = NULL;
 		} else /* out, inout */ {
 			assert(!oneway);
-			struct msg_param *p = find_pdecl(reply->params, pdecl);
-			emit_out_param(ctx, &args[p->arg_ix], type);
-			max_arg = MAX(max_arg, p->arg_ix + nargs - 1);
+			p = find_pdecl(reply->params, pdecl);
+			assert(p != NULL);
+			emit_out_param(ctx, &d_args[p->arg_ix], type);
 		}
+		max_arg = MAX(max_arg, p->arg_ix + nd_args - 1 + arg_offset);
 	}
 
 	/* the decoder. */
-	build_msg_decoder(ctx, args, req, stritems, false);
+	build_msg_decoder(ctx, NULL, d_args, req, stritems, false);
 
 	/* the function call. */
 	V *call_args = args;
@@ -308,12 +312,13 @@ static LLVMBasicBlockRef build_op_decode(
 		LLVMBuildStructGEP(ctx->builder, ctx->vtab_arg, inf->vtab_offset,
 				tmp_f(pr, "%s.offs", opname)),
 			tmp_f(pr, "%s.fnptr", opname));
+	assert(call_num_args == LLVMCountParams(fnptr));
 	V fncall = LLVMBuildCall(ctx->builder, fnptr, call_args, call_num_args,
 		IS_VOID_TYPEREF(rv_type) ? "" : tmp_f(pr, "%s.call", opname));
 
 	if(oneway) {
 		LLVMBuildBr(ctx->builder, ctx->wait_bb);
-		return bb;
+		goto end;
 	}
 
 	LLVMBasicBlockRef pr_bb = LLVMAppendBasicBlockInContext(ctx->ctx,
@@ -344,10 +349,12 @@ static LLVMBasicBlockRef build_op_decode(
 			llvm_value_type(ctx, reply->ret_type),
 			tmp_f(pr, "%s.retval", opname));
 	}
-	V enc_tag = build_msg_encoder(ctx, reply, args, true);
+	V enc_tag = build_msg_encoder(ctx, reply, ret_args, d_args, true);
 	branch_set_phi(ctx, ctx->reply_tag, enc_tag);
 	LLVMBuildBr(ctx->builder, ctx->reply_bb);
 
+end:
+	g_free(args);
 	return bb;
 }
 

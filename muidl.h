@@ -162,14 +162,17 @@ struct llvm_ctx
 
 	void (*build_msgerr_bb)(struct llvm_ctx *);
 
-	/* used by dispatcher building etc; common L4 IPC stuff */
-	LLVMValueRef utcb;		/* address of UTCB; <L4_Word_t *> */
-	LLVMValueRef from, mr1, mr2, tag;	/* IPC receive regs */
+	/* used by build_msg_{en,de}coder()
+	 * address of UTCB (pointer to ctx->wordt)
+	 */
+	LLVMValueRef utcb;
+	/* used by build_msg_decoder(); IPC receive regs */
+	LLVMValueRef mr1, mr2, tag;
 
 	/* dispatcher-specific things */
 	LLVMBasicBlockRef reply_bb, msgerr_bb, wait_bb, alloc_bb;
 	LLVMValueRef vtab_arg, reply_tag, errval_phi, inline_seq_pos;
-	LLVMValueRef tpos, tmax;
+	LLVMValueRef tpos, tmax, from;
 	LLVMValueRef stritem_len_fn;
 };
 
@@ -693,11 +696,13 @@ extern LLVMValueRef encode_packed_struct_fncall(
 extern LLVMValueRef build_msg_encoder(
 	struct llvm_ctx *ctx,
 	const struct message_info *msg,
+	const LLVMValueRef *ret_args,
 	const LLVMValueRef *args,
 	bool is_out_half);
 
 extern void build_msg_decoder(
 	struct llvm_ctx *ctx,
+	LLVMValueRef *dst_ret_args,
 	LLVMValueRef *dst_args,
 	const struct message_info *msg,
 	const struct stritem_info *stritems,
