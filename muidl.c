@@ -534,7 +534,8 @@ char *rigid_type(IDL_ns ns, IDL_tree type)
 			/* TODO */
 
 		default:
-			NOTDEFINED(type);
+			if(is_value_type(type)) return value_type(ns, type);
+			else NOTDEFINED(type);
 	}
 }
 

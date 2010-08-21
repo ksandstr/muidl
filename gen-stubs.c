@@ -76,12 +76,24 @@ static int each_stub_parameter(
 {
 	assert((tok & ~(TIMEOUT_SEND | TIMEOUT_RECV)) == 0);
 	int pnum = 0;	/* just a counter for the callback */
+	IDL_tree params = IDL_OP_DCL(op).parameter_dcls,
+		op_type = get_type_spec(IDL_OP_DCL(op).op_type_spec);
 
-	IDL_tree params = IDL_OP_DCL(op).parameter_dcls;
 	if(!has_pager_target(pr->ns, op)) {
 		(*paramfn)(pr, pnum++, "L4_ThreadId_t", "_service_tid",
-			tok == 0 && params == NULL);
+			tok == 0 && params == NULL && op_type == NULL);
 	}
+
+	if(op_type != NULL) {
+		assert(!IDL_OP_DCL(op).f_oneway);
+		char *typ = rigid_type(pr->ns, op_type),
+			*ptrtyp = g_strconcat(typ, " *", NULL);
+		(*paramfn)(pr, pnum++, ptrtyp, "_retval_p",
+			tok == 0 && params == NULL);
+		g_free(typ);
+		g_free(ptrtyp);
+	}
+
 	for(IDL_tree cur = params; cur != NULL; cur = IDL_LIST(cur).next) {
 		IDL_tree param = IDL_LIST(cur).data;
 		enum IDL_param_attr attr = IDL_PARAM_DCL(param).attr;
@@ -143,10 +155,7 @@ void print_generic_stub_decl(
 	IDL_tree op,
 	int tok)		/* timeout kind mask */
 {
-	char *rettypstr = return_type(pr->ns, op, NULL, false);
-	char *stubhead = tmp_f(pr, "%s%s%s", rettypstr, type_space(rettypstr),
-		stub_name(pr, stubpfx, op, tok));
-	g_free(rettypstr);
+	char *stubhead = tmp_f(pr, "int %s", stub_name(pr, stubpfx, op, tok));
 
 	/* GCC rules teh skies */
 	void each_param(
