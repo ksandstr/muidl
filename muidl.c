@@ -199,16 +199,6 @@ char *decapsify(const char *name)
 }
 
 
-bool is_negs_exn(IDL_tree exn)
-{
-	/* FIXME: once libIDL supports properties on exceptions, use
-	 * those to recognize this sort of thing.
-	 */
-	const char *rid = IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL(exn).ident);
-	return strcmp(rid, "IDL:Posix/Errno:1.0") == 0;
-}
-
-
 IDL_tree find_neg_exn(IDL_tree op)
 {
 	for(IDL_tree cur = IDL_OP_DCL(op).raises_expr;

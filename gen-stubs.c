@@ -36,14 +36,6 @@ char *fixed_type(IDL_ns ns, IDL_tree type)
 }
 
 
-bool has_pager_target(IDL_ns ns, IDL_tree op_dcl)
-{
-	IDL_tree prop_node = IDL_OP_DCL(op_dcl).ident;
-	const char *pt = IDL_tree_property_get(prop_node, "PagerTarget");
-	return pt != NULL;
-}
-
-
 static char *stub_name(
 	struct print_ctx *pr,
 	const char *stubpfx,

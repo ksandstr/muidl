@@ -137,24 +137,6 @@ static void print_vtable(
 }
 
 
-int op_timeout_kind(IDL_tree opdcl)
-{
-	int ret = 0;
-	IDL_tree propnode = IDL_OP_DCL(opdcl).ident;
-	if(IDL_tree_property_get(propnode, "StubTimeouts") != NULL) {
-		ret |= TIMEOUT_SEND | TIMEOUT_RECV;
-	} else {
-		if(IDL_tree_property_get(propnode, "StubSendTimeout") != NULL) {
-			ret |= TIMEOUT_SEND;
-		}
-		if(IDL_tree_property_get(propnode, "StubRecvTimeout") != NULL) {
-			ret |= TIMEOUT_RECV;
-		}
-	}
-	return ret;
-}
-
-
 static void print_extern_prototype(
 	struct print_ctx *pr,
 	const char *stubpfx,

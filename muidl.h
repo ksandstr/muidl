@@ -352,9 +352,6 @@ extern IDL_tree get_type_spec(IDL_tree node)
 /* find the type declaration of an IDL_ARRAY_TYPE. */
 extern IDL_tree get_array_type(IDL_tree type);
 
-/* is this IDLN_EXCEPT_DCL a NegativeReturn exception? */
-extern bool is_negs_exn(IDL_tree except_dcl);
-
 /* find the NegativeReturn exception, or return NULL */
 extern IDL_tree find_neg_exn(IDL_tree opdcl);
 
@@ -476,18 +473,24 @@ extern int size_in_bits(IDL_tree type);
 extern bool verify_idl_input(IDL_ns ns, IDL_tree tree);
 
 
+/* from attr.c */
+
+extern bool has_pager_target(IDL_ns ns, IDL_tree op_dcl);
+
+extern int op_timeout_kind(IDL_tree opdcl);	/* returns mask of TIMEOUT_* */
+
+/* is this IDLN_EXCEPT_DCL a NegativeReturn exception? */
+extern bool is_negs_exn(IDL_tree except_dcl);
+
+
 /* from header.c */
 
 extern void print_common_header(struct print_ctx *pr);
-
-extern int op_timeout_kind(IDL_tree opdcl);	/* returns mask of TIMEOUT_* */
 
 extern char *get_stub_prefix(IDL_tree opdcl);
 
 
 /* from gen-stubs.c */
-
-extern bool has_pager_target(IDL_ns ns, IDL_tree op_dcl);
 
 extern void print_stubs_file(struct print_ctx *pr);
 extern void print_generic_stub_decl(
