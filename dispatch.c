@@ -57,10 +57,10 @@ static void vtable_in_param_type(
 	} else if(is_rigid_type(ctx->ns, type)) {
 		dst[(*pos_p)++] = LLVMPointerType(llvm_rigid_type(ctx, type), 0);
 	} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_STRING) {
-		dst[(*pos_p)++] = LLVMInt8TypeInContext(ctx->ctx);
+		dst[(*pos_p)++] = LLVMPointerType(LLVMInt8TypeInContext(ctx->ctx), 0);
 	} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_WIDE_STRING) {
 		/* TODO: get wchar_t size from ABI! */
-		dst[(*pos_p)++] = ctx->i32t;
+		dst[(*pos_p)++] = LLVMPointerType(ctx->i32t, 0);
 	} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
 		IDL_tree seqtype = get_type_spec(
 			IDL_TYPE_SEQUENCE(type).simple_type_spec);
@@ -79,7 +79,7 @@ static void vtable_out_param_type(
 	int *pos_p,
 	IDL_tree type)
 {
-	if(is_value_type(type)) {
+	if(is_rigid_type(ctx->ns, type)) {
 		dst[(*pos_p)++] = LLVMPointerType(llvm_value_type(ctx, type), 0);
 	} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
 		IDL_tree seqtype = get_type_spec(
@@ -88,9 +88,13 @@ static void vtable_out_param_type(
 		dst[(*pos_p)++] = LLVMPointerType(ctx->i32t, 0);
 	} else if(IS_MAPGRANT_TYPE(type)) {
 		dst[(*pos_p)++] = LLVMPointerType(ctx->mapgrant, 0);
+	} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_STRING) {
+		dst[(*pos_p)++] = LLVMPointerType(LLVMInt8TypeInContext(ctx->ctx), 0);
+	} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_WIDE_STRING) {
+		/* TODO: use an ABI-specific wchar_t type */
+		dst[(*pos_p)++] = LLVMPointerType(ctx->i32t, 0);
 	} else {
-		printf("warning: not emitting llvm out-parameter for <%s>\n",
-			IDL_NODE_TYPE_NAME(type));
+		NOTDEFINED(type);
 	}
 }
 
