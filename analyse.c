@@ -418,7 +418,7 @@ static struct message_info *build_message(
 				params = g_list_prepend(params, s);
 			}
 		} else {
-			nargs = 2;
+			nargs = 1;
 			if(accept) {
 				/* everything else is passed as long items. */
 				struct msg_param *l = new_long_param(name, type, p,
