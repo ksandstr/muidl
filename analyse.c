@@ -680,46 +680,6 @@ static struct message_info *build_exception_message(IDL_tree exn)
 }
 
 
-/* bump register offsets up by one. fails and returns false when either MR0 is
- * specified in a parameter attribute, or when the message would have been too
- * large (i.e. more than 62 words).
- */
-static bool sublabel_bump(struct message_info *req, GError **error_p)
-{
-	assert(req->sublabel != NO_SUBLABEL);
-	assert(IDL_NODE_TYPE(req->node) == IDLN_OP_DCL);
-
-	if(req->tag_u > 62) {
-		g_set_error(error_p, 0, 0,
-			"sublabel_bump: message won't fit in 63 words (%d given)",
-			req->tag_u);
-		return false;
-	}
-	GLIST_FOREACH(cur, req->untyped) {
-		struct msg_param *u = cur->data;
-		if(u->X.untyped.reg_manual
-			&& (u->X.untyped.first_reg == 0 || u->X.untyped.last_reg == 0))
-		{
-			g_set_error(error_p, 0, 0,
-				"sublabel_bump: register 0 assigned manually");
-			return false;
-		}
-	}
-
-	GLIST_FOREACH(cur, req->untyped) {
-		struct msg_param *u = cur->data;
-		/* (untyped_words is a MsgWord offset, therefore +1.) */
-		assert(u->X.untyped.first_reg < req->tag_u + 1);
-		assert(u->X.untyped.last_reg < req->tag_u + 1);
-		u->X.untyped.first_reg++;
-		u->X.untyped.last_reg++;
-	}
-	req->tag_u++;
-
-	return true;
-}
-
-
 /* TODO: get the number and max dimensions of the string buffers we'll
  * send/receive once long types are implemented.
  */
@@ -751,15 +711,6 @@ struct method_info *analyse_op_dcl(
 		fprintf(stderr, "error: can't assign automatic label to `%s'\n",
 			METHOD_NAME(method));
 		goto fail;
-	}
-	if(inf->request->sublabel != NO_SUBLABEL) {
-		GError *err = NULL;
-		if(!sublabel_bump(inf->request, &err)) {
-			fprintf(stderr, "%s (op was `%s')\n", err->message,
-				METHOD_NAME(method));
-			g_error_free(err);
-			goto fail;
-		}
 	}
 
 	if(num_replies > 0) {
