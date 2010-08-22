@@ -372,14 +372,17 @@ static bool is_bounded_seq(IDL_tree type)
  * ranges and long types appear in transmission order.
  */
 static struct message_info *build_message(
+	IDL_ns ns,
+	IDL_tree op_dcl,
 	IDL_tree return_type,		/* separate because not IDL_PARAM_DCL */
-	IDL_tree param_list,
 	bool has_sublabel,
 	bool is_outhalf)
 {
 	struct message_info *inf = NULL;
 	/* of <struct msg_param *>, freed by "params" */
 	GList *params = NULL, *untyped = NULL, *seq = NULL, *_long = NULL;
+
+	IDL_tree param_list = IDL_OP_DCL(op_dcl).parameter_dcls;
 
 	/* classify parameters and construct msg_param structures for them. */
 	int arg_pos = 0, param_ix = 0;
@@ -444,7 +447,7 @@ static struct message_info *build_message(
 	int next_u = 1;
 	if(has_sublabel) reg_in_use[next_u++] = true;
 	if(return_type != NULL && is_outhalf) {
-		assert(is_value_type(return_type));
+		assert(is_rigid_type(ns, return_type));
 		int rt_words = size_in_words(return_type);
 		assert(next_u + rt_words <= 63);
 		for(int i=0; i<rt_words; i++) reg_in_use[next_u + i] = true;
@@ -646,15 +649,10 @@ static struct message_info *build_message(
 	/* for now, µIDL only produces 2-word typed items. */
 	inf->tag_t = g_list_length(inf->_long) * 2;
 
-	IDL_tree op = NULL;
-	if(return_type != NULL) {
-		op = IDL_get_parent_node(return_type, IDLN_OP_DCL, NULL);
-		assert(op != NULL);
-	}
 	inf->ret_type = is_outhalf ? return_type : NULL;
 	inf->ret_by_ref = return_type != NULL
 		&& (!is_value_type(return_type)
-			|| (op != NULL && find_neg_exn(op) != NULL
+			|| (find_neg_exn(op_dcl) != NULL
 				&& !is_real_nre_return_type(return_type)));
 
 	return inf;
@@ -693,8 +691,7 @@ struct method_info *analyse_op_dcl(
 	if(IDL_OP_DCL(method).f_oneway) num_replies = 0;
 	else num_replies = 1 + IDL_list_length(IDL_OP_DCL(method).raises_expr);
 
-	IDL_tree param_list = IDL_OP_DCL(method).parameter_dcls,
-		return_type = get_type_spec(IDL_OP_DCL(method).op_type_spec);
+	IDL_tree return_type = get_type_spec(IDL_OP_DCL(method).op_type_spec);
 
 	struct method_info *inf = g_malloc0(sizeof(struct method_info)
 		+ sizeof(struct message_info *) * num_replies);
@@ -704,7 +701,7 @@ struct method_info *analyse_op_dcl(
 	inf->num_reply_msgs = num_replies;
 
 	/* build the request. */
-	inf->request = build_message(return_type, param_list,
+	inf->request = build_message(pr->ns, method, return_type,
 		op_has_sublabel(method), false);
 	if(inf->request == NULL) goto fail;
 	inf->request->node = method;
@@ -717,7 +714,7 @@ struct method_info *analyse_op_dcl(
 
 	if(num_replies > 0) {
 		/* the usual reply: return type and out, inout out-halves */
-		inf->replies[0] = build_message(return_type, param_list,
+		inf->replies[0] = build_message(pr->ns, method, return_type,
 			false, true);
 		inf->replies[0]->node = method;
 		inf->replies[0]->label = 0;
