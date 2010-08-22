@@ -443,7 +443,7 @@ static struct message_info *build_message(
 	for(int i=1; i<64; i++) reg_in_use[i] = false;
 	int next_u = 1;
 	if(has_sublabel) reg_in_use[next_u++] = true;
-	if(return_type != NULL) {
+	if(return_type != NULL && is_outhalf) {
 		assert(is_value_type(return_type));
 		int rt_words = size_in_words(return_type);
 		assert(next_u + rt_words <= 63);
