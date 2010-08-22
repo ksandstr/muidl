@@ -303,6 +303,18 @@ static LLVMBasicBlockRef build_op_decode(
 		call_args = &args[1];
 		call_num_args--;
 	}
+	/* dereference in-parameter inline sequences' length values.
+	 *
+	 * TODO: should this be done with sequences that are transferred as string
+	 * items, also?
+	 */
+	GLIST_FOREACH(cur, req->seq) {
+		struct msg_param *seq = cur->data;
+		if(IDL_PARAM_DCL(seq->param_dcl).attr != IDL_PARAM_IN) continue;
+		V len = LLVMBuildLoad(ctx->builder, args[seq->arg_ix + 1],
+			"inlseq.len");
+		args[seq->arg_ix + 1] = len;
+	}
 	V fnptr = LLVMBuildLoad(ctx->builder,
 		LLVMBuildStructGEP(ctx->builder, ctx->vtab_arg, inf->vtab_offset,
 				tmp_f(pr, "%s.offs", opname)),
