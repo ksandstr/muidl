@@ -100,8 +100,7 @@ LLVMValueRef build_decode_inline_sequence(
 	/* the copy loop. */
 	LLVMPositionBuilderAtEnd(ctx->builder, loop_bb);
 	LLVMTypeRef seq_type = llvm_value_type(ctx, seq->X.seq.elem_type);
-	LLVMValueRef seq_mem = build_local_storage(ctx, seq_type,
-		CONST_UINT(seq->X.seq.max_elems), "inlseq.mem");
+	V seq_mem = args[0], seq_len_ptr = args[1];
 	LLVMValueRef seq_pos, counter;
 	seq_pos = LLVMBuildPhi(ctx->builder, ctx->i32t, "loop.seqpos");
 	counter = LLVMBuildPhi(ctx->builder, ctx->i32t, "loop.ctr");
@@ -188,9 +187,7 @@ LLVMValueRef build_decode_inline_sequence(
 	}
 
 	LLVMPositionBuilderAtEnd(ctx->builder, exit_bb);
-
-	args[0] = seq_mem;
-	args[1] = seq_len;
+	LLVMBuildStore(ctx->builder, seq_len, seq_len_ptr);
 
 	return ret;
 }

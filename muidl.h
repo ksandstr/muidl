@@ -520,7 +520,7 @@ extern gboolean iter_build_stubs(IDL_tree_func_data *tf, void *ctxptr);
 /* returns new upos. */
 extern LLVMValueRef build_decode_inline_sequence(
 	struct llvm_ctx *ctx,
-	LLVMValueRef *dst,			/* must have room for two items */
+	LLVMValueRef *dst,			/* dst[0] = bufptr, dst[1] = &len */
 	const struct msg_param *seq,
 	LLVMValueRef upos,			/* i32 # of first unclaimed u-word */
 	bool is_last,

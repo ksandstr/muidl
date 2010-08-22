@@ -324,8 +324,19 @@ void build_msg_decoder(
 	GLIST_FOREACH(cur, msg->seq) {
 		struct msg_param *seq = cur->data;
 		BB err_bb = get_msgerr_bb(ctx);
+		V *seq_args = &args[seq->arg_ix];
+		if(!is_out_half) {
+			/* the dispatcher allocates buffers on the stack. for stubs, the
+			 * caller has filled in the arg array.
+			 */
+			seq_args[0] = build_local_storage(ctx,
+				llvm_rigid_type(ctx, seq->X.seq.elem_type),
+				CONST_INT(seq->X.seq.max_elems), "inlseq.mem");
+			seq_args[1] = build_local_storage(ctx, ctx->i32t,
+				NULL, "inlseq.len.ptr");
+		}
 		V new_upos = build_decode_inline_sequence(ctx,
-			&args[seq->arg_ix], seq, ctx->inline_seq_pos,
+			seq_args, seq, ctx->inline_seq_pos,
 			g_list_next(cur) == NULL, ctx->errval_phi, err_bb);
 		ctx->inline_seq_pos = new_upos;
 	}
