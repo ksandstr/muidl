@@ -406,16 +406,15 @@ static void build_set_strbufs(
 {
 	assert(stritems != NULL && stritems[0].length >= 0);
 	for(int i=0; stritems[i].length >= 0; i++) {
-		LLVMValueRef si[2];
+		V si[2];
 		build_simple_string_item(ctx, si, stritems[i].memptr,
-			LLVMConstInt(ctx->wordt, stritems[i].length, 0),
-			NULL);
-		build_store_br(ctx, si[0], i * 2 + 1);
+			CONST_WORD(stritems[i].length), NULL);
 		if(stritems[i+1].length >= 0) {
 			/* non-last string buffers have low bit, "C", set. */
-			si[1] = LLVMBuildOr(ctx->builder, si[1],
-				LLVMConstInt(ctx->wordt, 1, 0), "strbuf.info.cont");
+			si[0] = LLVMBuildOr(ctx->builder, si[0], CONST_WORD(1),
+				"strbuf.info.cont");
 		}
+		build_store_br(ctx, si[0], i * 2 + 1);
 		build_store_br(ctx, si[1], i * 2 + 2);
 	}
 }

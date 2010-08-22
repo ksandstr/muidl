@@ -119,16 +119,16 @@ void build_simple_string_item(
 	LLVMValueRef data_len,
 	LLVMValueRef cache_hint)
 {
-	if(cache_hint == NULL) cache_hint = ctx->zero;
+	if(cache_hint == NULL) cache_hint = CONST_WORD(0);
 
-	dest[0] = LLVMBuildPtrToInt(ctx->builder, data_ptr, ctx->wordt,
-		"stritem.simple.ptr");
-	dest[1] = LLVMBuildOr(ctx->builder,
-		LLVMBuildShl(ctx->builder, data_len, CONST_INT(10),
+	dest[0] = LLVMBuildOr(ctx->builder,
+		LLVMBuildShl(ctx->builder, data_len, CONST_WORD(10),
 			"stritem.simple.len.shl"),
-		LLVMBuildShl(ctx->builder, cache_hint, CONST_INT(1),
+		LLVMBuildShl(ctx->builder, cache_hint, CONST_WORD(1),
 			"stritem.simple.ch.shl"),
 		"stritem.simple.info");
+	dest[1] = LLVMBuildPtrToInt(ctx->builder, data_ptr, ctx->wordt,
+		"stritem.simple.ptr");
 }
 
 
@@ -181,11 +181,8 @@ static LLVMValueRef get_stritem_len_fn(struct llvm_ctx *ctx)
 	LLVMAddIncoming(len_phi, &ctx->zero, &entry_bb, 1);
 	LLVMAddIncoming(tpos_phi, &ctx->tpos, &entry_bb, 1);
 	ctx->tpos = tpos_phi;
-	/* test: if tpos+1 doesn't look like a string item, conk out. */
-	LLVMValueRef infoword = build_utcb_load(ctx,
-		LLVMBuildAdd(ctx->builder, ctx->tpos, CONST_INT(1),
-			"tpos.plus.one"),
-		"si.info");
+	/* test: if *tpos doesn't look like a string item, conk out. */
+	LLVMValueRef infoword = build_utcb_load(ctx, ctx->tpos, "si.info");
 	LLVMValueRef is_cond = LLVMBuildICmp(ctx->builder, LLVMIntEQ,
 		ctx->zero, LLVMBuildAnd(ctx->builder, infoword,
 			CONST_WORD(1 << 4), "infoword.si.mask"),
