@@ -34,6 +34,8 @@ bool is_integral_type(IDL_tree typ)
 	switch(IDL_NODE_TYPE(typ)) {
 		case IDLN_TYPE_INTEGER:
 		case IDLN_TYPE_OCTET:
+		case IDLN_TYPE_CHAR:
+		case IDLN_TYPE_WIDE_CHAR:
 		case IDLN_TYPE_BOOLEAN:
 			return true;
 
