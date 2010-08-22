@@ -42,13 +42,21 @@
 #include "llvmutil.h"
 
 
+#define T_DEFS (1 << 0)
+#define T_COMMON (1 << 1)
+#define T_CLIENT (1 << 2)
+#define T_SERVICE (1 << 3)
+
+
 /* command-line arguments */
 gboolean arg_verbose = FALSE;
 static gboolean arg_version = FALSE, arg_verbose_idl = FALSE,
-	arg_defs_only = FALSE, arg_client_only = FALSE, arg_service_only = FALSE,
-	arg_common_only = FALSE, arg_dump_llvm = FALSE;
+	arg_make_defs = FALSE, arg_make_client = FALSE, arg_make_service = FALSE,
+	arg_make_common = FALSE, arg_dump_llvm = FALSE;
 static gchar **arg_defines = NULL, **arg_idl_files = NULL,
 	**arg_include_paths = NULL, *arg_dest_path = NULL;
+
+static unsigned int target_mask = ~0u;
 
 
 static int strvlen(char **strv) __attribute__((pure));
@@ -1005,27 +1013,24 @@ bool do_idl_file(const char *cppopts, const char *filename)
 
 	struct llvm_ctx *lc = create_llvm_ctx(&print_ctx);
 
-	/* (TODO: ... this is kind of complex. turn "only" parameters into some
-	 * kind of enable-disable bit mask.)
-	 */
-	if(!arg_service_only && !arg_common_only && !arg_client_only) {
+	if(target_mask & T_DEFS) {
 		print_into(commonname, &print_common_header, &print_ctx);
 	}
-	if(!arg_defs_only && !arg_service_only && !arg_client_only) {
+	if(target_mask & T_COMMON) {
 		LLVMModuleRef mod = make_llvm_module(lc, basename,
 			&iter_build_common_module);
 		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-common.S",
 			basename));
 		LLVMDisposeModule(mod);
 	}
-	if(!arg_defs_only && !arg_client_only && !arg_common_only) {
+	if(target_mask & T_SERVICE) {
 		LLVMModuleRef mod = make_llvm_module(lc, basename,
 			&iter_build_dispatchers);
 		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-service.S",
 			basename));
 		LLVMDisposeModule(mod);
 	}
-	if(!arg_defs_only && !arg_service_only && !arg_common_only) {
+	if(target_mask & T_CLIENT) {
 		LLVMModuleRef mod = make_llvm_module(lc, basename,
 			&iter_build_stubs);
 		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-client.S",
@@ -1057,14 +1062,14 @@ static void parse_cmdline(int argc, char *argv[])
 		  &arg_dest_path, "produce files in PATH", "PATH" },
 		{ "dump-llvm", 0, 0, G_OPTION_ARG_NONE, &arg_dump_llvm,
 		  "dump LLVM assembly to stderr (for debugging)", NULL },
-		{ "defs-only", 0, 0, G_OPTION_ARG_NONE, &arg_defs_only,
-		  "only produce `-defs.h'", NULL },
-		{ "client-only", 0, 0, G_OPTION_ARG_NONE, &arg_client_only,
-		  "only produce `-client.S'", NULL },
-		{ "service-only", 0, 0, G_OPTION_ARG_NONE, &arg_service_only,
-		  "only produce `-service.S'", NULL },
-		{ "common-only", 0, 0, G_OPTION_ARG_NONE, &arg_common_only,
-		  "only produce `-common.S'", NULL },
+		{ "defs", 0, 0, G_OPTION_ARG_NONE, &arg_make_defs,
+		  "produce `-defs.h' (default: produce all outputs)", NULL },
+		{ "client", 0, 0, G_OPTION_ARG_NONE, &arg_make_client,
+		  "produce `-client.S'", NULL },
+		{ "service", 0, 0, G_OPTION_ARG_NONE, &arg_make_service,
+		  "produce `-service.S'", NULL },
+		{ "common", 0, 0, G_OPTION_ARG_NONE, &arg_make_common,
+		  "produce `-common.S'", NULL },
 		{ "verbose", 'v', 0, G_OPTION_ARG_NONE, &arg_verbose,
 		  "enable verbose output", NULL },
 		{ "verbose-idl", 0, 0, G_OPTION_ARG_NONE, &arg_verbose_idl,
@@ -1085,12 +1090,12 @@ static void parse_cmdline(int argc, char *argv[])
 	}
 	g_option_context_free(oc);
 
-	int only = (arg_defs_only ? 1 : 0) + (arg_client_only ? 1 : 0)
-		+ (arg_service_only ? 1 : 0);
-	if(only > 1) {
-		fprintf(stderr, "only one `--X-only' option may be given at a time.\n");
-		exit(EXIT_FAILURE);
-	}
+	unsigned int active = 0;
+	if(arg_make_defs) active |= T_DEFS;
+	if(arg_make_common) active |= T_COMMON;
+	if(arg_make_client) active |= T_CLIENT;
+	if(arg_make_service) active |= T_SERVICE;
+	if(active != 0) target_mask = active;
 
 	if(arg_dest_path != NULL
 		&& !g_file_test(arg_dest_path, G_FILE_TEST_IS_DIR))
