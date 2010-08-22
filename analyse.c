@@ -639,7 +639,10 @@ static struct message_info *build_message(
 	}
 #endif
 	inf->seq = seq;
+
 	inf->_long = _long;
+	/* for now, µIDL only produces 2-word typed items. */
+	inf->tag_t = g_list_length(inf->_long) * 2;
 
 	IDL_tree op = NULL;
 	if(return_type != NULL) {

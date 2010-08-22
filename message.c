@@ -81,6 +81,21 @@ void build_write_ipc_parameter(
 }
 
 
+/* FIXME: move this into another file */
+static LLVMValueRef get_strlen_fn(struct llvm_ctx *ctx)
+{
+	V fn = LLVMGetNamedFunction(ctx->module, "strlen");
+	if(fn != NULL) return fn;
+
+	T charptr = LLVMPointerType(LLVMInt8TypeInContext(ctx->ctx), 0),
+		sizet = ctx->wordt;		/* FIXME: get from ABI; should be size_t */
+	T fntype = LLVMFunctionType(sizet, &charptr, 1, 0);
+	fn = LLVMAddFunction(ctx->module, "strlen", fntype);
+
+	return fn;
+}
+
+
 LLVMValueRef build_msg_encoder(
 	struct llvm_ctx *ctx,
 	const struct message_info *msg,
@@ -152,10 +167,32 @@ LLVMValueRef build_msg_encoder(
 			ctx->inline_seq_pos, g_list_next(cur) == NULL);
 	}
 
-	/* TODO: typed words (strings, sequences, long structs, unions, arrays,
-	 * and wide strings; also map & grant items)
-	 *
-	 * NOTE: when encoding out-sequences, the second argument is a pointer to
+	/* long items */
+	V t_pos = ctx->inline_seq_pos;
+	GLIST_FOREACH(cur, msg->_long) {
+		struct msg_param *l = cur->data;
+		IDL_tree type = l->X._long.type;
+		V words[2];
+		if(IDL_NODE_TYPE(type) == IDLN_TYPE_STRING) {
+			V ptr = args[l->arg_ix];
+			V len = LLVMBuildCall(ctx->builder, get_strlen_fn(ctx),
+				&ptr, 1, tmp_f(ctx->pr, "strlen.%s", l->name));
+			build_simple_string_item(ctx, words, args[l->arg_ix], len,
+				NULL);
+		} else {
+			/* TODO: map/grant items, structs, unions, arrays, wide strings */
+			NOTDEFINED(type);
+		}
+		for(int i=0; i<2; i++) {
+			V t_addr = UTCB_ADDR_VAL(ctx, t_pos,
+				tmp_f(ctx->pr, "stritem.w%d.ptr", i));
+			LLVMBuildStore(ctx->builder, words[i], t_addr);
+			t_pos = LLVMBuildAdd(ctx->builder, t_pos, CONST_INT(1),
+				"t.pos");
+		}
+	}
+
+	/* NOTE: when encoding out-sequences, the second argument is a pointer to
 	 * the length value and should be flattened before the call to
 	 * build_write_ipc_parameter().
 	 */
@@ -321,7 +358,7 @@ void build_msg_decoder(
 		LLVMAddIncoming(ctx->errval_phi, &einval, &pre_ok_bb, 1);
 		LLVMBuildCondBr(ctx->builder, fail_cond, msgerr_bb, cont_bb);
 
-		/* the actual sequence decode. */
+		/* the actual parameter decoding. */
 		LLVMPositionBuilderAtEnd(ctx->builder, cont_bb);
 		switch(IDL_NODE_TYPE(type)) {
 			case IDLN_TYPE_STRING: {

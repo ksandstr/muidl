@@ -251,7 +251,7 @@ static LLVMBasicBlockRef build_op_decode(
 	int max_arg = -1, arg_offset = 0;
 	bool have_ret_by_val = false;
 	if(!oneway && reply->ret_type != NULL) {
-		/* a parameter for the return value. */
+		/* take an arg slot for the return value. */
 		if(!reply->ret_by_ref) {
 			args[0] = NULL;		/* will be filled in with fncall value */
 			max_arg = 0;
@@ -287,6 +287,8 @@ static LLVMBasicBlockRef build_op_decode(
 			emit_out_param(ctx, &d_args[p->arg_ix], type);
 		}
 		max_arg = MAX(max_arg, p->arg_ix + nd_args - 1 + arg_offset);
+//		printf("%s: param `%s', arg_ix %d (offset %d)\n", __func__,
+//			p->name, p->arg_ix, arg_offset);
 	}
 
 	/* the decoder. */

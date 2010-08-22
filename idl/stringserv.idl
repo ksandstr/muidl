@@ -15,10 +15,12 @@ interface Stringserv
 		in string<32> log_id,
 		in string<128> boring_message);
 
+#if 0
 	typedef sequence<short, 300> shortseq;
 
 	[Label(69)]
 	void eat_my_shorts(in shortseq trousers);
+#endif
 };
 
 
