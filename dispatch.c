@@ -514,6 +514,11 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 	ctx->utcb = build_utcb_get(ctx);
 	ctx->alloc_bb = bb;
 	ctx->malloc_ptrs = NULL;
+	/* support context, & its pointer */
+	V alloc_supp_fn = get_alloc_supp_ctx_fn(ctx),
+		uint_zero = CONST_INT(0);
+	LLVMBuildCall(ctx->builder, alloc_supp_fn, &uint_zero, 1, "");
+	V supp_ctx_ptr = build_fetch_supp_ctx(ctx);
 	/* store xfer timeouts at point of entry, i.e. as they are given by the
 	 * caller.
 	 */
@@ -528,11 +533,6 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 	/* acceptor word (TODO: map/grant items) */
 	LLVMValueRef acceptor = LLVMConstInt(ctx->wordt,
 		have_stringbufs ? 1 : 0, 0);
-	/* support context, & its pointer */
-	V alloc_supp_fn = get_alloc_supp_ctx_fn(ctx),
-		uint_zero = CONST_INT(0);
-	LLVMBuildCall(ctx->builder, alloc_supp_fn, &uint_zero, 1, "");
-	V supp_ctx_ptr = build_fetch_supp_ctx(ctx);
 	/* (this block will be closed as ctx->alloc_bb down near function end.) */
 
 	/* non-reply IPC wait block. */
