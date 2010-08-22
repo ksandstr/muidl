@@ -86,7 +86,7 @@ LLVMTypeRef llvm_value_type(struct llvm_ctx *ctx, IDL_tree type)
 			} else {
 				fprintf(stderr, "%s: native type `%s' not supported\n",
 					__FUNCTION__, NATIVE_NAME(type));
-				exit(EXIT_FAILURE);
+				abort();
 			}
 			break;
 		}
@@ -176,7 +176,7 @@ LLVMTypeRef llvm_struct_type(
 
 LLVMTypeRef llvm_rigid_type(struct llvm_ctx *ctx, IDL_tree type)
 {
-	if(is_value_type(type)) return llvm_value_type(ctx, type);
+	if(type == NULL) return LLVMVoidTypeInContext(ctx->ctx);
 	switch(IDL_NODE_TYPE(type)) {
 		case IDLN_TYPE_STRUCT:
 			return llvm_struct_type(ctx, NULL, type);
@@ -187,11 +187,19 @@ LLVMTypeRef llvm_rigid_type(struct llvm_ctx *ctx, IDL_tree type)
 				ARRAY_TYPE_LENGTH(type));
 		}
 
+#if 0
 		case IDLN_TYPE_UNION:
 			/* TODO */
+#endif
 
+		case IDLN_NATIVE:
+			if(IS_MAPGRANT_TYPE(type)) return ctx->mapgrant;
+			/* FALL THRU */
 		default:
-			NOTDEFINED(type);
+			if(is_value_type(type)) return llvm_value_type(ctx, type);
+			else {
+				NOTDEFINED(type);
+			}
 	}
 }
 

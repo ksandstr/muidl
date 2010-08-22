@@ -476,8 +476,8 @@ bool is_rigid_type(IDL_ns ns, IDL_tree type)
 {
 	if(type == NULL) return false;	/* void is not a rigid type either. */
 	switch(IDL_NODE_TYPE(type)) {
-		default: return is_value_type(type);
-		case IDLN_TYPE_STRUCT: return is_struct_rigid(ns, type);
+		case IDLN_TYPE_STRUCT:
+			return is_struct_rigid(ns, type);
 
 		case IDLN_TYPE_ARRAY:
 			/* is rigid if the element type is. */
@@ -485,6 +485,12 @@ bool is_rigid_type(IDL_ns ns, IDL_tree type)
 
 		case IDLN_TYPE_UNION:
 			NOTDEFINED(type);
+
+		case IDLN_NATIVE:
+			if(IS_MAPGRANT_TYPE(type)) return true;
+			/* FALL THRU */
+		default:
+			return is_value_type(type);
 	}
 }
 
