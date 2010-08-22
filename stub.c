@@ -116,6 +116,20 @@ static LLVMTypeRef stub_fn_type(
 }
 
 
+static void build_stub_msgerr(struct llvm_ctx *ctx)
+{
+	/* this mimics a L4.X2 error status, as a code 0 in receive phase (where
+	 * inline sequence decode happens), and returns the negative error value
+	 * shifted up by 4 bits.
+	 */
+	V err = LLVMBuildShl(ctx->builder, ctx->errval_phi, CONST_WORD(4),
+			"err.shifted"),
+		code = LLVMBuildOr(ctx->builder, err, CONST_WORD(1), "err.code");
+	branch_set_phi(ctx, ctx->retval_phi, code);
+	LLVMBuildBr(ctx->builder, ctx->exit_bb);
+}
+
+
 static void build_ipc_stub(
 	struct llvm_ctx *ctx,
 	struct method_info *inf,
@@ -169,10 +183,12 @@ static void build_ipc_stub(
 	}
 
 	/* function exit. */
-	BB exit_bb = add_sibling_block(ctx, "exit");
-	LLVMPositionBuilderAtEnd(ctx->builder, exit_bb);
-	V retval_phi = LLVMBuildPhi(ctx->builder, ctx->i32t, "retval.phi");
-	LLVMBuildRet(ctx->builder, retval_phi);
+	ctx->exit_bb = add_sibling_block(ctx, "exit");
+	LLVMPositionBuilderAtEnd(ctx->builder, ctx->exit_bb);
+	ctx->retval_phi = LLVMBuildPhi(ctx->builder, ctx->i32t, "retval.phi");
+	LLVMBuildRet(ctx->builder, ctx->retval_phi);
+	ctx->build_msgerr_bb = &build_stub_msgerr;
+	ctx->msgerr_bb = NULL;
 
 	/* send-half. */
 	LLVMPositionBuilderAtEnd(ctx->builder, entry_bb);
@@ -222,8 +238,8 @@ static void build_ipc_stub(
 	V errcode = LLVMBuildLoad(ctx->builder,
 		UTCB_ADDR_VAL(ctx, CONST_INT(TCR_ERROR_CODE), "ec.addr"),
 		"ec.value");
-	branch_set_phi(ctx, retval_phi, errcode);
-	LLVMBuildBr(ctx->builder, exit_bb);
+	branch_set_phi(ctx, ctx->retval_phi, errcode);
+	LLVMBuildBr(ctx->builder, ctx->exit_bb);
 
 	/* IPC success path. */
 	LLVMPositionBuilderAtEnd(ctx->builder, noerr_bb);
@@ -238,9 +254,9 @@ static void build_ipc_stub(
 		LLVMBuildCondBr(ctx->builder, matches, msgerr_bb, no_msgerr_bb);
 
 		LLVMPositionBuilderAtEnd(ctx->builder, msgerr_bb);
-		branch_set_phi(ctx, retval_phi,
+		branch_set_phi(ctx, ctx->retval_phi,
 			LLVMBuildNeg(ctx->builder, ctx->mr1, "msgerr.val.neg"));
-		LLVMBuildBr(ctx->builder, exit_bb);
+		LLVMBuildBr(ctx->builder, ctx->exit_bb);
 
 		LLVMPositionBuilderAtEnd(ctx->builder, no_msgerr_bb);
 	}
@@ -249,8 +265,8 @@ static void build_ipc_stub(
 		build_msg_decoder(ctx, ret_args, &args[arg_offset], reply, NULL,
 			true);
 	}
-	branch_set_phi(ctx, retval_phi, CONST_WORD(0));
-	LLVMBuildBr(ctx->builder, exit_bb);
+	branch_set_phi(ctx, ctx->retval_phi, CONST_WORD(0));
+	LLVMBuildBr(ctx->builder, ctx->exit_bb);
 
 	LLVMDisposeBuilder(ctx->builder);
 	ctx->builder = NULL;

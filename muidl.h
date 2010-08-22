@@ -174,6 +174,10 @@ struct llvm_ctx
 	LLVMValueRef vtab_arg, reply_tag, errval_phi, inline_seq_pos;
 	LLVMValueRef tpos, tmax, from;
 	LLVMValueRef stritem_len_fn;
+
+	/* stub-specific things */
+	LLVMBasicBlockRef exit_bb;
+	LLVMValueRef retval_phi;
 };
 
 
