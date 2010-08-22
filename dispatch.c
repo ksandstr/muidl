@@ -495,8 +495,8 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 	if(have_stringbufs) build_set_strbufs(ctx, stritems);
 	LLVMValueRef ipc_from, ipc_mr1, ipc_mr2,
 		ipc_tag = build_l4_ipc_call(ctx,
-			ctx->zero, LLVMConstNot(ctx->zero), LLVMConstNot(ctx->zero), ctx->zero,
-			&ipc_from, &ipc_mr1, &ipc_mr2);
+			CONST_WORD(0), CONST_WORD(0), LLVMConstNot(CONST_WORD(0)),
+			CONST_WORD(0), &ipc_from, &ipc_mr1, &ipc_mr2);
 	LLVMBuildBr(ctx->builder, loop_bb);
 
 	/* the main dispatch-replywait loop. */
@@ -521,8 +521,11 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 	LLVMBuildStore(ctx->builder, stored_timeouts, xfer_timeouts_addr);
 	build_store_br(ctx, acceptor, 0);
 	if(have_stringbufs) build_set_strbufs(ctx, stritems);
+	/* TODO: these magic constants are actually L4_Timeouts(L4_Never,
+	 * L4_Never), and L4_anythread.
+	 */
 	ipc_tag = build_l4_ipc_call(ctx,
-		ctx->from, LLVMConstNot(ctx->zero), LLVMConstNot(ctx->zero),
+		ctx->from, CONST_WORD(0), LLVMConstNot(CONST_WORD(0)),
 		ctx->reply_tag, &ipc_from, &ipc_mr1, &ipc_mr2);
 	LLVMAddIncoming(ctx->from, &ipc_from, &ctx->reply_bb, 1);
 	LLVMAddIncoming(ctx->mr1, &ipc_mr1, &ctx->reply_bb, 1);
