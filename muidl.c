@@ -46,7 +46,7 @@
 gboolean arg_verbose = FALSE;
 static gboolean arg_version = FALSE, arg_verbose_idl = FALSE,
 	arg_defs_only = FALSE, arg_client_only = FALSE, arg_service_only = FALSE,
-	arg_dump_llvm = FALSE;
+	arg_common_only = FALSE, arg_dump_llvm = FALSE;
 static gchar **arg_defines = NULL, **arg_idl_files = NULL,
 	**arg_include_paths = NULL, *arg_dest_path = NULL;
 
@@ -999,23 +999,27 @@ bool do_idl_file(const char *cppopts, const char *filename)
 
 	struct llvm_ctx *lc = create_llvm_ctx(&print_ctx);
 
-	if(!arg_service_only && !arg_client_only) {
+	/* (TODO: ... this is kind of complex. turn "only" parameters into some
+	 * kind of enable-disable bit mask.)
+	 */
+	if(!arg_service_only && !arg_common_only && !arg_client_only) {
 		print_into(commonname, &print_common_header, &print_ctx);
-
+	}
+	if(!arg_defs_only && !arg_service_only && !arg_client_only) {
 		LLVMModuleRef mod = make_llvm_module(lc, basename,
 			&iter_build_common_module);
 		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-common.S",
 			basename));
 		LLVMDisposeModule(mod);
 	}
-	if(!arg_defs_only && !arg_client_only) {
+	if(!arg_defs_only && !arg_client_only && !arg_common_only) {
 		LLVMModuleRef mod = make_llvm_module(lc, basename,
 			&iter_build_dispatchers);
 		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-service.S",
 			basename));
 		LLVMDisposeModule(mod);
 	}
-	if(!arg_defs_only && !arg_service_only) {
+	if(!arg_defs_only && !arg_service_only && !arg_common_only) {
 		LLVMModuleRef mod = make_llvm_module(lc, basename,
 			&iter_build_stubs);
 		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-client.S",
@@ -1050,9 +1054,11 @@ static void parse_cmdline(int argc, char *argv[])
 		{ "defs-only", 0, 0, G_OPTION_ARG_NONE, &arg_defs_only,
 		  "only produce `-defs.h'", NULL },
 		{ "client-only", 0, 0, G_OPTION_ARG_NONE, &arg_client_only,
-		  "only produce `-client.c'", NULL },
+		  "only produce `-client.S'", NULL },
 		{ "service-only", 0, 0, G_OPTION_ARG_NONE, &arg_service_only,
-		  "only produce `-service.c'", NULL },
+		  "only produce `-service.S'", NULL },
+		{ "common-only", 0, 0, G_OPTION_ARG_NONE, &arg_common_only,
+		  "only produce `-common.S'", NULL },
 		{ "verbose", 'v', 0, G_OPTION_ARG_NONE, &arg_verbose,
 		  "enable verbose output", NULL },
 		{ "verbose-idl", 0, 0, G_OPTION_ARG_NONE, &arg_verbose_idl,
