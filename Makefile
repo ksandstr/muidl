@@ -19,7 +19,7 @@ all: tags muidl
 
 clean:
 	rm -f *.o
-	rm -f *-defs.h *-service.S *-client.[cS] *-common.S
+	rm -f *-defs.h *-service.S *-client.S *-common.S
 
 
 distclean: clean
