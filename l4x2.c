@@ -148,9 +148,14 @@ static LLVMValueRef get_stritem_len_fn(struct llvm_ctx *ctx)
 		fn_type = LLVMFunctionType(ret_type, parm_types, 2, 0);
 	LLVMValueRef fn = LLVMAddFunction(ctx->module, "__muidl_get_stritem_len",
 		fn_type);
-	LLVMSetFunctionCallConv(fn, LLVMFastCallConv);
 	LLVMSetVisibility(fn, LLVMHiddenVisibility);
 	LLVMSetLinkage(fn, LLVMInternalLinkage);
+	V fn_args[2];
+	LLVMGetParams(fn, fn_args);
+	LLVMAddAttribute(fn_args[0], LLVMNoCaptureAttribute);
+	for(int i=0; i<2; i++) {
+		LLVMAddAttribute(fn_args[i], LLVMInRegAttribute);
+	}
 	ctx->stritem_len_fn = fn;
 
 	LLVMBuilderRef old_builder = ctx->builder;
@@ -163,8 +168,8 @@ static LLVMValueRef get_stritem_len_fn(struct llvm_ctx *ctx)
 
 	LLVMPositionBuilderAtEnd(ctx->builder, entry_bb);
 	LLVMValueRef old_utcb = ctx->utcb, old_tpos = ctx->tpos;
-	ctx->utcb = LLVMGetParam(fn, 0);
-	ctx->tpos = LLVMGetParam(fn, 1);
+	ctx->utcb = fn_args[0];
+	ctx->tpos = fn_args[1];
 	LLVMBuildBr(ctx->builder, loop_bb);
 
 	LLVMPositionBuilderAtEnd(ctx->builder, exit_bb);
