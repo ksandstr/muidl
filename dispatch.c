@@ -465,6 +465,7 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 	ctx->reply_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "reply");
 
 	ctx->build_msgerr_bb = &build_dispatcher_msgerr;
+	ctx->msgerr_bb = NULL;
 
 	/* the entry block. */
 	LLVMPositionBuilderAtEnd(ctx->builder, bb);
