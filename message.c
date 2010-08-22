@@ -130,9 +130,11 @@ LLVMValueRef build_msg_encoder(
 		IDL_tree type = u->X.untyped.type;
 		const int first_reg = u->X.untyped.first_reg;
 		bool inout = IDL_PARAM_DCL(u->param_dcl).attr == IDL_PARAM_INOUT;
-		printf("param %p: arg_ix %d, regs [%d..%d], argval %p, type <%s>\n",
-			u, u->arg_ix, first_reg, u->X.untyped.last_reg, args[u->arg_ix],
-			IDL_NODE_TYPE_NAME(type));
+#if 0
+		printf("param `%s' (%p): arg_ix %d, regs [%d..%d], argval %p, type <%s>\n",
+			u->name, u, u->arg_ix, first_reg, u->X.untyped.last_reg,
+			args[u->arg_ix], IDL_NODE_TYPE_NAME(type));
+#endif
 		if(is_value_type(type)) {
 			V raw;
 			if(is_out_half || inout) {

@@ -596,12 +596,14 @@ static struct message_info *build_message(
 	for(int i = 1; i < 64; i++) {
 		if(reg_in_use[i]) inf->tag_u = i;
 	}
+#if 0
 	GLIST_FOREACH(cur, inf->untyped) {
 		struct msg_param *p = cur->data;
-		printf("untyped `%s': p %d, arg %d, regs [%d, %d]\n",
-			p->name, p->param_ix, p->arg_ix,
+		printf("untyped `%s' (%p): p %d, arg %d, regs [%d, %d]\n",
+			p->name, p, p->param_ix, p->arg_ix,
 			p->X.untyped.first_reg, p->X.untyped.last_reg);
 	}
+#endif
 
 #if 0
 	/* allocate inline sequences.
