@@ -80,11 +80,11 @@ static void vtable_out_param_type(
 	IDL_tree type)
 {
 	if(is_rigid_type(ctx->ns, type)) {
-		dst[(*pos_p)++] = LLVMPointerType(llvm_value_type(ctx, type), 0);
+		dst[(*pos_p)++] = LLVMPointerType(llvm_rigid_type(ctx, type), 0);
 	} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
 		IDL_tree seqtype = get_type_spec(
 			IDL_TYPE_SEQUENCE(type).simple_type_spec);
-		dst[(*pos_p)++] = LLVMPointerType(llvm_value_type(ctx, seqtype), 0);
+		dst[(*pos_p)++] = LLVMPointerType(llvm_rigid_type(ctx, seqtype), 0);
 		dst[(*pos_p)++] = LLVMPointerType(ctx->i32t, 0);
 	} else if(IS_MAPGRANT_TYPE(type)) {
 		dst[(*pos_p)++] = LLVMPointerType(ctx->mapgrant, 0);
@@ -104,12 +104,15 @@ static LLVMTypeRef vtable_return_type(
 	IDL_tree op,
 	bool *actual_p)
 {
+	IDL_tree ret_type = get_type_spec(IDL_OP_DCL(op).op_type_spec);
 	char *ctyp = return_type(ctx->ns, op, actual_p, true);
 	LLVMTypeRef t;
 	if(strcmp(ctyp, "int") == 0) t = ctx->i32t;
 	else if(strcmp(ctyp, "void") == 0) t = LLVMVoidTypeInContext(ctx->ctx);
-	else {
-		t = llvm_value_type(ctx, get_type_spec(IDL_OP_DCL(op).op_type_spec));
+	else if(is_rigid_type(ctx->ns, ret_type)) {
+		t = llvm_rigid_type(ctx, ret_type);
+	} else {
+		NOTDEFINED(ret_type);
 	}
 	g_free(ctyp);
 	return t;
