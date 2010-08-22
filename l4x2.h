@@ -26,7 +26,7 @@
  * CONST_INT().
  */
 #define MR_OFFSET(n) (n)
-#define BR_OFFSET(n) (-(n) - 64)
+#define BR_OFFSET(n) (-(n) - 16)
 #define TCR_XFER_TIMEOUTS (-8)
 #define TCR_ERROR_CODE (-9)
 #define TCR_PAGER (-12)
