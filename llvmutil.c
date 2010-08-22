@@ -83,6 +83,13 @@ void build_free_mallocs(struct llvm_ctx *ctx)
 }
 
 
+static LLVMTypeRef llvm_mapgrant_type(struct llvm_ctx *ctx)
+{
+	T fields[2] = { ctx->wordt, ctx->wordt };
+	return LLVMStructTypeInContext(ctx->ctx, fields, 2, 0);
+}
+
+
 /* TODO: [v2] get the word type from target info */
 struct llvm_ctx *create_llvm_ctx(struct print_ctx *pr)
 {
@@ -97,8 +104,7 @@ struct llvm_ctx *create_llvm_ctx(struct print_ctx *pr)
 	ctx->wordt = ctx->i32t;
 	ctx->voidptrt = LLVMPointerType(LLVMInt8TypeInContext(ctx->ctx), 0);
 	ctx->zero = LLVMConstInt(ctx->i32t, 0, 0);
-	T mapgrant_fields[] = { ctx->wordt, ctx->wordt };
-	ctx->mapgrant = LLVMStructTypeInContext(ctx->ctx, mapgrant_fields, 2, 1);
+	ctx->mapgrant = llvm_mapgrant_type(ctx);
 
 	return ctx;
 }
