@@ -531,7 +531,7 @@ extern LLVMValueRef build_decode_inline_sequence(
 extern LLVMValueRef build_encode_inline_sequence(
 	struct llvm_ctx *ctx,
 	LLVMValueRef mem,
-	LLVMValueRef lenptr,
+	LLVMValueRef num_items,
 	const struct msg_param *seq,
 	LLVMValueRef upos,
 	bool is_last);

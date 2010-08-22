@@ -162,8 +162,13 @@ LLVMValueRef build_msg_encoder(
 	ctx->inline_seq_pos = CONST_INT(msg->tag_u + 1);
 	GLIST_FOREACH(cur, msg->seq) {
 		const struct msg_param *seq = cur->data;
+		V num_items = args[seq->arg_ix + 1];
+		if(IDL_PARAM_DCL(seq->param_dcl).attr != IDL_PARAM_IN) {
+			num_items = LLVMBuildLoad(ctx->builder, num_items,
+				"seq.num.items");
+		}
 		ctx->inline_seq_pos = build_encode_inline_sequence(ctx,
-			args[seq->arg_ix], args[seq->arg_ix + 1], seq,
+			args[seq->arg_ix], num_items, seq,
 			ctx->inline_seq_pos, g_list_next(cur) == NULL);
 	}
 

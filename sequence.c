@@ -221,15 +221,13 @@ static LLVMValueRef build_load_subval_and_shift(
 LLVMValueRef build_encode_inline_sequence(
 	struct llvm_ctx *ctx,
 	LLVMValueRef mem,
-	LLVMValueRef lenptr,
+	LLVMValueRef num_items,
 	const struct msg_param *seq,
 	LLVMValueRef upos,
 	bool is_last)
 {
 	const int epw = seq->X.seq.elems_per_word;
 
-	LLVMValueRef num_items = LLVMBuildLoad(ctx->builder,
-		lenptr, "inlseq.len");
 	if(epw > 1 || !is_last) {
 		/* not simple && last; emit an item-count word. */
 		LLVMBuildStore(ctx->builder, WORD(num_items),
