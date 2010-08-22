@@ -420,6 +420,46 @@ static void build_set_strbufs(
 }
 
 
+/* FIXME: move these three into support.c or some such */
+static LLVMTypeRef llvm_supp_ctx_type(struct llvm_ctx *ctx)
+{
+	/* two words: last_sender, and last_tag. */
+	T types[2] = { ctx->wordt, ctx->wordt };
+	return LLVMStructTypeInContext(ctx->ctx, types, 2, 0);
+}
+#define SUPP_LAST_SENDER_IX 0
+#define SUPP_LAST_TAG_IX 1
+
+
+static LLVMValueRef get_alloc_supp_ctx_fn(struct llvm_ctx *ctx)
+{
+	V fn = LLVMGetNamedFunction(ctx->module, "muidl_supp_alloc_context");
+	if(fn == NULL) {
+		T fnt = LLVMFunctionType(LLVMVoidTypeInContext(ctx->ctx),
+			&ctx->i32t, 1, 0);
+		fn = LLVMAddFunction(ctx->module, "muidl_supp_alloc_context", fnt);
+	}
+	assert(fn != NULL);
+	return fn;
+}
+
+
+static LLVMValueRef build_fetch_supp_ctx(struct llvm_ctx *ctx)
+{
+	V fn = LLVMGetNamedFunction(ctx->module, "muidl_supp_get_context");
+	if(fn == NULL) {
+		T fnt = LLVMFunctionType(
+			LLVMPointerType(LLVMInt8TypeInContext(ctx->ctx), 0),
+			NULL, 0, 0);
+		fn = LLVMAddFunction(ctx->module, "muidl_supp_get_context", fnt);
+	}
+	assert(fn != NULL);
+	V rawptr = LLVMBuildCall(ctx->builder, fn, NULL, 0, "suppctx.ptr.raw");
+	return LLVMBuildPointerCast(ctx->builder, rawptr,
+		LLVMPointerType(llvm_supp_ctx_type(ctx), 0), "suppctx.ptr");
+}
+
+
 static gint method_by_tagmask_cmp(gconstpointer ap, gconstpointer bp)
 {
 	const struct method_info *a = ap, *b = bp;
@@ -485,6 +525,11 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 	/* acceptor word (TODO: map/grant items) */
 	LLVMValueRef acceptor = LLVMConstInt(ctx->wordt,
 		have_stringbufs ? 1 : 0, 0);
+	/* support context, & its pointer */
+	V alloc_supp_fn = get_alloc_supp_ctx_fn(ctx),
+		uint_zero = CONST_INT(0);
+	LLVMBuildCall(ctx->builder, alloc_supp_fn, &uint_zero, 1, "");
+	V supp_ctx_ptr = build_fetch_supp_ctx(ctx);
 	/* (this block will be closed as ctx->alloc_bb down near function end.) */
 
 	/* non-reply IPC wait block. */
@@ -564,6 +609,13 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 
 	/* dispatch according to ctx->tag. */
 	LLVMPositionBuilderAtEnd(ctx->builder, dispatch_bb);
+	/* update the skel context. */
+	LLVMBuildStore(ctx->builder, ctx->from,
+		LLVMBuildStructGEP(ctx->builder, supp_ctx_ptr,
+			SUPP_LAST_SENDER_IX, "supp.last_sender.ptr"));
+	LLVMBuildStore(ctx->builder, ctx->tag,
+		LLVMBuildStructGEP(ctx->builder, supp_ctx_ptr,
+			SUPP_LAST_TAG_IX, "supp.last_tag.ptr"));
 	/* TODO: get the correct value */
 	LLVMValueRef labelswitch = LLVMBuildSwitch(ctx->builder,
 		build_label_from_tag(ctx, ctx->tag),
