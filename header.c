@@ -154,17 +154,19 @@ static void print_exn_raisers(struct print_ctx *pr, IDL_tree iface)
 	/* output preprocessor-guarded externs for each, except the ones that are
 	 * raised by negative return value.
 	 */
-	if(g_hash_table_size(ex_repo_ids) > 0) {
-		code_f(pr, "\n/* exception raisers */\n");
-	}
 	GHashTableIter iter;
 	g_hash_table_iter_init(&iter, ex_repo_ids);
 	gpointer key = NULL, value = NULL;
+	bool first = true;
 	while(g_hash_table_iter_next(&iter, &key, &value)) {
 		const char *repo_id = key;
 		IDL_tree exn = value;
 		if(is_negs_exn(exn)) continue;
 
+		if(first) {
+			first = false;
+			code_f(pr, "\n/* exception raisers */\n");
+		}
 		char *mangled = mangle_repo_id(repo_id);
 		char *def = g_strdup_printf("MUIDL_%s_RAISER_EXTERN", mangled);
 		code_f(pr, "#ifndef %s", def);
