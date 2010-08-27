@@ -497,7 +497,7 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 	ctx->vtab_arg = LLVMGetFirstParam(fn);
 	g_free(dispname);
 
-	begin_function(ctx, fn, true);
+	begin_function(ctx, fn);
 	ctx->build_msgerr_bb = &build_dispatcher_msgerr;
 	ctx->msgerr_bb = NULL;
 

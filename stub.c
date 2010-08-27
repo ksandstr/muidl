@@ -152,9 +152,6 @@ static void build_ipc_stub(
 	V fn = LLVMAddFunction(ctx->module, stubname, fn_type);
 	g_free(stubname);
 
-	ctx->builder = LLVMCreateBuilderInContext(ctx->ctx);
-	BB entry_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "EntryBlock");
-
 	int num_args = LLVMCountParams(fn), arg_offset = 0;
 	assert(num_args >= 1);
 	V *args = g_new(V, num_args);
@@ -172,8 +169,8 @@ static void build_ipc_stub(
 
 	/* prelude. */
 	const bool oneway = IDL_OP_DCL(inf->node).f_oneway != 0;
-	LLVMPositionBuilderAtEnd(ctx->builder, entry_bb);
-	ctx->utcb = build_utcb_get(ctx);
+	begin_function(ctx, fn);
+	ctx->build_msgerr_bb = &build_stub_msgerr;
 	if(ipc_dest == NULL) {
 		assert(has_pager_target(ctx->ns, inf->node));
 		/* load the pager TCR. */
@@ -186,12 +183,10 @@ static void build_ipc_stub(
 	ctx->exit_bb = add_sibling_block(ctx, "exit");
 	LLVMPositionBuilderAtEnd(ctx->builder, ctx->exit_bb);
 	ctx->retval_phi = LLVMBuildPhi(ctx->builder, ctx->i32t, "retval.phi");
-	LLVMBuildRet(ctx->builder, ctx->retval_phi);
-	ctx->build_msgerr_bb = &build_stub_msgerr;
-	ctx->msgerr_bb = NULL;
 
 	/* send-half. */
-	LLVMPositionBuilderAtEnd(ctx->builder, entry_bb);
+	BB start_bb = add_sibling_block(ctx, "stub.start");
+	LLVMPositionBuilderAtEnd(ctx->builder, start_bb);
 	V tag = build_msg_encoder(ctx, inf->request, NULL, &args[arg_offset],
 		false);
 
@@ -267,6 +262,11 @@ static void build_ipc_stub(
 	}
 	branch_set_phi(ctx, ctx->retval_phi, CONST_WORD(0));
 	LLVMBuildBr(ctx->builder, ctx->exit_bb);
+
+	/* cleanup and exit. */
+	end_function(ctx, start_bb);
+	LLVMPositionBuilderAtEnd(ctx->builder, ctx->exit_bb);
+	LLVMBuildRet(ctx->builder, ctx->retval_phi);
 
 	LLVMDisposeBuilder(ctx->builder);
 	ctx->builder = NULL;

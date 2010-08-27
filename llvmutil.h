@@ -80,13 +80,12 @@ extern LLVMBasicBlockRef get_msgerr_bb(struct llvm_ctx *ctx);
 extern struct llvm_ctx *create_llvm_ctx(struct print_ctx *pr);
 extern void dispose_llvm_ctx(struct llvm_ctx *ctx);
 
-/* function start helper. if with_alloc is true, the caller should close the
- * entry block with a call to end_function().
+/* function start helper. the caller should close the entry block with a call
+ * to end_function() after the function has been built.
  */
 extern LLVMBasicBlockRef begin_function(
 	struct llvm_ctx *ctx,
-	LLVMValueRef fn,
-	bool with_alloc);
+	LLVMValueRef fn);
 
 /* called in the block where pre-return cleanups should occur. closes the entry
  * block with a branch to the specified basic block.

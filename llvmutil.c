@@ -121,10 +121,7 @@ void dispose_llvm_ctx(struct llvm_ctx *ctx)
 }
 
 
-LLVMBasicBlockRef begin_function(
-	struct llvm_ctx *ctx,
-	LLVMValueRef fn,
-	bool with_alloc)
+LLVMBasicBlockRef begin_function(struct llvm_ctx *ctx, LLVMValueRef fn)
 {
 	ctx->builder = LLVMCreateBuilderInContext(ctx->ctx);
 	ctx->msgerr_bb = NULL;
@@ -133,7 +130,7 @@ LLVMBasicBlockRef begin_function(
 
 	LLVMPositionBuilderAtEnd(ctx->builder, entry_bb);
 	ctx->utcb = build_utcb_get(ctx);
-	ctx->alloc_bb = with_alloc ? entry_bb : NULL;
+	ctx->alloc_bb = entry_bb;
 	ctx->malloc_ptrs = NULL;
 
 	return entry_bb;
