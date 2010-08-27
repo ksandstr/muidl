@@ -45,7 +45,15 @@ static void print_out_param(
 		b = value_type(ns, type);
 		fprintf(of, "%s *%s_ptr", b, name);
 	} else if(IS_MAPGRANT_TYPE(type)) {
-		fprintf(of, "L4_MapGrantItem_t *%s_ptr", name);
+		/* FIXME: this ignores GrantItems, but so does the IDL form. this will
+		 * make things a bit ugly wherever grant items are passed, and should
+		 * be considered more deeply whenever grant items are actually
+		 * required.
+		 *
+		 * it's not like L4.X2 discriminates between the two when receiving
+		 * mappings anyhow.
+		 */
+		fprintf(of, "L4_MapItem_t *%s_ptr", name);
 	} else {
 		b = rigid_type(ns, type);
 		fprintf(of, "%s *%s_ptr", b, name);
