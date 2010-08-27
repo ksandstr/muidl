@@ -53,6 +53,8 @@ LLVMBasicBlockRef add_sibling_block(
 
 LLVMBasicBlockRef get_msgerr_bb(struct llvm_ctx *ctx)
 {
+	assert(ctx->build_msgerr_bb != NULL);
+
 	if(ctx->msgerr_bb == NULL) {
 		ctx->msgerr_bb = add_sibling_block(ctx, "msgerr");
 

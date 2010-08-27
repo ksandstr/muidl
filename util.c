@@ -184,6 +184,7 @@ LLVMValueRef build_local_storage(
 	LLVMValueRef count,
 	const char *name)
 {
+	assert(ctx->alloc_bb != NULL);
 	LLVMBuilderRef b = LLVMCreateBuilderInContext(ctx->ctx);
 	LLVMPositionBuilderAtEnd(b, ctx->alloc_bb);
 	LLVMValueRef ptr;
@@ -201,6 +202,7 @@ LLVMValueRef build_malloc_storage(
 	LLVMValueRef count,
 	const char *name)
 {
+	assert(ctx->alloc_bb != NULL);
 	LLVMBuilderRef b = LLVMCreateBuilderInContext(ctx->ctx);
 	LLVMPositionBuilderAtEnd(b, ctx->alloc_bb);
 	LLVMValueRef ptr;
