@@ -747,7 +747,6 @@ gboolean iter_build_dispatchers(IDL_tree_func_data *tf, void *ud)
 		default: return FALSE;
 
 		case IDLN_INTERFACE:
-			/* TODO: consider exceptions. */
 			build_dispatcher_function(ctx, tf->tree);
 			return FALSE;
 	}

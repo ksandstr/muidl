@@ -911,11 +911,14 @@ static void print_into(
 
 static LLVMModuleRef make_llvm_module(
 	struct llvm_ctx *ctx,
+	LLVMModuleRef mod,
 	const char *basename,
 	IDL_tree_func treefn)
 {
-	LLVMModuleRef mod = LLVMModuleCreateWithNameInContext(basename, ctx->ctx);
-	LLVMSetTarget(mod, "i486-linux-gnu");
+	if(mod == NULL) {
+		mod = LLVMModuleCreateWithNameInContext(basename, ctx->ctx);
+		LLVMSetTarget(mod, "i486-linux-gnu");
+	}
 	ctx->module = mod;
 
 	/* reset per-module context things */
@@ -1017,21 +1020,23 @@ bool do_idl_file(const char *cppopts, const char *filename)
 		print_into(commonname, &print_common_header, &print_ctx);
 	}
 	if(target_mask & T_COMMON) {
-		LLVMModuleRef mod = make_llvm_module(lc, basename,
+		LLVMModuleRef mod = make_llvm_module(lc, NULL, basename,
 			&iter_build_common_module);
 		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-common.S",
 			basename));
 		LLVMDisposeModule(mod);
 	}
 	if(target_mask & T_SERVICE) {
-		LLVMModuleRef mod = make_llvm_module(lc, basename,
+		LLVMModuleRef mod = make_llvm_module(lc, NULL, basename,
 			&iter_build_dispatchers);
+		make_llvm_module(lc, mod, basename,
+			&iter_build_exception_raise_fns);
 		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-service.S",
 			basename));
 		LLVMDisposeModule(mod);
 	}
 	if(target_mask & T_CLIENT) {
-		LLVMModuleRef mod = make_llvm_module(lc, basename,
+		LLVMModuleRef mod = make_llvm_module(lc, NULL, basename,
 			&iter_build_stubs);
 		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-client.S",
 			basename));

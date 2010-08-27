@@ -103,6 +103,7 @@ struct llvm_ctx *create_llvm_ctx(struct print_ctx *pr)
 	ctx->ctx = LLVMContextCreate();
 	ctx->struct_decoder_fns = g_hash_table_new_full(
 		&g_str_hash, &g_str_equal, &g_free, NULL);
+	ctx->seen_exn_hash = NULL;
 	ctx->i32t = LLVMInt32TypeInContext(ctx->ctx);
 	ctx->wordt = ctx->i32t;
 	ctx->voidptrt = LLVMPointerType(LLVMInt8TypeInContext(ctx->ctx), 0);

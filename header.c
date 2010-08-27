@@ -147,32 +147,9 @@ static void print_vtable(
 
 static void print_exn_raisers(struct print_ctx *pr, IDL_tree iface)
 {
-	GList *methods = all_methods_of_iface(pr->ns, iface);
 	GHashTable *ex_repo_ids = g_hash_table_new_full(&g_str_hash, &g_str_equal,
 		&g_free, NULL);
-	/* collect distinct exception repo IDs and resolve them into IDL_EXCEPT_DCL
-	 * nodes
-	 */
-	GLIST_FOREACH(cur, methods) {
-		IDL_tree op = cur->data;
-		for(IDL_tree r_cur = IDL_OP_DCL(op).raises_expr;
-			r_cur != NULL;
-			r_cur = IDL_LIST(r_cur).next)
-		{
-			IDL_tree exn_id = IDL_LIST(r_cur).data;
-			const char *rid = IDL_IDENT(exn_id).repo_id;
-			if(g_hash_table_lookup(ex_repo_ids, rid) == NULL) {
-				/* exn_id actually refers to the IDL_EXCEPT_DCL's ident node.
-				 * the actual exception is an immediate parent.
-				 */
-				IDL_tree exn = IDL_get_parent_node(exn_id, IDLN_EXCEPT_DCL,
-					NULL);
-				assert(exn != NULL);
-				assert(strcmp(rid, IDL_IDENT(IDL_EXCEPT_DCL(exn).ident).repo_id) == 0);
-				g_hash_table_insert(ex_repo_ids, g_strdup(rid), exn);
-			}
-		}
-	}
+	collect_exceptions(pr->ns, ex_repo_ids, iface);
 
 	/* output preprocessor-guarded externs for each, except the ones that are
 	 * raised by negative return value.
@@ -193,23 +170,8 @@ static void print_exn_raisers(struct print_ctx *pr, IDL_tree iface)
 		code_f(pr, "#ifndef %s", def);
 		code_f(pr, "#define %s 1", def);
 		code_f(pr, "/* for `%s' */", repo_id);
-		char **colon_parts = g_strsplit(repo_id, ":", 0);
-		assert(colon_parts != NULL);
-		assert(g_strv_length(colon_parts) >= 3);
-		char **scope_parts = g_strsplit(colon_parts[1], "/", 0);
-		assert(scope_parts != NULL);
-		int scope_len = g_strv_length(scope_parts);
-		assert(scope_len > 0);
-		GString *raiser_name = g_string_new("");
-		for(int i=0; i<scope_len; i++) {
-			bool last = i == scope_len - 1;
-			if(last) g_string_append(raiser_name, "raise_");
-			char *m = mangle_repo_id(scope_parts[i]);
-			g_string_append(raiser_name, m);
-			g_free(m);
-			if(!last) g_string_append_c(raiser_name, '_');
-		}
-		code_f(pr, "extern void %s(%s", raiser_name->str,
+		char *raiser_name = exn_raise_fn_name(exn);
+		code_f(pr, "extern void %s(%s", raiser_name,
 			IDL_EXCEPT_DCL(exn).members == NULL ? "void);" : "");
 		indent(pr, 1);
 		for(IDL_tree cur = IDL_EXCEPT_DCL(exn).members;
@@ -243,15 +205,12 @@ static void print_exn_raisers(struct print_ctx *pr, IDL_tree iface)
 
 		code_f(pr, "#endif /* %s */", def);
 
-		g_strfreev(scope_parts);
-		g_strfreev(colon_parts);
 		g_free(def);
 		g_free(mangled);
-		g_string_free(raiser_name, TRUE);
+		g_free(raiser_name);
 	}
 
 	g_hash_table_destroy(ex_repo_ids);
-	g_list_free(methods);
 }
 
 

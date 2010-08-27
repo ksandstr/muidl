@@ -34,7 +34,8 @@ check:
 
 muidl: muidl.o util.o analyse.o verify.o llvmutil.o attr.o l4x2.o \
 		message.o sequence.o types.o struct.o header.o common.o \
-		dispatch.o stub.o gen-stubs.o
+		dispatch.o stub.o except.o \
+		gen-stubs.o
 	$(CXX) -o $@ $^ $(CFLAGS) $(LIBS)
 
 

@@ -120,6 +120,11 @@
 		__name != NULL; \
 		__name = g_list_next(__name))
 
+#define IDL_LIST_FOREACH(__name, list) \
+	for(IDL_tree __name = (list); \
+		__name != NULL; \
+		__name = IDL_LIST(__name).next)
+
 
 struct print_ctx
 {
@@ -153,14 +158,15 @@ struct llvm_ctx
 	LLVMValueRef zero;
 	GList *malloc_ptrs;		/* LLVM free insns emitted at fn end */
 
+	void (*build_msgerr_bb)(struct llvm_ctx *);
+	LLVMBasicBlockRef msgerr_bb;
+
 	/* key: char * of struct repo id, value: LLVMValueRef of fn. key is
 	 * freed.
 	 *
 	 * (also contains the encoder functions.)
 	 */
 	GHashTable *struct_decoder_fns;
-
-	void (*build_msgerr_bb)(struct llvm_ctx *);
 
 	/* used by build_msg_{en,de}coder()
 	 * address of UTCB (pointer to ctx->wordt)
@@ -170,7 +176,7 @@ struct llvm_ctx
 	LLVMValueRef mr1, mr2, tag;
 
 	/* dispatcher-specific things */
-	LLVMBasicBlockRef reply_bb, msgerr_bb, wait_bb, alloc_bb;
+	LLVMBasicBlockRef reply_bb, wait_bb, alloc_bb;
 	LLVMValueRef vtab_arg, reply_tag, errval_phi, inline_seq_pos;
 	LLVMValueRef tpos, tmax, from;
 	LLVMValueRef stritem_len_fn;
@@ -178,6 +184,9 @@ struct llvm_ctx
 	/* stub-specific things */
 	LLVMBasicBlockRef exit_bb;
 	LLVMValueRef retval_phi;
+
+	/* things for except.c */
+	GHashTable *seen_exn_hash;
 };
 
 
@@ -520,6 +529,24 @@ extern gboolean iter_build_dispatchers(IDL_tree_func_data *tf, void *ctx);
 /* from stub.c */
 
 extern gboolean iter_build_stubs(IDL_tree_func_data *tf, void *ctxptr);
+
+
+/* from except.c */
+
+/* collect previously unseen distinct exception repo IDs and resolve them into
+ * IDL_EXCEPT_DCL nodes. inserts the result into seen_hash as dup(repo_id) ->
+ * except_dcl. returns the number of new entries in the hash.
+ */
+extern int collect_exceptions(
+	IDL_ns ns,
+	GHashTable *seen_hash,
+	IDL_tree iface);
+
+extern char *exn_raise_fn_name(IDL_tree exn);
+
+extern gboolean iter_build_exception_raise_fns(
+	IDL_tree_func_data *tf,
+	void *ctxptr);
 
 
 /* from sequence.c */
