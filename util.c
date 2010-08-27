@@ -1,5 +1,5 @@
 /*
- * util.c -- utilities for µidl
+ * util.c -- utilities for µIDL
  * Copyright 2009, 2010  Kalle A. Sandström <ksandstr@iki.fi>
  *
  * This file is part of µiX.
@@ -24,6 +24,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <ctype.h>
 #include <llvm-c/Core.h>
 
 #include "muidl.h"
@@ -208,4 +209,28 @@ LLVMValueRef build_malloc_storage(
 	LLVMDisposeBuilder(b);
 	ctx->malloc_ptrs = g_list_prepend(ctx->malloc_ptrs, ptr);
 	return ptr;
+}
+
+
+char *mangle_repo_id(const char *repo_id)
+{
+	int len = strlen(repo_id);
+	GString *str = g_string_sized_new(len + 16);
+	bool lower = false;
+	for(int i=0; i<len; i++) {
+		char c = repo_id[i];
+		assert(c != '\0');
+		if(!isalnum(c) && c != '_') {
+			c = '_';
+			lower = false;
+		} else if(isupper(c)) {
+			if(lower) g_string_append_c(str, '_');
+			c = tolower(c);
+			lower = false;
+		} else {
+			lower = true;
+		}
+		g_string_append_c(str, c);
+	}
+	return g_string_free(str, FALSE);
 }

@@ -145,6 +145,116 @@ static void print_vtable(
 }
 
 
+static void print_exn_raisers(struct print_ctx *pr, IDL_tree iface)
+{
+	GList *methods = all_methods_of_iface(pr->ns, iface);
+	GHashTable *ex_repo_ids = g_hash_table_new_full(&g_str_hash, &g_str_equal,
+		&g_free, NULL);
+	/* collect distinct exception repo IDs and resolve them into IDL_EXCEPT_DCL
+	 * nodes
+	 */
+	GLIST_FOREACH(cur, methods) {
+		IDL_tree op = cur->data;
+		for(IDL_tree r_cur = IDL_OP_DCL(op).raises_expr;
+			r_cur != NULL;
+			r_cur = IDL_LIST(r_cur).next)
+		{
+			IDL_tree exn_id = IDL_LIST(r_cur).data;
+			const char *rid = IDL_IDENT(exn_id).repo_id;
+			if(g_hash_table_lookup(ex_repo_ids, rid) == NULL) {
+				/* exn_id actually refers to the IDL_EXCEPT_DCL's ident node.
+				 * the actual exception is an immediate parent.
+				 */
+				IDL_tree exn = IDL_get_parent_node(exn_id, IDLN_EXCEPT_DCL,
+					NULL);
+				assert(exn != NULL);
+				assert(strcmp(rid, IDL_IDENT(IDL_EXCEPT_DCL(exn).ident).repo_id) == 0);
+				g_hash_table_insert(ex_repo_ids, g_strdup(rid), exn);
+			}
+		}
+	}
+
+	/* output preprocessor-guarded externs for each, except the ones that are
+	 * raised by negative return value.
+	 */
+	if(g_hash_table_size(ex_repo_ids) > 0) {
+		code_f(pr, "\n/* exception raisers */\n");
+	}
+	GHashTableIter iter;
+	g_hash_table_iter_init(&iter, ex_repo_ids);
+	gpointer key = NULL, value = NULL;
+	while(g_hash_table_iter_next(&iter, &key, &value)) {
+		const char *repo_id = key;
+		IDL_tree exn = value;
+		if(is_negs_exn(exn)) continue;
+
+		char *mangled = mangle_repo_id(repo_id);
+		char *def = g_strdup_printf("MUIDL_%s_RAISER_EXTERN", mangled);
+		code_f(pr, "#ifndef %s", def);
+		code_f(pr, "#define %s 1", def);
+		code_f(pr, "/* for `%s' */", repo_id);
+		char **colon_parts = g_strsplit(repo_id, ":", 0);
+		assert(colon_parts != NULL);
+		assert(g_strv_length(colon_parts) >= 3);
+		char **scope_parts = g_strsplit(colon_parts[1], "/", 0);
+		assert(scope_parts != NULL);
+		int scope_len = g_strv_length(scope_parts);
+		assert(scope_len > 0);
+		GString *raiser_name = g_string_new("");
+		for(int i=0; i<scope_len; i++) {
+			bool last = i == scope_len - 1;
+			if(last) g_string_append(raiser_name, "raise_");
+			char *m = mangle_repo_id(scope_parts[i]);
+			g_string_append(raiser_name, m);
+			g_free(m);
+			if(!last) g_string_append_c(raiser_name, '_');
+		}
+		code_f(pr, "extern void %s(%s", raiser_name->str,
+			IDL_EXCEPT_DCL(exn).members == NULL ? "void);" : "");
+		indent(pr, 1);
+		for(IDL_tree cur = IDL_EXCEPT_DCL(exn).members;
+			cur != NULL;
+			cur = IDL_LIST(cur).next)
+		{
+			const char *m_suffix = IDL_LIST(cur).next == NULL ? ");" : ",";
+			IDL_tree member = IDL_LIST(cur).data,
+				mtype = get_type_spec(IDL_MEMBER(member).type_spec);
+			for(IDL_tree d_cur = IDL_MEMBER(member).dcls;
+				d_cur != NULL;
+				d_cur = IDL_LIST(d_cur).next)
+			{
+				IDL_tree decl = IDL_LIST(d_cur).data;
+				IDL_tree name;
+				if(IDL_NODE_TYPE(decl) == IDLN_TYPE_ARRAY) {
+					name = IDL_TYPE_ARRAY(decl).ident;
+				} else if(IDL_NODE_TYPE(decl) == IDLN_IDENT) {
+					name = decl;
+				} else {
+					/* FIXME: what are these anyway */
+					NOTDEFINED(decl);
+				}
+				/* FIXME: output the correct type w/pointer when array */
+				code_f(pr, "[%s] %s%s", IDL_NODE_TYPE_NAME(mtype),
+					IDL_IDENT(name).str,
+					IDL_LIST(d_cur).next == NULL ? m_suffix : ",");
+			}
+		}
+		indent(pr, -1);
+
+		code_f(pr, "#endif /* %s */", def);
+
+		g_strfreev(scope_parts);
+		g_strfreev(colon_parts);
+		g_free(def);
+		g_free(mangled);
+		g_string_free(raiser_name, TRUE);
+	}
+
+	g_hash_table_destroy(ex_repo_ids);
+	g_list_free(methods);
+}
+
+
 static void print_extern_prototype(
 	struct print_ctx *pr,
 	const char *stubpfx,
@@ -490,6 +600,9 @@ void print_common_header(struct print_ctx *pr)
 			code_f(pr, "const struct %s_vtable *vtable);", vtprefix);
 			indent(pr, -1);
 			g_free(vtprefix);
+
+			/* exception raisers */
+			print_exn_raisers(pr, iface);
 
 			/* close off vtable selector */
 			code_f(pr, "\n#endif\n");

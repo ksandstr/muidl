@@ -398,6 +398,9 @@ extern void reset_warn_once(void);
 /* find x, where x->param_dcl == pdecl, or return NULL. */
 extern struct msg_param *find_pdecl(GList *params, IDL_tree pdecl);
 
+/* turn an IDL:blah/ItemName:1.0 repo id into a valid 1:1 C identifier */
+extern char *mangle_repo_id(const char *repo_id);
+
 
 /* these allocate from pr->tmpstrchunk. strings are valid until the next outer
  * print_into() returns.
