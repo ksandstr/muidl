@@ -24,6 +24,7 @@
 #include <llvm-c/Core.h>
 
 #include "muidl.h"
+#include "l4x2.h"
 #include "llvmutil.h"
 
 
@@ -117,4 +118,33 @@ void dispose_llvm_ctx(struct llvm_ctx *ctx)
 	g_hash_table_destroy(ctx->struct_decoder_fns);
 	LLVMContextDispose(ctx->ctx);
 	g_free(ctx);
+}
+
+
+LLVMBasicBlockRef begin_function(
+	struct llvm_ctx *ctx,
+	LLVMValueRef fn,
+	bool with_alloc)
+{
+	ctx->builder = LLVMCreateBuilderInContext(ctx->ctx);
+	ctx->msgerr_bb = NULL;
+	ctx->build_msgerr_bb = NULL;
+	BB entry_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "EntryBlock");
+
+	LLVMPositionBuilderAtEnd(ctx->builder, entry_bb);
+	ctx->utcb = build_utcb_get(ctx);
+	ctx->alloc_bb = with_alloc ? entry_bb : NULL;
+	ctx->malloc_ptrs = NULL;
+
+	return entry_bb;
+}
+
+
+void end_function(struct llvm_ctx *ctx, LLVMBasicBlockRef start_bb)
+{
+	BB prev = LLVMGetInsertBlock(ctx->builder);
+	LLVMPositionBuilderAtEnd(ctx->builder, ctx->alloc_bb);
+	build_free_mallocs(ctx);
+	LLVMBuildBr(ctx->builder, start_bb);
+	LLVMPositionBuilderAtEnd(ctx->builder, prev);
 }

@@ -497,24 +497,19 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 	ctx->vtab_arg = LLVMGetFirstParam(fn);
 	g_free(dispname);
 
-	ctx->builder = LLVMCreateBuilderInContext(ctx->ctx);
-	LLVMBasicBlockRef bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "EntryBlock"),
-		loop_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "loop"),
+	begin_function(ctx, fn, true);
+	ctx->build_msgerr_bb = &build_dispatcher_msgerr;
+	ctx->msgerr_bb = NULL;
+
+	BB loop_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "loop"),
 		exit_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "exit"),
 		ret_ec_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "ret_errcode"),
 		dispatch_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "dispatch");
 	ctx->wait_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "wait");
 	ctx->reply_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "reply");
 
-	ctx->build_msgerr_bb = &build_dispatcher_msgerr;
-	ctx->msgerr_bb = NULL;
-
 	/* the entry block. */
-	LLVMPositionBuilderAtEnd(ctx->builder, bb);
-	ctx->utcb = build_utcb_get(ctx);
-	ctx->alloc_bb = bb;
-	ctx->malloc_ptrs = NULL;
-	/* support context, & its pointer */
+	/* support context & its pointer */
 	V alloc_supp_fn = get_alloc_supp_ctx_fn(ctx),
 		uint_zero = CONST_INT(0);
 	LLVMBuildCall(ctx->builder, alloc_supp_fn, &uint_zero, 1, "");
@@ -718,13 +713,11 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 		}
 	}
 
-	/* close off the alloc (entry) block. */
-	LLVMPositionBuilderAtEnd(ctx->builder, ctx->alloc_bb);
-	LLVMBuildBr(ctx->builder, ctx->wait_bb);
-
-	/* and emit free insns for all blocks in the malloc list */
+	/* close off the alloc (entry) block and emit free insns for all blocks in
+	 * the malloc list
+	 */
 	LLVMPositionBuilderAtEnd(ctx->builder, exit_bb);
-	build_free_mallocs(ctx);
+	end_function(ctx, ctx->wait_bb);
 	LLVMBuildRet(ctx->builder, retval);
 
 	LLVMDisposeBuilder(ctx->builder);
