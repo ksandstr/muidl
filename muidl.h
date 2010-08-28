@@ -515,16 +515,6 @@ extern void print_common_header(struct print_ctx *pr);
 extern char *get_stub_prefix(IDL_tree opdcl);
 
 
-/* from gen-stubs.c */
-
-extern void print_stubs_file(struct print_ctx *pr);
-extern void print_generic_stub_decl(
-	struct print_ctx *pr,
-	const char *stubpfx,
-	IDL_tree op,
-	int timeout_kind);		/* nonzero adds _timeout to stub name */
-
-
 /* from common.c */
 
 extern gboolean iter_build_common_module(IDL_tree_func_data *, void *);
