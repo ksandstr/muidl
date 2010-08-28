@@ -163,8 +163,8 @@ static LLVMTypeRef exn_raise_fn_type(struct llvm_ctx *ctx, IDL_tree exn)
 				&& is_value_type(mtype))
 			{
 				typ = LLVMPointerType(llvm_value_type(ctx, mtype), 0);
-			} else if(is_rigid_type(ctx->ns, mtype)) {
-				/* rigid types are passed by pointer; an array of those is
+			} else if(!is_value_type(mtype)) {
+				/* nonvalue types are passed by pointer; an array of those is
 				 * just a pointer to more than one.
 				 */
 				typ = LLVMPointerType(llvm_rigid_type(ctx, mtype), 0);
