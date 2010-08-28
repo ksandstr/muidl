@@ -64,6 +64,15 @@ bool is_negs_exn(IDL_tree exn)
 }
 
 
+bool is_noreply_exn(IDL_tree exn)
+{
+	assert(IDL_NODE_TYPE(exn) == IDLN_EXCEPT_DCL);
+	/* FIXME: same as in is_negs_exn() */
+	const char *rid = IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL(exn).ident);
+	return strcmp(rid, "IDL:muidl/NoReply:1.0") == 0;
+}
+
+
 bool is_packed(IDL_tree struct_type)
 {
 	assert(IDL_NODE_TYPE(struct_type) == IDLN_TYPE_STRUCT);

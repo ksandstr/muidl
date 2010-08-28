@@ -498,8 +498,9 @@ extern bool has_pager_target(IDL_ns ns, IDL_tree op_dcl);
 extern bool is_packed(IDL_tree struct_type);
 extern int op_timeout_kind(IDL_tree opdcl);	/* returns mask of TIMEOUT_* */
 
-/* is this IDLN_EXCEPT_DCL a NegativeReturn exception? */
+/* is this IDLN_EXCEPT_DCL a NegativeReturn, or NoReply exception? */
 extern bool is_negs_exn(IDL_tree except_dcl);
+extern bool is_noreply_exn(IDL_tree except_dcl);
 
 
 /* from header.c */
