@@ -142,7 +142,7 @@ static LLVMTypeRef get_vtable_type(struct llvm_ctx *ctx, IDL_tree iface)
 		LLVMTypeRef rettyp = vtable_return_type(ctx, op, &ret_actual);
 		if(idl_rettyp != NULL && !ret_actual) {
 			vtable_out_param_type(ctx, arg_types, &arg_pos, idl_rettyp);
-			if(find_neg_exn(op) != NULL) rettyp = ctx->i32t;
+			if(find_exn(op, &is_negs_exn) != NULL) rettyp = ctx->i32t;
 			else rettyp = LLVMVoidTypeInContext(ctx->ctx);
 		}
 		for(IDL_tree p_cur = param_list;

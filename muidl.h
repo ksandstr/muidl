@@ -365,8 +365,9 @@ extern IDL_tree get_type_spec(IDL_tree node)
 /* find the type declaration of an IDL_ARRAY_TYPE. */
 extern IDL_tree get_array_type(IDL_tree type);
 
-/* find the NegativeReturn exception, or return NULL */
-extern IDL_tree find_neg_exn(IDL_tree opdcl);
+/* find an exception by predicate, or return NULL */
+extern IDL_tree find_exn(IDL_tree opdcl, bool (*pred)(IDL_tree exn));
+#define find_neg_exn(op) find_exn((op), &is_negs_exn)
 
 /* whether the given type can be returned to a dispatcher without ambiguity
  * even when a NegativeReturn exception is declared. (i.e. tests for octet and

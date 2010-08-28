@@ -207,7 +207,7 @@ char *decapsify(const char *name)
 }
 
 
-IDL_tree find_neg_exn(IDL_tree op)
+IDL_tree find_exn(IDL_tree op, bool (*pred)(IDL_tree exn))
 {
 	for(IDL_tree cur = IDL_OP_DCL(op).raises_expr;
 		cur != NULL;
@@ -215,7 +215,7 @@ IDL_tree find_neg_exn(IDL_tree op)
 	{
 		IDL_tree e = IDL_get_parent_node(IDL_LIST(cur).data,
 			IDLN_EXCEPT_DCL, NULL);
-		if(is_negs_exn(e)) return e;
+		if((*pred)(e)) return e;
 	}
 	return NULL;
 }
@@ -568,7 +568,7 @@ char *return_type(
 	if(real_p == NULL) real_p = &spare_bool;
 
 	IDL_tree op_type = get_type_spec(IDL_OP_DCL(op).op_type_spec);
-	if(find_neg_exn(op) != NULL || (!for_vtable && has_timeouts(op))) {
+	if(find_exn(op, &is_negs_exn) != NULL || (!for_vtable && has_timeouts(op))) {
 		*real_p = is_real_nre_return_type(op_type);
 		return g_strdup("int");
 	} else if(op_type == NULL || !is_value_type(op_type)) {

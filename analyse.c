@@ -651,7 +651,7 @@ static struct message_info *build_message(
 	inf->ret_type = is_outhalf ? return_type : NULL;
 	inf->ret_by_ref = return_type != NULL
 		&& (!is_value_type(return_type)
-			|| (find_neg_exn(op_dcl) != NULL
+			|| (find_exn(op_dcl, &is_negs_exn) != NULL
 				&& !is_real_nre_return_type(return_type)));
 
 	return inf;

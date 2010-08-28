@@ -2,7 +2,7 @@
 #ifndef SEEN_MUIDL_IDL_EXCEPT_IDL
 #define SEEN_MUIDL_IDL_EXCEPT_IDL
 
-
+#include "posix-base.idl"
 #include "muidl.idl"
 
 
@@ -22,6 +22,10 @@ interface ExceptTest
 	[Label(2)]
 	void chucker()
 		raises(muidl::NoReply);
+
+	[Label(3)]
+	void slinger(in long whatever, out short something)
+		raises(muidl::NoReply, TestException, Posix::Errno);
 };
 
 

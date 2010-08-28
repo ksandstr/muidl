@@ -238,7 +238,7 @@ static void build_ipc_stub(
 
 	/* IPC success path. */
 	LLVMPositionBuilderAtEnd(ctx->builder, noerr_bb);
-	if(find_neg_exn(inf->node) != NULL) {
+	if(find_exn(inf->node, &is_negs_exn) != NULL) {
 		/* the dreaded MSG_ERROR */
 		assert(!oneway);
 		V label = build_label_from_tag(ctx, ctx->tag),
