@@ -1,0 +1,28 @@
+
+#ifndef SEEN_MUIDL_IDL_EXCEPT_IDL
+#define SEEN_MUIDL_IDL_EXCEPT_IDL
+
+
+#include "muidl.idl"
+
+
+exception TestException
+{
+	long something;
+	octet other;
+	boolean condition;
+};
+
+interface ExceptTest
+{
+	[Label(1)]
+	void thrower()
+		raises(TestException, muidl::NoReply);
+
+	[Label(2)]
+	void chucker()
+		raises(muidl::NoReply);
+};
+
+
+#endif
