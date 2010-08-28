@@ -259,11 +259,10 @@ static LLVMBasicBlockRef build_op_decode(
 	char *name = !IS_EXN_MSG(inf)
 		? decapsify(IDL_IDENT(IDL_OP_DCL(inf->node).ident).str)
 		: decapsify(IDL_IDENT(IDL_EXCEPT_DCL(inf->node).ident).str);
-	char *opname = tmp_f(pr, "decode.%s", name);
-	LLVMBasicBlockRef bb = LLVMAppendBasicBlockInContext(ctx->ctx,
-		function, opname);
+	char *opname = tmp_f(pr, "%s.decode", name);
+	BB bb = LLVMAppendBasicBlockInContext(ctx->ctx, function, opname);
+	opname = tmp_f(pr, "%s", name);
 	g_free(name);
-	opname = &opname[7];	/* skip "decode." for value names */
 
 	LLVMTypeRef rv_type = vtable_return_type(ctx, inf->node, NULL);
 	const bool oneway = IDL_OP_DCL(inf->node).f_oneway;
