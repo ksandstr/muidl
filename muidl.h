@@ -482,6 +482,9 @@ extern struct stritem_info *dispatcher_stritems(GList *methods);
  */
 extern int size_in_bits(IDL_tree type);
 
+/* size of a rigid type in words, when encoded by itself. */
+extern int size_in_words(IDL_tree type);
+
 
 /* from verify.c */
 

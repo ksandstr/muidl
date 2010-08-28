@@ -32,7 +32,6 @@
 /* the size of a type's encoding in words, when encoded as a single
  * parameter or member of an array parameter.
  */
-static int size_in_words(IDL_tree type);
 static int array_size_in_words(IDL_tree type_array, IDL_tree dcl);
 static int struct_size_in_words(IDL_tree type_struct);
 
@@ -212,7 +211,7 @@ static int struct_size_in_words(IDL_tree type)
 }
 
 
-static int size_in_words(IDL_tree type)
+int size_in_words(IDL_tree type)
 {
 	switch(IDL_NODE_TYPE(type)) {
 		case IDLN_TYPE_INTEGER:
