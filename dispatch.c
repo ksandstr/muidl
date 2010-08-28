@@ -386,7 +386,7 @@ static LLVMBasicBlockRef build_op_decode(
 		V ok_cond = LLVMBuildICmp(ctx->builder, LLVMIntSGE, fncall,
 			CONST_INT(0), "rcneg.cond");
 		BB chain = add_sibling_block(ctx, "%s.%s", opname,
-			num_exns == 1 ? "pack_reply" : "next_ex");
+			num_exns == 1 ? "pack_reply" : "tag_exn_chk");
 		BB msgerr_bb = get_msgerr_bb(ctx);
 		branch_set_phi(ctx, ctx->errval_phi, fncall);
 		LLVMBuildCondBr(ctx->builder, ok_cond, chain, msgerr_bb);
@@ -394,33 +394,36 @@ static LLVMBasicBlockRef build_op_decode(
 		num_exns--;
 	}
 
-	V exn_tag = LLVMBuildLoad(ctx->builder,
-		LLVMBuildStructGEP(ctx->builder, ctx->supp_ctx_ptr,
-			SUPP_EXN_TAG_IX, "exn.tag.ptr"), "exn.tag");
-
-	/* then the noreply one. */
-	if(num_exns > 0 && find_noreply_exn(inf->node) != NULL) {
-		V noreply_cond = LLVMBuildICmp(ctx->builder, LLVMIntEQ, exn_tag,
-			CONST_WORD(~0ull), "noreply.cond");
-		BB chain = add_sibling_block(ctx, "%s.%s", opname,
-			num_exns == 1 ? "pack_reply" : "next_ex");
-		LLVMBuildCondBr(ctx->builder, noreply_cond, ctx->wait_bb, chain);
-		LLVMPositionBuilderAtEnd(ctx->builder, chain);
-		num_exns--;
-	}
-
-	/* the other exceptions. */
+	/* then no-reply and complex exceptions. */
 	if(num_exns > 0) {
-		V exn_cond = LLVMBuildICmp(ctx->builder, LLVMIntNE, exn_tag,
-			CONST_WORD(0), "exn.cond");
+		V exn_tag = LLVMBuildLoad(ctx->builder,
+			LLVMBuildStructGEP(ctx->builder, ctx->supp_ctx_ptr,
+				SUPP_EXN_TAG_IX, "exn.tag.ptr"), "exn.tag");
+		IDL_tree nre = find_noreply_exn(inf->node);
+		if(nre != NULL) num_exns--;
 		BB chain = add_sibling_block(ctx, "%s.pack_reply", opname);
-		branch_set_phi(ctx, ctx->reply_tag, exn_tag);
-		LLVMBuildCondBr(ctx->builder, exn_cond, ctx->reply_bb, chain);
+		if(num_exns == 0) {
+			assert(nre != NULL);
+			/* the nonreply one alone. */
+			V noreply_cond = LLVMBuildICmp(ctx->builder, LLVMIntEQ,
+				exn_tag, CONST_WORD(~0ull), "noreply.cond");
+			LLVMBuildCondBr(ctx->builder, noreply_cond, ctx->wait_bb, chain);
+		} else {
+			/* default: reply_bb, for propagating the exception contents. */
+			branch_set_phi(ctx, ctx->reply_tag, exn_tag);
+			V sw = LLVMBuildSwitch(ctx->builder, exn_tag,
+				ctx->reply_bb, nre != NULL ? 2 : 1);
+			if(nre != NULL) {
+				/* when ~0ull, goto wait_bb */
+				LLVMAddCase(sw, CONST_WORD(~0ull), ctx->wait_bb);
+			}
+			/* when 0, goto pack_reply */
+			LLVMAddCase(sw, CONST_WORD(0), chain);
+		}
 		LLVMPositionBuilderAtEnd(ctx->builder, chain);
-		num_exns = 0;
 	}
 
-	/* pack results from the non-exceptional return. */
+	/* pack outputs from the non-exceptional return. */
 	if(have_ret_by_val) {
 		/* fixup a by-val return value */
 		assert(is_value_type(reply->ret_type));
