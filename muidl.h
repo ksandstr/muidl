@@ -546,7 +546,10 @@ extern int collect_exceptions(
 	GHashTable *seen_hash,
 	IDL_tree iface);
 
-extern char *exn_raise_fn_name(IDL_tree exn);
+extern char *exn_raise_fn_name(IDL_tree except_dcl);
+
+/* this is expensive. */
+extern uint32_t exn_hash(IDL_tree except_dcl);
 
 extern gboolean iter_build_exception_raise_fns(
 	IDL_tree_func_data *tf,

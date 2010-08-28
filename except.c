@@ -19,6 +19,8 @@
  */
 
 #include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
 #include <glib.h>
 #include <libIDL/IDL.h>
 #include <llvm-c/Core.h>
@@ -26,6 +28,66 @@
 #include "muidl.h"
 #include "llvmutil.h"
 #include "l4x2.h"
+
+
+/* FIXME: this should go in util.c . */
+static uint32_t djb2_hash(const char *key)
+{
+	/* djb2 (k=33).
+	 * from http://www.cse.yorku.ca/~oz/hash.html
+	 */
+	uint32_t hash = 5381;
+	const uint8_t *s = (const uint8_t *)key;
+	int len = strlen(key);
+	for(int i=0; i<len; i++) {
+		hash = (hash << 5) + hash + s[i];
+	}
+	return hash;
+}
+
+
+/* this is expensive. */
+uint32_t exn_hash(IDL_tree exn)
+{
+	GString *str = g_string_sized_new(256);
+	int words_total = 0;
+
+	bool first = true;
+	IDL_LIST_FOREACH(m_cur, IDL_EXCEPT_DCL(exn).members) {
+		IDL_tree member = IDL_LIST(m_cur).data,
+			mtype = get_type_spec(IDL_MEMBER(member).type_spec);
+		int mtype_bits = size_in_bits(mtype),
+			mtype_words = size_in_words(mtype);
+		IDL_LIST_FOREACH(d_cur, IDL_MEMBER(member).dcls) {
+			IDL_tree dcl = IDL_LIST(d_cur).data;
+			int count = -1;
+			const char *name = "********";
+			if(IDL_NODE_TYPE(dcl) == IDLN_IDENT) {
+				count = 1;
+				name = IDL_IDENT(dcl).str;
+			} else if(IDL_NODE_TYPE(dcl) == IDLN_TYPE_ARRAY) {
+				count = 1;
+				name = IDL_IDENT(IDL_TYPE_ARRAY(dcl).ident).str;
+				IDL_LIST_FOREACH(size_cur, IDL_TYPE_ARRAY(dcl).size_list) {
+					count *= IDL_INTEGER(IDL_LIST(size_cur).data).value;
+				}
+			} else {
+				g_assert_not_reached();
+			}
+			if(first) first = false; else g_string_append_c(str, ' ');
+			g_string_append_printf(str, "%s:%d", name, count * mtype_bits);
+			words_total += count * mtype_words;
+		}
+	}
+
+	g_string_append_printf(str, "%s%s %d",
+		str->len > 0 ? " " : "",
+		IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL(exn).ident), words_total);
+	uint32_t ret = djb2_hash(str->str);
+	printf("`%s' hashes to %#lx\n", str->str, (unsigned long)ret);
+	g_string_free(str, TRUE);
+	return ret;
+}
 
 
 char *exn_raise_fn_name(IDL_tree exn)
