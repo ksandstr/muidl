@@ -264,6 +264,13 @@ static void build_read_ipc_parameter(
 	} else if(IS_LONGDOUBLE_TYPE(ctyp)) {
 		fprintf(stderr, "%s: long doubles are TODO\n", __func__);
 		abort();
+	} else if(IS_MAPGRANT_TYPE(ctyp)) {
+		dst[0] = build_local_storage(ctx, ctx->mapgrant, NULL,
+			"mapgrant.mem");
+		LLVMBuildStore(ctx->builder, build_ipc_input_val(ctx, first_mr),
+			LLVMBuildStructGEP(ctx->builder, dst[0], 0, "mgitem.info.ptr"));
+		LLVMBuildStore(ctx->builder, build_ipc_input_val(ctx, first_mr + 1),
+			LLVMBuildStructGEP(ctx->builder, dst[0], 1, "mgitem.fpage.ptr"));
 	} else if(is_value_type(ctyp)) {
 		/* appropriate for all value types. */
 		dst[0] = LLVMBuildTruncOrBitCast(ctx->builder,

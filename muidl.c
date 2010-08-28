@@ -284,12 +284,13 @@ bool is_value_type(IDL_tree type)
 			{
 				return true;
 			} else if(IS_MAPGRANT_TYPE(type)) {
-				return false;	/* rigid, but not single-word */
+				/* not a single-word type. */
+				return false;
 			} else {
 				/* FIXME: don't exit */
 				fprintf(stderr, "%s: unknown native type `%s'\n",
 					__FUNCTION__, NATIVE_NAME(type));
-				exit(EXIT_FAILURE);
+				abort();
 			}
 
 		/* value types. */
@@ -526,6 +527,13 @@ char *rigid_type(IDL_ns ns, IDL_tree type)
 			}
 		}
 
+		case IDLN_NATIVE:
+			if(IS_MAPGRANT_TYPE(type)) {
+				return g_strdup("L4_MapItem_t");
+			} else {
+				return value_type(ns, type);
+			}
+
 		case IDLN_TYPE_UNION:
 			/* TODO */
 
@@ -598,6 +606,14 @@ char *in_param_type(IDL_ns ns, IDL_tree tree)
 			g_free(tname);
 			return ret;
 		}
+
+		case IDLN_NATIVE:
+			if(IS_MAPGRANT_TYPE(tree)) {
+				/* FIXME: split these up at some point */
+				return g_strdup("L4_MapItem_t *");
+			} else {
+				/* FALL THRU */
+			}
 
 		case IDLN_TYPE_UNION:
 			/* TODO */
