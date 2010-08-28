@@ -180,6 +180,7 @@ struct llvm_ctx
 	LLVMValueRef vtab_arg, reply_tag, errval_phi, inline_seq_pos;
 	LLVMValueRef tpos, tmax, from;
 	LLVMValueRef stritem_len_fn;
+	LLVMValueRef supp_ctx_ptr;
 
 	/* stub-specific things */
 	LLVMBasicBlockRef exit_bb;
@@ -368,6 +369,7 @@ extern IDL_tree get_array_type(IDL_tree type);
 /* find an exception by predicate, or return NULL */
 extern IDL_tree find_exn(IDL_tree opdcl, bool (*pred)(IDL_tree exn));
 #define find_neg_exn(op) find_exn((op), &is_negs_exn)
+#define find_noreply_exn(op) find_exn((op), &is_noreply_exn)
 
 /* whether the given type can be returned to a dispatcher without ambiguity
  * even when a NegativeReturn exception is declared. (i.e. tests for octet and

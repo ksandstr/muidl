@@ -31,6 +31,48 @@
 #include "l4x2.h"
 
 
+/* FIXME: move these three into support.c or some such */
+static LLVMTypeRef llvm_supp_ctx_type(struct llvm_ctx *ctx)
+{
+	/* last_sender, last_tag, exn_tag */
+	T types[3] = { ctx->wordt, ctx->wordt, ctx->wordt };
+	return LLVMStructTypeInContext(ctx->ctx, types, 3, 0);
+}
+#define SUPP_LAST_SENDER_IX 0
+#define SUPP_LAST_TAG_IX 1
+#define SUPP_EXN_TAG_IX 2
+
+
+static LLVMValueRef get_alloc_supp_ctx_fn(struct llvm_ctx *ctx)
+{
+	V fn = LLVMGetNamedFunction(ctx->module, "muidl_supp_alloc_context");
+	if(fn == NULL) {
+		T fnt = LLVMFunctionType(LLVMVoidTypeInContext(ctx->ctx),
+			&ctx->i32t, 1, 0);
+		fn = LLVMAddFunction(ctx->module, "muidl_supp_alloc_context", fnt);
+	}
+	assert(fn != NULL);
+	return fn;
+}
+
+
+/* also called from except.c . */
+LLVMValueRef build_fetch_supp_ctx(struct llvm_ctx *ctx)
+{
+	V fn = LLVMGetNamedFunction(ctx->module, "muidl_supp_get_context");
+	if(fn == NULL) {
+		T fnt = LLVMFunctionType(
+			LLVMPointerType(LLVMInt8TypeInContext(ctx->ctx), 0),
+			NULL, 0, 0);
+		fn = LLVMAddFunction(ctx->module, "muidl_supp_get_context", fnt);
+	}
+	assert(fn != NULL);
+	V rawptr = LLVMBuildCall(ctx->builder, fn, NULL, 0, "suppctx.ptr.raw");
+	return LLVMBuildPointerCast(ctx->builder, rawptr,
+		LLVMPointerType(llvm_supp_ctx_type(ctx), 0), "suppctx.ptr");
+}
+
+
 static LLVMValueRef build_ipcfailed_cond(
 	struct llvm_ctx *ctx,
 	LLVMValueRef mr0)
@@ -142,7 +184,7 @@ static LLVMTypeRef get_vtable_type(struct llvm_ctx *ctx, IDL_tree iface)
 		LLVMTypeRef rettyp = vtable_return_type(ctx, op, &ret_actual);
 		if(idl_rettyp != NULL && !ret_actual) {
 			vtable_out_param_type(ctx, arg_types, &arg_pos, idl_rettyp);
-			if(find_exn(op, &is_negs_exn) != NULL) rettyp = ctx->i32t;
+			if(find_neg_exn(op) != NULL) rettyp = ctx->i32t;
 			else rettyp = LLVMVoidTypeInContext(ctx->ctx);
 		}
 		for(IDL_tree p_cur = param_list;
@@ -318,6 +360,12 @@ static LLVMBasicBlockRef build_op_decode(
 			"inlseq.len");
 		args[seq->arg_ix + 1] = len;
 	}
+	if(inf->num_reply_msgs > 1) {
+		/* if exceptions can be raised, clear the indicator. */
+		LLVMBuildStore(ctx->builder, CONST_WORD(0),
+			LLVMBuildStructGEP(ctx->builder, ctx->supp_ctx_ptr,
+				SUPP_EXN_TAG_IX, "exn.tag.ptr"));
+	}
 	V fnptr = LLVMBuildLoad(ctx->builder,
 		LLVMBuildStructGEP(ctx->builder, ctx->vtab_arg, inf->vtab_offset,
 				tmp_f(pr, "%s.offs", opname)),
@@ -331,26 +379,48 @@ static LLVMBasicBlockRef build_op_decode(
 		goto end;
 	}
 
-	LLVMBasicBlockRef pr_bb = LLVMAppendBasicBlockInContext(ctx->ctx,
-			function, tmp_f(pr, "%s.pack_reply", opname)),
-		ex_chain_bb = pr_bb;	/* exception chain, or result packer */
-
-	/* TODO: exceptions! */
-
-	IDL_tree n_ex = find_neg_exn(inf->node);
-	if(n_ex == NULL) LLVMBuildBr(ctx->builder, ex_chain_bb);
-	else {
+	/* check raised exceptions: first, the negativereturn one. */
+	int num_exns = inf->num_reply_msgs - 1;
+	if(num_exns > 0 && find_neg_exn(inf->node) != NULL) {
 		/* examine NegativeReturn exception trigger */
-		LLVMValueRef ok_cond = LLVMBuildICmp(ctx->builder, LLVMIntSGE, fncall,
-			LLVMConstInt(ctx->i32t, 0, 1), "rcneg.cond");
-		LLVMBasicBlockRef current_bb = LLVMGetInsertBlock(ctx->builder),
-			msgerr_bb = get_msgerr_bb(ctx);
-		LLVMAddIncoming(ctx->errval_phi, &fncall, &current_bb, 1);
-		LLVMBuildCondBr(ctx->builder, ok_cond, ex_chain_bb, msgerr_bb);
+		V ok_cond = LLVMBuildICmp(ctx->builder, LLVMIntSGE, fncall,
+			CONST_INT(0), "rcneg.cond");
+		BB chain = add_sibling_block(ctx, "%s.%s", opname,
+			num_exns == 1 ? "pack_reply" : "next_ex");
+		BB msgerr_bb = get_msgerr_bb(ctx);
+		branch_set_phi(ctx, ctx->errval_phi, fncall);
+		LLVMBuildCondBr(ctx->builder, ok_cond, chain, msgerr_bb);
+		LLVMPositionBuilderAtEnd(ctx->builder, chain);
+		num_exns--;
+	}
+
+	V exn_tag = LLVMBuildLoad(ctx->builder,
+		LLVMBuildStructGEP(ctx->builder, ctx->supp_ctx_ptr,
+			SUPP_EXN_TAG_IX, "exn.tag.ptr"), "exn.tag");
+
+	/* then the noreply one. */
+	if(num_exns > 0 && find_noreply_exn(inf->node) != NULL) {
+		V noreply_cond = LLVMBuildICmp(ctx->builder, LLVMIntEQ, exn_tag,
+			CONST_WORD(~0ull), "noreply.cond");
+		BB chain = add_sibling_block(ctx, "%s.%s", opname,
+			num_exns == 1 ? "pack_reply" : "next_ex");
+		LLVMBuildCondBr(ctx->builder, noreply_cond, ctx->wait_bb, chain);
+		LLVMPositionBuilderAtEnd(ctx->builder, chain);
+		num_exns--;
+	}
+
+	/* the other exceptions. */
+	if(num_exns > 0) {
+		V exn_cond = LLVMBuildICmp(ctx->builder, LLVMIntNE, exn_tag,
+			CONST_WORD(0), "exn.cond");
+		BB chain = add_sibling_block(ctx, "%s.pack_reply", opname);
+		branch_set_phi(ctx, ctx->reply_tag, exn_tag);
+		LLVMBuildCondBr(ctx->builder, exn_cond, ctx->reply_bb, chain);
+		LLVMPositionBuilderAtEnd(ctx->builder, chain);
+		num_exns = 0;
 	}
 
 	/* pack results from the non-exceptional return. */
-	LLVMPositionBuilderAtEnd(ctx->builder, pr_bb);
 	if(have_ret_by_val) {
 		/* fixup a by-val return value */
 		assert(is_value_type(reply->ret_type));
@@ -423,48 +493,6 @@ static void build_set_strbufs(
 }
 
 
-/* FIXME: move these three into support.c or some such */
-static LLVMTypeRef llvm_supp_ctx_type(struct llvm_ctx *ctx)
-{
-	/* last_sender, last_tag, exn_tag */
-	T types[3] = { ctx->wordt, ctx->wordt, ctx->wordt };
-	return LLVMStructTypeInContext(ctx->ctx, types, 3, 0);
-}
-#define SUPP_LAST_SENDER_IX 0
-#define SUPP_LAST_TAG_IX 1
-#define SUPP_EXN_TAG_IX 2
-
-
-static LLVMValueRef get_alloc_supp_ctx_fn(struct llvm_ctx *ctx)
-{
-	V fn = LLVMGetNamedFunction(ctx->module, "muidl_supp_alloc_context");
-	if(fn == NULL) {
-		T fnt = LLVMFunctionType(LLVMVoidTypeInContext(ctx->ctx),
-			&ctx->i32t, 1, 0);
-		fn = LLVMAddFunction(ctx->module, "muidl_supp_alloc_context", fnt);
-	}
-	assert(fn != NULL);
-	return fn;
-}
-
-
-/* also called from except.c . */
-LLVMValueRef build_fetch_supp_ctx(struct llvm_ctx *ctx)
-{
-	V fn = LLVMGetNamedFunction(ctx->module, "muidl_supp_get_context");
-	if(fn == NULL) {
-		T fnt = LLVMFunctionType(
-			LLVMPointerType(LLVMInt8TypeInContext(ctx->ctx), 0),
-			NULL, 0, 0);
-		fn = LLVMAddFunction(ctx->module, "muidl_supp_get_context", fnt);
-	}
-	assert(fn != NULL);
-	V rawptr = LLVMBuildCall(ctx->builder, fn, NULL, 0, "suppctx.ptr.raw");
-	return LLVMBuildPointerCast(ctx->builder, rawptr,
-		LLVMPointerType(llvm_supp_ctx_type(ctx), 0), "suppctx.ptr");
-}
-
-
 static gint method_by_tagmask_cmp(gconstpointer ap, gconstpointer bp)
 {
 	const struct method_info *a = ap, *b = bp;
@@ -515,7 +543,7 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 	V alloc_supp_fn = get_alloc_supp_ctx_fn(ctx),
 		uint_zero = CONST_INT(0);
 	LLVMBuildCall(ctx->builder, alloc_supp_fn, &uint_zero, 1, "");
-	V supp_ctx_ptr = build_fetch_supp_ctx(ctx);
+	ctx->supp_ctx_ptr = build_fetch_supp_ctx(ctx);
 	/* store xfer timeouts at point of entry, i.e. as they are given by the
 	 * caller.
 	 */
@@ -611,10 +639,10 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 	LLVMPositionBuilderAtEnd(ctx->builder, dispatch_bb);
 	/* update the skel context. */
 	LLVMBuildStore(ctx->builder, ctx->from,
-		LLVMBuildStructGEP(ctx->builder, supp_ctx_ptr,
+		LLVMBuildStructGEP(ctx->builder, ctx->supp_ctx_ptr,
 			SUPP_LAST_SENDER_IX, "supp.last_sender.ptr"));
 	LLVMBuildStore(ctx->builder, ctx->tag,
-		LLVMBuildStructGEP(ctx->builder, supp_ctx_ptr,
+		LLVMBuildStructGEP(ctx->builder, ctx->supp_ctx_ptr,
 			SUPP_LAST_TAG_IX, "supp.last_tag.ptr"));
 	/* TODO: get the correct value */
 	LLVMValueRef labelswitch = LLVMBuildSwitch(ctx->builder,
