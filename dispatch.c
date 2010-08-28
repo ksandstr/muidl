@@ -426,12 +426,13 @@ static void build_set_strbufs(
 /* FIXME: move these three into support.c or some such */
 static LLVMTypeRef llvm_supp_ctx_type(struct llvm_ctx *ctx)
 {
-	/* two words: last_sender, and last_tag. */
-	T types[2] = { ctx->wordt, ctx->wordt };
-	return LLVMStructTypeInContext(ctx->ctx, types, 2, 0);
+	/* last_sender, last_tag, exn_tag */
+	T types[3] = { ctx->wordt, ctx->wordt, ctx->wordt };
+	return LLVMStructTypeInContext(ctx->ctx, types, 3, 0);
 }
 #define SUPP_LAST_SENDER_IX 0
 #define SUPP_LAST_TAG_IX 1
+#define SUPP_EXN_TAG_IX 2
 
 
 static LLVMValueRef get_alloc_supp_ctx_fn(struct llvm_ctx *ctx)
@@ -447,7 +448,8 @@ static LLVMValueRef get_alloc_supp_ctx_fn(struct llvm_ctx *ctx)
 }
 
 
-static LLVMValueRef build_fetch_supp_ctx(struct llvm_ctx *ctx)
+/* also called from except.c . */
+LLVMValueRef build_fetch_supp_ctx(struct llvm_ctx *ctx)
 {
 	V fn = LLVMGetNamedFunction(ctx->module, "muidl_supp_get_context");
 	if(fn == NULL) {

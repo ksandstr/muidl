@@ -456,6 +456,8 @@ extern LLVMValueRef build_malloc_storage(
 
 extern struct method_info *analyse_op_dcl(struct print_ctx *pr, IDL_tree op);
 
+extern struct message_info *build_exception_message(IDL_tree except_dcl);
+
 /* collect all operations of the interface given (including those in
  * subclasses, as per all_methods_of_iface()), separate tag-masked operations
  * into a given list, sort the rest by ascending label and return. result is a
@@ -528,6 +530,7 @@ extern gboolean iter_build_common_module(IDL_tree_func_data *, void *);
 /* from dispatch.c */
 
 extern gboolean iter_build_dispatchers(IDL_tree_func_data *tf, void *ctx);
+extern LLVMValueRef build_fetch_supp_ctx(struct llvm_ctx *ctx);
 
 
 /* from stub.c */

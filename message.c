@@ -129,7 +129,8 @@ LLVMValueRef build_msg_encoder(
 		const struct msg_param *u = cur->data;
 		IDL_tree type = u->X.untyped.type;
 		const int first_reg = u->X.untyped.first_reg;
-		bool inout = IDL_PARAM_DCL(u->param_dcl).attr == IDL_PARAM_INOUT;
+		bool inout = u->param_dcl != NULL
+			&& IDL_PARAM_DCL(u->param_dcl).attr == IDL_PARAM_INOUT;
 #if 0
 		printf("param `%s' (%p): arg_ix %d, regs [%d..%d], argval %p, type <%s>\n",
 			u->name, u, u->arg_ix, first_reg, u->X.untyped.last_reg,

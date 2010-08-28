@@ -191,11 +191,38 @@ static LLVMValueRef build_exn_raise_fn(
 	T fntype = exn_raise_fn_type(ctx, exn);
 	V fn = LLVMAddFunction(ctx->module, fn_name, fntype);
 	begin_function(ctx, fn);
-
 	BB start_bb = add_sibling_block(ctx, "start"),
 		exit_bb = add_sibling_block(ctx, "exit");
+
 	LLVMPositionBuilderAtEnd(ctx->builder, start_bb);
-	/* TODO: ... */
+	V supp_ptr = build_fetch_supp_ctx(ctx);
+
+	V tag;
+	if(is_noreply_exn(exn)) {
+		/* special thing. */
+		tag = CONST_WORD(~0ull);
+	} else {
+		tag = LLVMBuildShl(ctx->builder, CONST_WORD(2), CONST_WORD(16),
+			"label.shifted");
+		struct message_info *msg = build_exception_message(exn);
+		msg->label = 2;
+		msg->sublabel = exn_hash(exn);
+		unsigned num_args = LLVMCountParams(fn);
+		V *args = g_new(V, num_args);
+		LLVMGetParams(fn, args);
+		tag = build_msg_encoder(ctx, msg, NULL, args, false);
+		g_free(args);
+		free_message_info(msg);
+	}
+
+	/* store the tag to indicate a raised exception. */
+	/* FIXME: "2" is external knowledge; it's defined as SUPP_EXN_TAG_IX in
+	 * dispatch.c, and should be moved into muidl.h .
+	 */
+	LLVMBuildStore(ctx->builder, tag,
+		LLVMBuildStructGEP(ctx->builder, supp_ptr, 2,
+			"supp.exntag.ptr"));
+
 	LLVMBuildBr(ctx->builder, exit_bb);
 
 	LLVMPositionBuilderAtEnd(ctx->builder, exit_bb);

@@ -662,18 +662,64 @@ fail:
 }
 
 
-static struct message_info *build_exception_message(IDL_tree exn)
+struct message_info *build_exception_message(IDL_tree exn)
 {
-	/* FIXME */
-#if 0
-	fprintf(stderr, "would build a credible exception message for `%s' here\n",
-		IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL(exn).ident));
-#endif
-
-	struct message_info *msg = g_malloc0(sizeof(struct message_info)
-		+ 0 * sizeof(IDL_tree));
+	struct message_info *msg = g_new(struct message_info, 1);
+	msg->label = 2;
+	msg->sublabel = NO_SUBLABEL;
 	msg->tagmask = NO_TAGMASK;
+	msg->tag_t = 0;
+
 	msg->node = exn;
+	msg->ret_type = NULL;
+	msg->ret_by_ref = false;
+
+	msg->params = NULL;
+	msg->untyped = NULL;
+	msg->seq = NULL;
+	msg->_long = NULL;
+
+	/* construct untyped parameters for exception members */
+	int param_ix = 0;
+	msg->tag_u = 2;
+	IDL_LIST_FOREACH(m_cur, IDL_EXCEPT_DCL(exn).members) {
+		IDL_tree member = IDL_LIST(m_cur).data,
+			mtype = get_type_spec(IDL_MEMBER(member).type_spec);
+		assert(is_rigid_type(NULL, mtype));
+		IDL_LIST_FOREACH(d_cur, IDL_MEMBER(member).dcls) {
+			IDL_tree dcl = IDL_LIST(d_cur).data;
+			int count = -1, words = -1;
+			bool is_array = false;
+			const char *name = NULL;
+			if(IDL_NODE_TYPE(dcl) == IDLN_IDENT) {
+				count = 1;
+				words = size_in_words(mtype);
+				name = IDL_IDENT(dcl).str;
+			} else if(IDL_NODE_TYPE(dcl) == IDLN_TYPE_ARRAY) {
+				count = 1;
+				is_array = true;
+				IDL_LIST_FOREACH(size_cur, IDL_TYPE_ARRAY(dcl).size_list) {
+					count *= IDL_INTEGER(IDL_LIST(size_cur).data).value;
+				}
+				words = size_in_words(dcl);
+				name = IDL_IDENT(IDL_TYPE_ARRAY(dcl).ident).str;
+			} else {
+				g_assert_not_reached();
+			}
+
+			struct msg_param *u = new_untyped(name,
+				is_array ? dcl : mtype, NULL, param_ix);
+			u->X.untyped.first_reg = msg->tag_u;
+			u->X.untyped.last_reg = msg->tag_u + words - 1;
+			u->arg_ix = param_ix;	/* always one each */
+			msg->tag_u += words;
+			param_ix++;
+			msg->untyped = g_list_prepend(msg->untyped, u);
+		}
+	}
+
+	msg->untyped = g_list_reverse(msg->untyped);
+	msg->tag_u--;
 
 	return msg;
 }
