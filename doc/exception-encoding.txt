@@ -1,0 +1,37 @@
+
+Exceptional results from operations.
+
+There are two kinds of exceptional results from operations that are encoded as
+a reply IPC: negativereturn exceptions (with a single unsigned short, short,
+or octet field) and complex exceptions. The first is encoded simply as label =
+1, mr1 = errval.
+
+Complex exceptions are encoded as label = 2, mr1 = exnhash. exnhash is
+computed as per djb2 (with k=33, initial hash = 5381) from an input string
+that consists of the following, each entry separated by a space:
+
+  - for each element, the element's name, followed by a colon, followed by bit
+    size, separated by space;
+  - the repository ID of the exception;
+  - the sum of the word sizes of the exception's elements as base-10 string
+    representation without leading zeroes or sign.
+
+Integers are represented in base-10 as ASCII strings without leading zeroes or
+sign.
+
+Thus for instance, the following exception:
+
+exception TestFailure {
+	long foo;
+	octet bar;
+	boolean truth;
+	octet change[7];
+};
+
+Would be identified by the djb2 hash of "foo:32 bar:8 truth:1 change:56
+IDL:TestFailure:1.0 4".
+
+
+A complex exception is encoded as though it were a series of in-parameters,
+starting at mr2. µIDL will not accept an operation that raises two exceptions
+with identical hashes.
