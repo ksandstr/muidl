@@ -1137,7 +1137,8 @@ static char *join_cpp_opts(const char *parm, char **strv)
 	}
 	GString *buf = g_string_sized_new(num * (16 + strlen(parm)));
 	for(int i=0; i<num; i++) {
-		g_string_append_printf(buf, "%s '%s'", parm, strv[i]);
+		g_string_append_printf(buf, "%s%s '%s'", i > 0 ? " " : "",
+			parm, strv[i]);
 	}
 	return g_string_free(buf, FALSE);
 }
