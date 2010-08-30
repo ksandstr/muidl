@@ -24,6 +24,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdbool.h>
+#include <ctype.h>
 #include <libIDL/IDL.h>
 
 #include "muidl.h"
@@ -44,6 +45,12 @@ static void fail(struct ver_ctx *v, const char *fmt, ...)
 static void failv(struct ver_ctx *v, const char *fmt, va_list al)
 {
 	char *tmp = g_strdup_vprintf(fmt, al);
+	int len = strlen(tmp);
+	while(isblank(tmp[len - 1])) {
+		tmp[len - 1] = '\0';
+		len--;
+	}
+	assert(strlen(tmp) == len);
 	fprintf(stderr, "%s\n", tmp);
 	g_free(tmp);
 	v->failed = true;
