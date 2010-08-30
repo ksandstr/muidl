@@ -160,20 +160,6 @@ void print_file_heading(struct print_ctx *pr)
 }
 
 
-const char *seq_len_lvalue(
-	struct print_ctx *pr,
-	IDL_tree param,
-	const char *var_prefix,
-	const char *name,
-	bool for_dispatcher)
-{
-	enum IDL_param_attr attr = IDL_PARAM_DCL(param).attr;
-	bool ptr = attr != IDL_PARAM_IN && !for_dispatcher;
-	return tmp_f(pr, "%s%s%s_len%s", ptr ? "*" : "", var_prefix, name,
-		ptr ? "_ptr" : "");
-}
-
- 
 /* TODO: callsites to this here thing should recycle compatible chunks of
  * memory, rather than allocating their own for each. this is a low-hanging
  * space optimization.
