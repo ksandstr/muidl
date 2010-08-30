@@ -276,6 +276,7 @@ bool is_value_type(IDL_tree type)
 		case IDLN_TYPE_FIXED:
 		case IDLN_TYPE_STRING:
 		case IDLN_TYPE_WIDE_STRING:
+		case IDLN_INTERFACE:
 			return false;
 
 		case IDLN_NATIVE:
