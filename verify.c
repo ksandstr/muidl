@@ -141,8 +141,6 @@ static gboolean supported_types_only(IDL_tree_func_data *tf, gpointer udptr)
 		case IDLN_TYPE_OBJECT:
 		case IDLN_TYPE_ANY:
 		case IDLN_TYPE_TYPECODE:
-		case IDLN_TYPE_FLOAT:
-		case IDLN_TYPE_UNION:
 			fail(v, "type <%s> not supported", IDL_NODE_TYPE_NAME(node));
 			return FALSE;
 
@@ -175,6 +173,40 @@ static gboolean supported_types_only(IDL_tree_func_data *tf, gpointer udptr)
 				fail(v, "arrays must have a single dimension");
 			}
 			break;
+
+		/* structs and unions must be rigid, and therefore can't contain
+		 * sequences or strings.
+		 */
+		case IDLN_TYPE_STRUCT:
+			IDL_LIST_FOREACH(cur, IDL_TYPE_STRUCT(node).member_list) {
+				IDL_tree member = IDL_LIST(cur).data,
+					mtype = get_type_spec(IDL_MEMBER(member).type_spec);
+				if(!is_rigid_type(NULL, mtype)) {
+					fail(v, "struct fields' types must be rigid (<%s> not allowed)",
+						IDL_NODE_TYPE_NAME(mtype));
+				}
+			}
+			break;
+
+		case IDLN_TYPE_UNION: {
+			const char *uname = IDL_IDENT(IDL_TYPE_UNION(node).ident).str;
+			IDL_tree swtype = get_type_spec(
+				IDL_TYPE_UNION(node).switch_type_spec);
+			if(!is_value_type(swtype)) {
+				fail(v, "union %s: discriminator type can't be <%s>", uname,
+					IDL_NODE_TYPE_NAME(swtype));
+			}
+			IDL_LIST_FOREACH(cur, IDL_TYPE_UNION(node).switch_body) {
+				IDL_tree body = IDL_LIST(cur).data,
+					elem = IDL_CASE_STMT(body).element_spec,
+					elemtype = get_type_spec(IDL_MEMBER(elem).type_spec);
+				if(!is_rigid_type(NULL, elemtype)) {
+					fail(v, "union %s: field types must be rigid (not <%s>)",
+						uname, IDL_NODE_TYPE_NAME(elemtype));
+				}
+			}
+			break;
+		}
 
 		default:
 			break;
