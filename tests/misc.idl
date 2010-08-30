@@ -1,5 +1,5 @@
 /*
- * test.idl -- general test-case playground
+ * tests/misc.idl -- miscellaneous test cases
  * Copyright 2009, 2010  Kalle A. Sandström <ksandstr@iki.fi>
  *
  * This file is part of µiX.
