@@ -594,57 +594,13 @@ static struct message_info *build_message(
 	if(untyped_remove != NULL) g_list_free(untyped_remove);
 
 	inf->untyped = untyped;
+	inf->seq = seq;
+	inf->_long = _long;
+
 	inf->tag_u = 0;
 	for(int i = 1; i < 64; i++) {
 		if(reg_in_use[i]) inf->tag_u = i;
 	}
-#if 0
-	GLIST_FOREACH(cur, inf->untyped) {
-		struct msg_param *p = cur->data;
-		printf("untyped `%s' (%p): p %d, arg %d, regs [%d, %d]\n",
-			p->name, p, p->param_ix, p->arg_ix,
-			p->X.untyped.first_reg, p->X.untyped.last_reg);
-	}
-#endif
-
-#if 0
-	/* allocate inline sequences.
-	 * (v2 todo: this, too, is really a knapsack problem. we'd want to get as
-	 * few string transfers as possible. but the algorithm would have to
-	 * provably output the optimal solution.)
-	 */
-	inf->num_inline_seq = g_list_length(seq);
-	inf->seq = g_new(struct seq_param *, inf->num_inline_seq);
-	pos = 0;
-	int min_mr = next_mr - 1, max_mr = next_mr - 1;
-	for(GList *cur = g_list_first(seq);
-		cur != NULL;
-		cur = g_list_next(cur))
-	{
-		struct seq_param *s = cur->data;
-		inf->seq[pos++] = s;
-
-		if(g_list_next(cur) != NULL) {
-			/* inline sequences before the last require an explicit length
-			 * word.
-			 */
-			s->min_words++;
-			s->max_words++;
-		}
-
-		if(min_mr + s->min_words > 63 || max_mr + s->max_words > 63) {
-			fprintf(stderr, "%s: sequence of [%d..%d] words %s fit\n",
-				__FUNCTION__, (int)s->min_words, (int)s->max_words,
-				min_mr + s->min_words > 63 ? "won't" : "might not");
-		}
-
-		min_mr += s->min_words;
-		max_mr += s->max_words;
-	}
-#endif
-	inf->seq = seq;
-
-	inf->_long = _long;
 	/* for now, µIDL only produces 2-word typed items. */
 	inf->tag_t = g_list_length(inf->_long) * 2;
 
