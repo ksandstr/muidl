@@ -541,6 +541,7 @@ static struct message_info *build_message(
 	 * problem would have to be proven optimal to fit as well. (v2 todo?)
 	 */
 	inf = g_new0(struct message_info, 1);		/* 0'd for g_free() safety */
+	inf->ctx_index = -1;
 	inf->params = params;
 	int num_seq = g_list_length(seq), num_long = g_list_length(_long);
 
@@ -622,9 +623,10 @@ struct message_info *build_exception_message(IDL_tree exn)
 {
 	struct message_info *msg = g_new(struct message_info, 1);
 	msg->label = 2;
-	msg->sublabel = NO_SUBLABEL;
+	msg->sublabel = exn_hash(exn);
 	msg->tagmask = NO_TAGMASK;
 	msg->tag_t = 0;
+	msg->ctx_index = -1;
 
 	msg->node = exn;
 	msg->ret_type = NULL;
@@ -741,6 +743,35 @@ struct method_info *analyse_op_dcl(
 			expos++;
 		}
 		assert(expos == num_replies);
+
+		/* fill in their index in the interface context union. */
+		IDL_tree iface = IDL_get_parent_node(method, IDLN_INTERFACE, NULL);
+		assert(iface != NULL);
+		GHashTable *exn_hash = g_hash_table_new(&g_str_hash, &g_str_equal);
+		collect_exceptions(pr->ns, exn_hash, iface);
+		GList *order_exns = iface_exns_in_order(exn_hash);
+		g_hash_table_destroy(exn_hash);
+		int ctx_pos = 0;
+		GLIST_FOREACH(e_cur, order_exns) {
+			ctx_pos++;		/* numbered from 1 on */
+			struct message_info *e = NULL;
+			for(int i=1; i<expos; i++) {
+				if(inf->replies[i]->node == e_cur->data) {
+					e = inf->replies[i];
+					break;
+				}
+			}
+			if(e != NULL) {
+				/* exception appears in this method. */
+				e->ctx_index = ctx_pos;
+			}
+		}
+
+#ifndef NDEBUG
+		for(int i=1; i<expos; i++) {
+			assert(inf->replies[i]->ctx_index > 0);
+		}
+#endif
 	}
 
 	/* check that there is at most one NegativeReturn exception per

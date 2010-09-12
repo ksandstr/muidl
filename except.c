@@ -115,10 +115,6 @@ char *exn_raise_fn_name(IDL_tree exn)
 }
 
 
-/* collect distinct exception repo IDs and resolve them into IDL_EXCEPT_DCL
- * nodes. inserts the result into seen_hash as dup(repo_id) -> except_dcl.
- * returns the number of new exceptions seen.
- */
 int collect_exceptions(IDL_ns ns, GHashTable *ex_repo_ids, IDL_tree iface)
 {
 	int ret = 0;
@@ -147,6 +143,24 @@ int collect_exceptions(IDL_ns ns, GHashTable *ex_repo_ids, IDL_tree iface)
 	g_list_free(methods);
 
 	return ret;
+}
+
+
+static int exns_by_repoid_cmp(gconstpointer a, gconstpointer b) {
+	return strcmp(EXN_REPO_ID((IDL_tree)a), EXN_REPO_ID((IDL_tree)b));
+}
+
+
+GList *iface_exns_in_order(GHashTable *exn_hash)
+{
+	GHashTableIter iter;
+	g_hash_table_iter_init(&iter, exn_hash);
+	gpointer k = NULL, v = NULL;
+	GList *list = NULL;
+	while(g_hash_table_iter_next(&iter, &k, &v)) {
+		list = g_list_prepend(list, v);
+	}
+	return g_list_sort(list, &exns_by_repoid_cmp);
 }
 
 
@@ -205,8 +219,6 @@ static LLVMValueRef build_exn_raise_fn(
 		tag = LLVMBuildShl(ctx->builder, CONST_WORD(2), CONST_WORD(16),
 			"label.shifted");
 		struct message_info *msg = build_exception_message(exn);
-		msg->label = 2;
-		msg->sublabel = exn_hash(exn);
 		unsigned num_args = LLVMCountParams(fn);
 		V *args = g_new(V, num_args);
 		LLVMGetParams(fn, args);
@@ -298,4 +310,70 @@ gboolean iter_build_exception_raise_fns(
 		ctx->seen_exn_hash = NULL;
 	}
 	return rv;
+}
+
+
+/* TODO: printing of the same in the -defs.h */
+/* TODO: memoize the typeref on the iface name under a hash in ctx */
+LLVMTypeRef context_type_of_iface(struct llvm_ctx *ctx, IDL_tree iface)
+{
+	assert(IDL_NODE_TYPE(iface) == IDLN_INTERFACE);
+
+	GHashTable *exn_hash = g_hash_table_new(&g_str_hash, &g_str_equal);
+	collect_exceptions(ctx->ns, exn_hash, iface);
+	GList *exn_list = iface_exns_in_order(exn_hash);
+	g_hash_table_destroy(exn_hash);
+	if(exn_list == NULL) return NULL;
+
+	GPtrArray *u_types = g_ptr_array_new(),
+		*e_types = g_ptr_array_new();
+	/* the tag is the exception hash. */
+	g_ptr_array_add(u_types, ctx->i32t);
+
+	GLIST_FOREACH(e_cur, exn_list) {
+		IDL_tree exn = e_cur->data;
+
+		g_ptr_array_set_size(e_types, 0);
+		g_ptr_array_add(e_types, ctx->i32t);
+		IDL_LIST_FOREACH(cur, IDL_EXCEPT_DCL(exn).members) {
+			IDL_tree member = IDL_LIST(cur).data,
+				mtype = get_type_spec(IDL_MEMBER(member).type_spec);
+			IDL_LIST_FOREACH(d_cur, IDL_MEMBER(member).dcls) {
+				IDL_tree dcl = IDL_LIST(d_cur).data;
+				T m;
+				if(IDL_NODE_TYPE(dcl) == IDLN_TYPE_ARRAY) {
+					long long size = IDL_INTEGER(IDL_LIST(
+						IDL_TYPE_ARRAY(dcl).size_list).data).value;
+					m = LLVMArrayType(llvm_rigid_type(ctx, mtype),
+						size);
+				} else if(IDL_NODE_TYPE(dcl) == IDLN_IDENT) {
+					m = llvm_rigid_type(ctx, mtype);
+				} else {
+					g_assert_not_reached();
+				}
+				g_ptr_array_add(e_types, m);
+			}
+		}
+		T st = LLVMStructTypeInContext(ctx->ctx, (T *)e_types->pdata,
+			e_types->len, 0);
+		g_ptr_array_add(u_types, st);
+	}
+
+	T ctx_type = LLVMUnionTypeInContext(ctx->ctx, (T *)u_types->pdata,
+		u_types->len);
+
+	g_ptr_array_free(e_types, TRUE);
+	g_ptr_array_free(u_types, TRUE);
+	g_list_free(exn_list);
+
+	return ctx_type;
+}
+
+
+void build_decode_exception(
+	struct llvm_ctx *ctx,
+	LLVMValueRef ex_ptr,
+	const struct message_info *exception)
+{
+	/* FIXME */
 }

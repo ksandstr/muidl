@@ -234,6 +234,8 @@ struct message_info
 
 	IDL_tree node;			/* IDL_{EXCEPT,OP}_DCL */
 
+	int ctx_index;			/* exceptions only */
+
 	/* return value spec. ret_type == NULL if void.
 	 *
 	 * the return value starts at MR1 if sublabel == NO_SUBLABEL, and at MR2
@@ -542,6 +544,12 @@ extern int collect_exceptions(
 	GHashTable *seen_hash,
 	IDL_tree iface);
 
+/* returns a list of IDL_tree, being the IDL_EXCEPT_DCL nodes in sorted order,
+ * which is the basis for their indexing in the type returned by
+ * context_type_of_iface().
+ */
+extern GList *iface_exns_in_order(GHashTable *exn_hash);
+
 extern char *exn_raise_fn_name(IDL_tree except_dcl);
 
 /* this is expensive. */
@@ -550,6 +558,15 @@ extern uint32_t exn_hash(IDL_tree except_dcl);
 extern gboolean iter_build_exception_raise_fns(
 	IDL_tree_func_data *tf,
 	void *ctxptr);
+
+extern LLVMTypeRef context_type_of_iface(
+	struct llvm_ctx *ctx,
+	IDL_tree iface);
+
+extern void build_decode_exception(
+	struct llvm_ctx *ctx,
+	LLVMValueRef ex_ptr,
+	const struct message_info *exception);
 
 
 /* from sequence.c */

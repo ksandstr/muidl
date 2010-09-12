@@ -36,8 +36,9 @@ static LLVMTypeRef stub_fn_type(
 	struct message_info *reply = NULL;
 	if(inf->num_reply_msgs > 0) reply = inf->replies[0];
 
+	const bool has_context = IDL_OP_DCL(inf->node).raises_expr != NULL;
 	int num_params = IDL_list_length(IDL_OP_DCL(inf->node).parameter_dcls),
-		num_args = num_params * 2 + 2 + 1 + 2;
+		num_args = num_params * 2 + 2 + 1 + 2 + (has_context ? 1 : 0);
 	T arg_types[num_args];
 	for(int i=0; i<num_args; i++) arg_types[i] = NULL;
 	int max_arg = -1, arg_offset = 0;
@@ -102,6 +103,13 @@ static LLVMTypeRef stub_fn_type(
 		}
 
 		max_arg = MAX(max_arg, p->arg_ix + nargs - 1 + arg_offset);
+	}
+
+	if(has_context) {
+		IDL_tree iface = IDL_get_parent_node(inf->node, IDLN_INTERFACE, NULL);
+		assert(iface != NULL);
+		arg_types[++max_arg] = LLVMPointerType(
+			context_type_of_iface(ctx, iface), 0);
 	}
 
 	T l4_time_t = LLVMInt16TypeInContext(ctx->ctx);
@@ -192,21 +200,24 @@ static void build_ipc_stub(
 
 	/* 0 is L4_Time_t for Never, and goes in both timeout fields */
 	V timeouts = CONST_WORD(0);
+	int back_ix = num_args - 1;
 	if(timeout_kind != 0) {
-		int ix = num_args - 1;
 		if(timeout_kind & TIMEOUT_RECV) {
 			timeouts = LLVMBuildZExtOrBitCast(ctx->builder,
-				args[ix--], ctx->wordt, "to.w.recv");
+				args[back_ix--], ctx->wordt, "to.w.recv");
 		}
 		if(timeout_kind & TIMEOUT_SEND) {
 			timeouts = LLVMBuildOr(ctx->builder, timeouts,
 				LLVMBuildShl(ctx->builder,
-					LLVMBuildZExtOrBitCast(ctx->builder, args[ix--],
+					LLVMBuildZExtOrBitCast(ctx->builder, args[back_ix--],
 						ctx->wordt, "to.send"),
 					CONST_INT(16), "to.send.shifted"),
 				"to.w.send");
 		}
 	}
+
+	V ctxptr = NULL;
+	if(IDL_OP_DCL(inf->node).raises_expr != NULL) ctxptr = args[back_ix--];
 
 	if(oneway) {
 		/* L4_nilthread == word(0) */
@@ -238,11 +249,11 @@ static void build_ipc_stub(
 
 	/* IPC success path. */
 	LLVMPositionBuilderAtEnd(ctx->builder, noerr_bb);
+	V label = build_label_from_tag(ctx, ctx->tag);
 	if(find_exn(inf->node, &is_negs_exn) != NULL) {
-		/* the dreaded MSG_ERROR */
+		/* the dreaded MSG_ERROR (the simple exception) */
 		assert(!oneway);
-		V label = build_label_from_tag(ctx, ctx->tag),
-			matches = LLVMBuildICmp(ctx->builder, LLVMIntEQ,
+		V matches = LLVMBuildICmp(ctx->builder, LLVMIntEQ,
 				label, CONST_WORD(1), "negexn.matches");
 		BB msgerr_bb = add_sibling_block(ctx, "msgerr.match"),
 			no_msgerr_bb = add_sibling_block(ctx, "no.msgerr");
@@ -255,7 +266,49 @@ static void build_ipc_stub(
 
 		LLVMPositionBuilderAtEnd(ctx->builder, no_msgerr_bb);
 	}
-	/* TODO: check for exceptions */
+
+	/* complex exceptions */
+	if(ctxptr != NULL) {
+		BB no_exn_bb = add_sibling_block(ctx, "no.exn"),
+			exn_bb = add_sibling_block(ctx, "catch.exn");
+		V catch_cond = LLVMBuildICmp(ctx->builder, LLVMIntEQ, label,
+				CONST_WORD(2), "label.exn.p"),
+			ex_tag_ptr = LLVMBuildStructGEP(ctx->builder, ctxptr,
+				0, "ex.tag.ptr");
+		LLVMBuildCondBr(ctx->builder, catch_cond, exn_bb, no_exn_bb);
+
+		LLVMPositionBuilderAtEnd(ctx->builder, exn_bb);
+		LLVMBuildStore(ctx->builder, ctx->mr1, ex_tag_ptr);
+		/* FIXME: come up with the correct return value for "unrecognized
+		 * exception status from server"!
+		 */
+		branch_set_phi(ctx, ctx->retval_phi, CONST_WORD(666));
+		V sw = LLVMBuildSwitch(ctx->builder, ctx->mr1, ctx->exit_bb,
+			inf->num_reply_msgs - 1);
+		for(int i=1; i < inf->num_reply_msgs; i++) {
+			const struct message_info *msg = inf->replies[i];
+			if(is_negs_exn(msg->node) || is_noreply_exn(msg->node)) {
+				continue;
+			}
+			BB decode = add_sibling_block(ctx, "catch.x%x", msg->sublabel);
+			LLVMAddCase(sw, CONST_WORD(msg->sublabel), decode);
+			LLVMPositionBuilderAtEnd(ctx->builder, decode);
+			V exptr = LLVMBuildStructGEP(ctx->builder, ctxptr,
+				msg->ctx_index, "ex.ptr");
+			build_decode_exception(ctx, exptr, msg);
+			/* on exception, a stub returns 0 because it's an IPC success
+			 * regardless. the caller gets to check ctxptr->tag.
+			 */
+			branch_set_phi(ctx, ctx->retval_phi, CONST_WORD(0));
+			LLVMBuildBr(ctx->builder, ctx->exit_bb);
+		}
+
+		LLVMPositionBuilderAtEnd(ctx->builder, no_exn_bb);
+		/* in the no-exception case, tag will be 0. */
+		LLVMBuildStore(ctx->builder, CONST_WORD(0), ex_tag_ptr);
+	}
+
+	/* regular things */
 	if(reply != NULL) {
 		build_msg_decoder(ctx, ret_args, &args[arg_offset], reply, NULL,
 			true);
