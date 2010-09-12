@@ -293,8 +293,17 @@ static void build_ipc_stub(
 			BB decode = add_sibling_block(ctx, "catch.x%x", msg->sublabel);
 			LLVMAddCase(sw, CONST_WORD(msg->sublabel), decode);
 			LLVMPositionBuilderAtEnd(ctx->builder, decode);
+#if 1
+			/* LLVM has some kind of brain damage wrt GEP and union pointers */
+			T cp_type = LLVMGetElementType(LLVMTypeOf(ctxptr)),
+				u_types[LLVMCountUnionElementTypes(cp_type)];
+			LLVMGetUnionElementTypes(cp_type, u_types);
+			V exptr = LLVMBuildPointerCast(ctx->builder, ctxptr,
+				LLVMPointerType(u_types[msg->ctx_index], 0), "ex.ptr");
+#else
 			V exptr = LLVMBuildStructGEP(ctx->builder, ctxptr,
 				msg->ctx_index, "ex.ptr");
+#endif
 			build_decode_exception(ctx, exptr, msg);
 			/* on exception, a stub returns 0 because it's an IPC success
 			 * regardless. the caller gets to check ctxptr->tag.

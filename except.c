@@ -373,7 +373,25 @@ LLVMTypeRef context_type_of_iface(struct llvm_ctx *ctx, IDL_tree iface)
 void build_decode_exception(
 	struct llvm_ctx *ctx,
 	LLVMValueRef ex_ptr,
-	const struct message_info *exception)
+	const struct message_info *msg)
 {
-	/* FIXME */
+	assert(msg->ret_type == NULL);
+
+	int max_arg = 0;
+	GLIST_FOREACH(p_cur, msg->untyped) {
+		const struct msg_param *u = p_cur->data;
+		max_arg = MAX(max_arg, u->arg_ix);
+	}
+
+	/* set up the spots where out-parameters get stored. */
+	V args[max_arg + 1];
+	for(int i=0; i<max_arg+1; i++) args[i] = NULL;
+	GLIST_FOREACH(p_cur, msg->untyped) {
+		const struct msg_param *u = p_cur->data;
+		args[u->arg_ix] = LLVMBuildStructGEP(ctx->builder, ex_ptr,
+			u->arg_ix + 1, "ex.val.ptr");
+	}
+
+	/* decode the message. */
+	build_msg_decoder(ctx, NULL, args, msg, NULL, true);
 }

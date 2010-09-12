@@ -290,7 +290,9 @@ static void set_decode_arg(
 	LLVMValueRef *arg_ptr,
 	LLVMValueRef value)
 {
-	if(IDL_PARAM_DCL(param->param_dcl).attr == IDL_PARAM_IN) {
+	if(param->param_dcl != NULL
+		&& IDL_PARAM_DCL(param->param_dcl).attr == IDL_PARAM_IN)
+	{
 		/* by value. */
 		*arg_ptr = value;
 	} else {
