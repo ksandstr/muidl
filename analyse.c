@@ -36,8 +36,8 @@ static int array_size_in_words(IDL_tree type_array, IDL_tree dcl);
 static int struct_size_in_words(IDL_tree type_struct);
 
 
-/* returns true on success, including property not found (in which case
- * *value_p is not modified).
+/* returns true when a value was assigned, false when not, and exits with a
+ * complaint when the value is malformed.
  */
 static bool get_ul_property(
 	unsigned long *value_p,
@@ -45,16 +45,17 @@ static bool get_ul_property(
 	const char *name)
 {
 	const char *p = IDL_tree_property_get(ident, name);
-	if(p == NULL) return true;
+	if(p == NULL) return false;
 	char *endptr = NULL;
 	unsigned long ret = strtoul(p, &endptr, 0);
 	if(ret == 0 && endptr == p) {
-		fprintf(stderr, "error: invalid %s property: `%s'\n", name, p);
-		return false;
-	} else {
-		*value_p = ret;
-		return true;
+		fprintf(stderr, "error: malformed %s property on `%s': `%s'\n",
+			name, IDL_IDENT_REPO_ID(ident), p);
+		exit(EXIT_FAILURE);
 	}
+
+	*value_p = ret;
+	return true;
 }
 
 
@@ -65,23 +66,20 @@ static bool op_has_sublabel(IDL_tree prop_node)
 	 * fortunately sublabels don't apply to them.
 	 */
 	if(iface == NULL) return false;
-	else {
-		IDL_tree ifprop = IDL_INTERFACE(iface).ident;
-		unsigned long ifacelabel = 0;
-		return get_ul_property(&ifacelabel, ifprop, "IfaceLabel")
-			&& ifacelabel != 0;
-	}
+	unsigned long ifacelabel = 0;
+	return get_ul_property(&ifacelabel, IDL_INTERFACE(iface).ident,
+		"IfaceLabel");
 }
 
 
 static bool get_msg_label(struct message_info *inf, IDL_tree prop_node)
 {
 	unsigned long tagmask = NO_TAGMASK;
-	if(!get_ul_property(&tagmask, prop_node, "TagMask")) return false;
+	get_ul_property(&tagmask, prop_node, "TagMask");
 	inf->tagmask = tagmask;
 
 	unsigned long labelval = 0;
-	if(!get_ul_property(&labelval, prop_node, "Label")) return false;
+	get_ul_property(&labelval, prop_node, "Label");
 	inf->label = labelval;
 
 	IDL_tree iface = IDL_get_parent_node(prop_node, IDLN_INTERFACE, NULL);
@@ -91,9 +89,7 @@ static bool get_msg_label(struct message_info *inf, IDL_tree prop_node)
 	if(iface != NULL) {
 		IDL_tree ifprop = IDL_INTERFACE(iface).ident;
 		unsigned long ifacelabel = 0;
-		if(get_ul_property(&ifacelabel, ifprop, "IfaceLabel")
-			&& ifacelabel != 0)
-		{
+		if(get_ul_property(&ifacelabel, ifprop, "IfaceLabel")) {
 			assert(op_has_sublabel(prop_node));
 			inf->sublabel = inf->label;
 			inf->label = ifacelabel;
@@ -459,8 +455,7 @@ static struct message_info *build_message(
 		IDL_tree ident = IDL_PARAM_DCL(u->param_dcl).simple_declarator,
 			type = u->X.untyped.type;
 		unsigned long mr_n = 0;
-		if(!get_ul_property(&mr_n, ident, "MR")) goto fail;
-		u->X.untyped.reg_manual = mr_n > 0;
+		u->X.untyped.reg_manual = get_ul_property(&mr_n, ident, "MR");
 		if(mr_n == 0) continue;
 		/* TODO: move these three conditions into verify.c */
 		if(size_in_words(type) > 1) {
@@ -871,15 +866,12 @@ static void assign_method_labels(
 
 	/* assign labels to those methods that haven't got any. */
 	unsigned long ifacelabel = 0;
-	if(!get_ul_property(&ifacelabel, iface_ident, "IfaceLabel")) {
-		fprintf(stderr, "error: malformed IfaceLabel property on `%s'\n",
-			IDL_IDENT_REPO_ID(iface_ident));
-		exit(EXIT_FAILURE);
-	}
+	get_ul_property(&ifacelabel, iface_ident, "IfaceLabel");
 	/* skips reply labels of success (0), MSG_ERROR (1) and complex exceptions
 	 * (2), when not given an interface label.
 	 */
-	const int min_label = ifacelabel == 0 ? 3 : 0;
+	unsigned long min_label = ifacelabel == 0 ? 3 : 0;
+	if(get_ul_property(&min_label, iface_ident, "FirstLabel")) min_label--;
 
 	/* FIXME: this method of label assignment will cause wailing & gnashing of
 	 * teeth when someone provokes a label clash.
