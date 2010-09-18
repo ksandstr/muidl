@@ -1,0 +1,71 @@
+/*
+ * tests/param-types.idl -- parameter type test suite
+ * Copyright 2010  Kalle A. Sandström <ksandstr@iki.fi>
+ *
+ * This file is part of µiX.
+ *
+ * µiX is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * µiX is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with µiX.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+
+/* AUTOTEST: ./muidl -D __TEST__=%t -I idl -I share/idl %n */
+
+#include <muidl.idl>
+
+#include "l4x2.idl"
+#include "posix-base.idl"
+
+
+module ParamTypesSuite
+{
+
+interface StringTypes
+{
+
+/* TEST 1: in-string items
+ * expected: success
+ */
+#if __TEST__ == 1
+	void print_string(in string<80> line);
+
+	void print_multiple(
+		in string<32> header,
+		in string<80> line);
+#endif
+
+/* TEST 2: out-string items
+ * expected: success
+ */
+#if __TEST__ == 2
+	void receive_string(out string<80> line);
+
+	void receive_multiple(
+		out string<32> aux,
+		out string<80> actual);
+#endif
+
+/* TEST 3: inout string transfers
+ * expected: success
+ */
+#if __TEST__ == 3
+	void modify_string(inout string<80> line);
+
+	void modify_multiple(
+		inout string<32> auxiliary,
+		inout string<80> actual);
+#endif
+};
+
+
+};
