@@ -391,17 +391,18 @@ void decode_packed_struct_inline(
 						bit_offset, "st.bitoffs.shifted");
 				}
 			}
-			V shifted = LLVMBuildLShr(ctx->builder, wordval,
+			V subval = LLVMBuildLShr(ctx->builder, wordval,
 				CONST_INT(pi->bit),
 				tmp_f(ctx->pr, "st.word%d.shr%d", pi->word, pi->bit));
-			V masked = LLVMBuildAnd(ctx->builder, shifted,
-				CONST_WORD((1 << pi->len) - 1),
-				tmp_f(ctx->pr, "st.word%d.s%d.m%d", pi->word, pi->bit,
-					pi->len));
-			LLVMBuildStore(ctx->builder,
-				LLVMBuildTruncOrBitCast(ctx->builder, masked,
-					types[field_ix], "st.val.cast"),
-				dstptr);
+			if(pi->len < BITS_PER_WORD) {
+				subval = LLVMBuildAnd(ctx->builder, subval,
+					CONST_WORD((1 << pi->len) - 1),
+					tmp_f(ctx->pr, "st.word%d.s%d.m%d", pi->word, pi->bit,
+						pi->len));
+			}
+			subval = LLVMBuildTruncOrBitCast(ctx->builder, subval,
+				types[field_ix], "st.val.cast");
+			LLVMBuildStore(ctx->builder, subval, dstptr);
 		} else {
 			NOTDEFINED(pi->type);
 		}
