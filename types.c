@@ -238,7 +238,6 @@ void build_read_ipc_parameter_ixval(
 			build_utcb_load(ctx, first_mr, "shortparm.mr"),
 			llvm_value_type(ctx, ctyp), "shortparm");
 	} else if(IDL_NODE_TYPE(ctyp) == IDLN_TYPE_STRUCT) {
-		dst[0] = NULL;
 		decode_packed_struct(ctx, &dst[0], ctyp, first_mr, CONST_INT(0));
 	} else if(IDL_NODE_TYPE(ctyp) == IDLN_TYPE_UNION) {
 		NOTDEFINED(ctyp);

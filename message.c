@@ -284,21 +284,12 @@ static void build_read_ipc_parameter(
 }
 
 
-static void set_decode_arg(
-	struct llvm_ctx *ctx,
-	const struct msg_param *param,
-	LLVMValueRef *arg_ptr,
-	LLVMValueRef value)
+/* FIXME: move this out */
+static bool pass_param_by_value(IDL_tree pdecl)
 {
-	if(param->param_dcl != NULL
-		&& IDL_PARAM_DCL(param->param_dcl).attr == IDL_PARAM_IN)
-	{
-		/* by value. */
-		*arg_ptr = value;
-	} else {
-		/* by reference. */
-		LLVMBuildStore(ctx->builder, value, *arg_ptr);
-	}
+	return pdecl != NULL
+		&& IDL_PARAM_DCL(pdecl).attr == IDL_PARAM_IN
+		&& is_value_type(get_type_spec(IDL_PARAM_DCL(pdecl).param_type_spec));
 }
 
 
@@ -316,20 +307,28 @@ void build_msg_decoder(
 		assert(ret_args != NULL);
 		/* decode return value for the stub post-ipc part */
 		int ret_offs = msg->sublabel == NO_SUBLABEL ? 1 : 2;
-		V tmp[2];
+		/* build_read_ipc_parameter() uses a pre-set pointer value for storing
+		 * decoded rigids, which we have, so provide it.
+		 */
+		V tmp[2] = { ret_args[0], NULL };
 		build_read_ipc_parameter(ctx, tmp, msg->ret_type, ret_offs);
-		LLVMBuildStore(ctx->builder, tmp[0], ret_args[0]);
+		if(is_value_type(msg->ret_type)) {
+			assert(tmp[0] != ret_args[0]);
+			LLVMBuildStore(ctx->builder, tmp[0], ret_args[0]);
+		}
 	}
 
 	GLIST_FOREACH(cur, msg->untyped) {
 		struct msg_param *u = cur->data;
 		IDL_tree type = u->X.untyped.type;
-		V tmp[2];
+		V tmp[2] = { args[u->arg_ix], NULL };
 		build_read_ipc_parameter(ctx, tmp, type, u->X.untyped.first_reg);
-		/* (TODO: this should be in a separate function.) */
-		int nargs = IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE ? 2 : 1;
-		for(int i=0; i<nargs; i++) {
-			set_decode_arg(ctx, u, &args[u->arg_ix + i], tmp[i]);
+		if(is_value_type(type)) {
+			if(pass_param_by_value(u->param_dcl)) args[u->arg_ix] = tmp[0];
+			else LLVMBuildStore(ctx->builder, tmp[0], args[u->arg_ix]);
+		} else if(tmp[0] != args[u->arg_ix]) {
+			/* storage was allocated, possibally. */
+			args[u->arg_ix] = tmp[0];
 		}
 	}
 
@@ -340,6 +339,11 @@ void build_msg_decoder(
 		if(!is_out_half) {
 			/* the dispatcher allocates buffers on the stack. for stubs, the
 			 * caller has filled in the arg array.
+			 *
+			 * FIXME: this deviates from the convention used by
+			 * build_read_ipc_parameter(), where passing NULL in seq_args[]
+			 * here causes the parameter decoding function to allocate local
+			 * storage. push this part into the build_decode_inline_sequence().
 			 */
 			seq_args[0] = build_local_storage(ctx,
 				llvm_rigid_type(ctx, seq->X.seq.elem_type),
@@ -395,8 +399,7 @@ void build_msg_decoder(
 					LLVMConstInt(LLVMInt8TypeInContext(ctx->ctx), 0, 0),
 					LLVMBuildGEP(ctx->builder, stritems[lp_offset].memptr,
 						&item_len_bytes, 1, "str.nullpo"));	/* ガ！ */
-				set_decode_arg(ctx, lp, &args[lp->arg_ix],
-					stritems[lp_offset].memptr);
+				args[lp->arg_ix] = stritems[lp_offset].memptr;
 				break;
 			}
 
@@ -415,8 +418,13 @@ void build_msg_decoder(
 					LLVMBuildTruncOrBitCast(ctx->builder,
 						LLVMSizeOf(itemtype), ctx->i32t, "seq.item.len.cast"),
 					"seq.len");
-				set_decode_arg(ctx, lp, &args[lp->arg_ix + 0], ptr);
-				set_decode_arg(ctx, lp, &args[lp->arg_ix + 1], len);
+				args[lp->arg_ix + 0] = ptr;
+				/* the length part is passed like a value type. */
+				if(IDL_PARAM_DCL(lp->param_dcl).attr == IDL_PARAM_IN) {
+					args[lp->arg_ix + 1] = len;
+				} else {
+					LLVMBuildStore(ctx->builder, len, args[lp->arg_ix + 1]);
+				}
 				break;
 			}
 
