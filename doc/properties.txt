@@ -12,6 +12,11 @@ IfaceLabel(u16) -- identify the interface's operations by this u16 in the
 tag's label field, and the op declaration's label in MR1. Helps conserve the
 label space.
 
+FirstLabel(u32) -- what number to start the interface's op decls' labeling
+from. When IfaceLabel is present, defaults to 0. Interfaces without an
+IfaceLabel property must have either FirstLabel also, or declare labels per op
+decl explicitly.
+
 
 For operations:
 

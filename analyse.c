@@ -685,6 +685,9 @@ struct message_info *build_exception_message(IDL_tree exn)
 
 /* TODO: get the number and max dimensions of the string buffers we'll
  * send/receive once long types are implemented.
+ *
+ * this function keeps label == 0 || (tagmask set && sublabel == 0) as
+ * indication that the label has not been set.
  */
 struct method_info *analyse_op_dcl(
 	struct print_ctx *pr,
@@ -709,9 +712,9 @@ struct method_info *analyse_op_dcl(
 	if(inf->request == NULL) goto fail;
 	inf->request->node = method;
 	if(!get_msg_label(inf->request, IDL_OP_DCL(method).ident)) {
-		/* FIXME: assign a label somehow, blow up only if that fails */
-		fprintf(stderr, "error: can't assign automatic label to `%s'\n",
-			METHOD_NAME(method));
+		IDL_tree iface = IDL_get_parent_node(method, IDLN_INTERFACE, NULL);
+		fprintf(stderr, "error: invalid label specification for `%s' in `%s'\n",
+			METHOD_NAME(method), IDL_IDENT_REPO_ID(IDL_INTERFACE(iface).ident));
 		goto fail;
 	}
 
@@ -793,7 +796,11 @@ struct method_info *analyse_op_dcl(
 		}
 	}
 
-	/* oneway restrictions. */
+	/* oneway restrictions.
+	 *
+	 * TODO: move these into verify.c!
+	 * TODO: and the chunk below this one!
+	 */
 	if(IDL_OP_DCL(method).f_oneway) {
 		if(return_type != NULL) {
 			fprintf(stderr, "can't have non-void return type for oneway operation `%s'\n",
@@ -832,6 +839,110 @@ fail:
 	}
 	g_free(inf);
 	return NULL;
+}
+
+
+static struct method_info *find_method_by_label(GList *list, uint32_t label)
+{
+	GLIST_FOREACH(c, list) {
+		struct method_info *inf = c->data;
+		if(inf->request->label == label) return inf;
+	}
+	return NULL;
+}
+
+
+static struct method_info *find_method_by_sublabel(GList *list, uint32_t label)
+{
+	GLIST_FOREACH(c, list) {
+		struct method_info *inf = c->data;
+		if(inf->request->sublabel == label) return inf;
+	}
+	return NULL;
+}
+
+
+static void assign_method_labels(
+	IDL_tree iface,
+	GList *methods,
+	GList *tagmask_methods)
+{
+	IDL_tree iface_ident = IDL_INTERFACE(iface).ident;
+
+	/* assign labels to those methods that haven't got any. */
+	unsigned long ifacelabel = 0;
+	if(!get_ul_property(&ifacelabel, iface_ident, "IfaceLabel")) {
+		fprintf(stderr, "error: malformed IfaceLabel property on `%s'\n",
+			IDL_IDENT_REPO_ID(iface_ident));
+		exit(EXIT_FAILURE);
+	}
+	/* skips reply labels of success (0), MSG_ERROR (1) and complex exceptions
+	 * (2), when not given an interface label.
+	 */
+	const int min_label = ifacelabel == 0 ? 3 : 0;
+
+	/* FIXME: this method of label assignment will cause wailing & gnashing of
+	 * teeth when someone provokes a label clash.
+	 */
+	uint32_t max_label = min_label;
+	GLIST_FOREACH(m_cur, methods) {
+		struct method_info *inf = m_cur->data;
+		struct message_info *req = inf->request;
+
+		if(ifacelabel == 0 && req->label == 0) {
+			assert(req->tagmask == NO_TAGMASK);
+			int label = max_label + 1;
+			/* FIXME: set limit to where L4.X2 reserved labels begin */
+			while(find_method_by_label(methods, label) != NULL
+				&& label < 0x10000)
+			{
+				label++;
+			}
+			if(label >= 0x10000) goto fail;
+			req->label = label;
+			max_label = label;
+		} else if(ifacelabel != 0 && req->sublabel == 0) {
+			assert(req->tagmask == NO_TAGMASK);
+			int sublabel = max_label + 1;
+			/* the limit is arbitrary (but reasonable). */
+			while(find_method_by_sublabel(tagmask_methods, sublabel) != NULL
+				&& sublabel < 0x10000)
+			{
+				sublabel++;
+			}
+			if(sublabel >= 0x10000) goto fail;
+			req->sublabel = sublabel;
+			max_label = sublabel;
+		}
+
+		if(ifacelabel != 0) max_label = MAX(max_label, req->sublabel);
+		else max_label = MAX(max_label, req->label);
+	}
+
+#ifndef NDEBUG
+	GHashTable *lab_hash = g_hash_table_new(&g_direct_hash, &g_direct_equal);
+	GLIST_FOREACH(mcur, methods) {
+		struct method_info *inf = mcur->data;
+		struct message_info *req = inf->request;
+
+		int label = ifacelabel > 0 ? req->sublabel : req->label;
+		if(g_hash_table_lookup(lab_hash, GINT_TO_POINTER(label)) != NULL) {
+			fprintf(stderr, "error: duplicate op labels in `%s'\n",
+				IDL_IDENT_REPO_ID(iface_ident));
+			exit(EXIT_FAILURE);
+		} else {
+			g_hash_table_insert(lab_hash, GINT_TO_POINTER(label), inf);
+		}
+	}
+	g_hash_table_destroy(lab_hash);
+#endif
+
+	return;
+
+fail:
+	fprintf(stderr, "error: can't assign labels to `%s'\n",
+		IDL_IDENT_REPO_ID(iface_ident));
+	exit(EXIT_FAILURE);
 }
 
 
@@ -874,6 +985,9 @@ GList *analyse_methods_of_iface(
 		}
 	}
 	*tagmask_list_p = g_list_reverse(*tagmask_list_p);
+
+	assign_method_labels(iface, methods, *tagmask_list_p);
+
 	return g_list_sort(methods, &method_info_by_label_cmp);
 }
 
