@@ -1,12 +1,10 @@
-
 IDL properties defined by µidl
 
 
 For interfaces:
 
-StubPrefix(__prefix) -- forces a constant prefix for generated stubs and
-disables prefix abbreviation for them (since there's presumably nothing to
-abbreviate anymore). TODO
+StubPrefix(__prefix) -- forces a constant prefix for client stubs generated
+for the interface.
 
 IfaceLabel(u16) -- identify the interface's operations by this u16 in the
 tag's label field, and the op declaration's label in MR1. Helps conserve the
@@ -20,11 +18,11 @@ decl explicitly.
 
 For operations:
 
-Label(u16) -- the operation's message label. TODO
+Label(u16) -- the operation's message label.
 
 TagMask(u32/64) -- a mask applied to the raw representation of the message
 tag before it is compared with Label. This permits definition of handlers for
-the L4.X2 protocols. TODO
+the L4.X2 protocols.
 
 StubSendTimeout, StubRecvTimeout -- if one or both of these are defined,
 a stub with timeout parameters is emitted. StubRecvTimeout cannot be specified
@@ -50,10 +48,9 @@ NoValuePrefix -- instead of [mod_][iface_]enumname_valuename, put just
 "valuename" in the enumeration field. TODO
 
 
-For structs:
+For structs and unions:
 
-NoPacked -- don't emit the C structure declaration with
-__attribute__((__packed__)).
+NoPacked -- don't pack the structure definition.
 
 
 For exceptions (libIDL doesn't recognize properties on exceptions yet!):
@@ -66,4 +63,3 @@ code. TODO
 Label(u16) -- the label by which this exception is identified by. May not
 overlap the labels of other exceptions declared as raised by the same
 operation. TODO
-
