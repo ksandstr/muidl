@@ -8,6 +8,10 @@ StubPrefix(__prefix) -- forces a constant prefix for generated stubs and
 disables prefix abbreviation for them (since there's presumably nothing to
 abbreviate anymore). TODO
 
+IfaceLabel(u16) -- identify the interface's operations by this u16 in the
+tag's label field, and the op declaration's label in MR1. Helps conserve the
+label space.
+
 
 For operations:
 
