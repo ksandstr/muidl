@@ -6,6 +6,13 @@
 #include "muidl.idl"
 
 
+struct CompoundData
+{
+	short what;
+	long zort;
+	long poit;
+};
+
 exception TestException
 {
 	long something;
@@ -18,6 +25,7 @@ exception AnotherException
 	boolean recoverable_p;
 	long where;
 	short what;
+	CompoundData phale;
 };
 
 interface ExceptTest
