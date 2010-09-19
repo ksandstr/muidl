@@ -283,9 +283,14 @@ struct stritem_info
 	int length;			/* < 0 = terminator */
 	bool stringlike;	/* '\0' terminated? (not included in length.) */
 
-	/* these aren't filled in by dispatcher_stritems() */
+	/* these aren't filled in. they're used in different ways by dispatch.c and
+	 * stub.c .
+	 */
 	int offset;
-	LLVMValueRef memptr;	/* memory in dispatcher; always <i8 *> */
+	LLVMValueRef memptr;	/* <i8 *> */
+
+	int reply_pos;		/* index in a method_info->replies */
+	struct msg_param *param;	/* long param in a message_info->_long */
 };
 
 

@@ -124,6 +124,76 @@ static LLVMTypeRef stub_fn_type(
 }
 
 
+/* returns the acceptor. */
+static LLVMValueRef build_stub_receive_strings(
+	struct llvm_ctx *ctx,
+	struct method_info *inf,
+	struct stritem_info *stritems,
+	LLVMValueRef *args)
+{
+	assert(stritems != NULL);
+	assert(stritems[0].length >= 0);
+
+	GList *long_lists[inf->num_reply_msgs];
+	for(int i=0; i < inf->num_reply_msgs; i++) {
+		long_lists[i] = g_list_first(inf->replies[i]->_long);
+	}
+
+	int brpos = 1;
+	for(int i=0; stritems[i].length >= 0; i++) {
+		struct stritem_info *si = &stritems[i];
+
+		/* find the first parameter that can fit the whole string item.
+		 *
+		 * NOTE: we should rather receive the first N bytes in the reply's
+		 * buffer, and the other M-N bytes in the longest item where M > N.
+		 * this would require a bit more thought and testing, and can be
+		 * written as an optimization later on, so...
+		 */
+		si->memptr = NULL;
+		for(int j=0; j < inf->num_reply_msgs; j++) {
+			if(long_lists[j] == NULL) continue;
+			struct msg_param *p = long_lists[j]->data;
+
+			int size = max_size(p->X._long.type);
+			printf("looking at `%s' (size %d) to fill stritem[%d] of len %d\n",
+				p->name, size, i, si->length);
+			if(size >= si->length) {
+				si->reply_pos = j;
+				si->param = p;
+				if(IS_EXN_MSG(inf->replies[j])) {
+					si->memptr = NULL;		/* TODO */
+					assert(false);
+				} else {
+					/* it's in an ordinary reply */
+					si->memptr = args[p->arg_ix];
+				}
+				break;
+			}
+		}
+		assert(si->memptr != NULL);
+		for(int j=0; j < inf->num_reply_msgs; j++) {
+			long_lists[j] = g_list_next(long_lists[j]);
+		}
+
+		V si_words[2];
+		build_simple_string_item(ctx, si_words, si->memptr,
+			CONST_WORD(si->length), NULL);
+		if(si[1].length >= 0) {
+			/* we're not the last; set the C bit. */
+			si_words[0] = LLVMBuildOr(ctx->builder, CONST_WORD(1),
+				si_words[0], "si.desc.with.C");
+		}
+		LLVMBuildStore(ctx->builder, si_words[0],
+			UTCB_ADDR_VAL(ctx, CONST_INT(BR_OFFSET(brpos++)), "si.br0.addr"));
+		LLVMBuildStore(ctx->builder, si_words[1],
+			UTCB_ADDR_VAL(ctx, CONST_INT(BR_OFFSET(brpos++)), "si.br1.addr"));
+	}
+
+	return brpos > 1 ? CONST_WORD(1) : CONST_WORD(0);
+}
+
+
 static void build_stub_msgerr(struct llvm_ctx *ctx)
 {
 	/* this mimics a L4.X2 error status, as a code 0 in receive phase (where
@@ -195,6 +265,12 @@ static void build_ipc_stub(
 	/* send-half. */
 	BB start_bb = add_sibling_block(ctx, "stub.start");
 	LLVMPositionBuilderAtEnd(ctx->builder, start_bb);
+	struct stritem_info *stritems = stub_stritems(inf);
+	V acceptor = CONST_WORD(0);
+	if(stritems != NULL && stritems[0].length >= 0) {
+		acceptor = build_stub_receive_strings(ctx, inf, stritems,
+			&args[arg_offset]);
+	}
 	V tag = build_msg_encoder(ctx, inf->request, NULL, &args[arg_offset],
 		false);
 
@@ -225,7 +301,7 @@ static void build_ipc_stub(
 			CONST_WORD(0), tag, NULL, NULL, NULL);
 	} else {
 		/* load the acceptor. */
-		LLVMBuildStore(ctx->builder, CONST_WORD(0),
+		LLVMBuildStore(ctx->builder, acceptor,
 			UTCB_ADDR_VAL(ctx, CONST_INT(BR_OFFSET(0)), "acceptor.addr"));
 		/* FIXME: generate "stritems" from params, load buffer registers */
 		ctx->tag = build_l4_ipc_call(ctx, ipc_dest, timeouts,
@@ -319,8 +395,8 @@ static void build_ipc_stub(
 
 	/* regular things */
 	if(reply != NULL) {
-		build_msg_decoder(ctx, ret_args, &args[arg_offset], reply, NULL,
-			true);
+		build_msg_decoder(ctx, ret_args, &args[arg_offset], reply,
+			stritems, true);
 	}
 	branch_set_phi(ctx, ctx->retval_phi, CONST_WORD(0));
 	LLVMBuildBr(ctx->builder, ctx->exit_bb);

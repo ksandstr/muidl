@@ -238,6 +238,11 @@ static void emit_out_param(
 			LLVMConstInt(ctx->i32t, max_size, 0),
 			"out.seq.mem");
 		dst[1] = build_local_storage(ctx, ctx->i32t, NULL, "out.seq.len.mem");
+	} else if(IDL_NODE_TYPE(ptyp) == IDLN_TYPE_STRING) {
+		int max_size = IDL_INTEGER(
+			IDL_TYPE_STRING(ptyp).positive_int_const).value;
+		dst[0] = build_local_storage(ctx, LLVMInt8TypeInContext(ctx->ctx),
+			CONST_INT(max_size + 1), "out.str.mem");
 	} else if(IS_MAPGRANT_TYPE(ptyp)) {
 		/* this is just a pointer to a struct of 2 words. */
 		dst[0] = build_local_storage(ctx, ctx->mapgrant, NULL,
