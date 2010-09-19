@@ -785,6 +785,7 @@ static LLVMModuleRef make_llvm_module(
 
 	/* reset per-module context things */
 	g_hash_table_remove_all(ctx->struct_decoder_fns);
+	ctx->stritem_len_fn = NULL;
 	assert(ctx->malloc_ptrs == NULL);
 
 	IDL_tree_walk_in_order(ctx->pr->tree, treefn, ctx);
