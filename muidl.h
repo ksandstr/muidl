@@ -492,6 +492,12 @@ extern int size_in_bits(IDL_tree type);
 /* size of a rigid type in words, when encoded by itself. */
 extern int size_in_words(IDL_tree type);
 
+/* a type's maximum length in bytes. mostly applicable to sequences, strings
+ * and wide strings. returns negative for unbounded (used from verify.c).
+ * length of strings doesn't include terminator as that's not passed over IPC.
+ */
+extern int max_size(IDL_tree type);
+
 
 /* from verify.c */
 

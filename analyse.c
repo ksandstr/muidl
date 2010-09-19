@@ -258,12 +258,9 @@ int size_in_words(IDL_tree type)
 }
 
 
-/* a type's maximum length in bytes. returns negative for unbounded.
- * doesn't include string terminator, since that's not transferred over IPC.
- */
-static int max_size(IDL_tree type)
+int max_size(IDL_tree type)
 {
-	if(is_value_type(type)) return size_in_bits(type) / 8;
+	if(is_value_type(type)) return (size_in_bits(type) + 7) / 8;
 	switch(IDL_NODE_TYPE(type)) {
 		case IDLN_TYPE_SEQUENCE: {
 			IDL_tree bound = IDL_TYPE_SEQUENCE(type).positive_int_const,
