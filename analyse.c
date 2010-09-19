@@ -981,6 +981,56 @@ GList *analyse_methods_of_iface(
 }
 
 
+/* add a new string item, or fold some in. */
+static void add_stritem(GArray *result, int i, struct msg_param *p)
+{
+	IDL_tree type = p->X._long.type;
+	int length = max_size(type);
+	bool stringlike = IDL_NODE_TYPE(type) == IDLN_TYPE_STRING
+		|| IDL_NODE_TYPE(type) == IDLN_TYPE_WIDE_STRING;
+	struct stritem_info *si;
+	if(result->len <= i) {
+		struct stritem_info tmp = {
+			.length = 0,
+			.stringlike = false,
+		};
+		g_array_append_val(result, tmp);
+		si = &g_array_index(result, struct stritem_info,
+			result->len - 1);
+		assert(si == &g_array_index(result, struct stritem_info, i));
+	} else {
+		si = &g_array_index(result, struct stritem_info, i);
+	}
+	if(!si->stringlike && stringlike) si->stringlike = true;
+	si->length = MAX(si->length, length);
+}
+
+
+struct stritem_info *stub_stritems(const struct method_info *inf)
+{
+	if(IDL_OP_DCL(inf->node).f_oneway) return NULL;
+
+	GArray *result = g_array_new(FALSE, FALSE, sizeof(struct stritem_info));
+
+	/* since exceptions are encoded as replies, this works for them too.
+	 * pretty nice.
+	 */
+	for(int i=0; i < inf->num_reply_msgs; i++) {
+		int str_ix = 0;
+		GLIST_FOREACH(long_cur, inf->replies[i]->_long) {
+			struct msg_param *lp = long_cur->data;
+			assert(IDL_PARAM_DCL(lp->param_dcl).attr != IDL_PARAM_IN);
+			add_stritem(result, str_ix++, lp);
+		}
+	}
+
+	/* terminate and return. */
+	struct stritem_info tmp = { .length = -1 };
+	g_array_append_val(result, tmp);
+	return (void *)g_array_free(result, result->len == 1);
+}
+
+
 struct stritem_info *dispatcher_stritems(GList *method_info_list)
 {
 	GArray *result = g_array_new(FALSE, FALSE, sizeof(struct stritem_info));
@@ -992,36 +1042,12 @@ struct stritem_info *dispatcher_stritems(GList *method_info_list)
 		GLIST_FOREACH(cur_l, req->_long) {
 			struct msg_param *p = cur_l->data;
 			assert(IDL_PARAM_DCL(p->param_dcl).attr != IDL_PARAM_OUT);
-			IDL_tree type = p->X._long.type;
-			int length = max_size(type);
-			bool stringlike = IDL_NODE_TYPE(type) == IDLN_TYPE_STRING
-				|| IDL_NODE_TYPE(type) == IDLN_TYPE_WIDE_STRING;
-			struct stritem_info *si;
-			if(result->len <= i) {
-				struct stritem_info tmp = {
-					.length = 0,
-					.stringlike = false,
-				};
-				g_array_append_val(result, tmp);
-				si = &g_array_index(result, struct stritem_info,
-					result->len - 1);
-				assert(si == &g_array_index(result, struct stritem_info, i));
-			} else {
-				si = &g_array_index(result, struct stritem_info, i);
-			}
-			if(!si->stringlike && stringlike) si->stringlike = true;
-			si->length = MAX(si->length, length);
-			i++;
+			add_stritem(result, i++, p);
 		}
 	}
 
-	if(result->len > 0) {
-		/* terminate and return. */
-		struct stritem_info tmp = { .length = -1 };
-		g_array_append_val(result, tmp);
-		return (void *)g_array_free(result, FALSE);
-	} else {
-		g_array_free(result, TRUE);
-		return NULL;
-	}
+	/* terminate and return. */
+	struct stritem_info tmp = { .length = -1 };
+	g_array_append_val(result, tmp);
+	return (void *)g_array_free(result, result->len == 1);
 }

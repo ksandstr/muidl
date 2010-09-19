@@ -484,6 +484,9 @@ extern GList *analyse_methods_of_iface(
  */
 extern struct stritem_info *dispatcher_stritems(GList *methods);
 
+/* same for stubs' out-halves. */
+extern struct stritem_info *stub_stritems(const struct method_info *inf);
+
 /* size of a rigid type in bits. negative if the type is a struct or union that
  * µIDL cannot pack into fewer than 64 untyped words.
  */
