@@ -136,7 +136,7 @@ static LLVMValueRef build_stub_receive_strings(
 
 	GList *long_lists[inf->num_reply_msgs];
 	for(int i=0; i < inf->num_reply_msgs; i++) {
-		long_lists[i] = g_list_first(inf->replies[i]->_long);
+		long_lists[i] = inf->replies[i]->_long;
 	}
 
 	int brpos = 1;

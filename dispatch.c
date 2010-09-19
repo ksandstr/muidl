@@ -169,7 +169,7 @@ static LLVMTypeRef get_vtable_type(struct llvm_ctx *ctx, IDL_tree iface)
 	GList *methods = all_methods_of_iface(ctx->ns, iface);
 	int num_fields = g_list_length(methods), f_offs = 0;
 	LLVMTypeRef field_types[num_fields];
-	GList *cur = g_list_first(methods);
+	GList *cur = methods;
 	while(f_offs < num_fields) {
 		assert(cur != NULL);
 		IDL_tree op = cur->data,
@@ -625,10 +625,7 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 
 	/* recognize interfaces that've got tag-mask dispatching. */
 	GList *tm_list = NULL;
-	for(GList *cur = g_list_first(methods);
-		cur != NULL;
-		cur = g_list_next(cur))
-	{
+	GLIST_FOREACH(cur, methods) {
 		struct method_info *inf = cur->data;
 		if(inf->request->tagmask != NO_TAGMASK) {
 			assert(inf->request->sublabel == NO_SUBLABEL);
@@ -662,10 +659,7 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 		tm_list = g_list_sort(tm_list, &method_by_tagmask_cmp);
 		uint32_t prior = NO_TAGMASK;
 		LLVMValueRef mask_switch = NULL;
-		for(GList *cur = g_list_first(tm_list);
-			cur != NULL;
-			cur = g_list_next(cur))
-		{
+		GLIST_FOREACH(cur, tm_list) {
 			const struct method_info *inf = cur->data;
 			if(prior != inf->request->tagmask) {
 				/* chain start. */
@@ -708,10 +702,7 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 
 	int top_label = -1;
 	LLVMValueRef sublabelswitch = NULL;
-	for(GList *cur = g_list_first(methods);
-		cur != NULL;
-		cur = g_list_next(cur))
-	{
+	GLIST_FOREACH(cur, methods) {
 		struct method_info *inf = cur->data;
 		/* tag-mask dispatching is handled above */
 		if(inf->request->tagmask != NO_TAGMASK) continue;

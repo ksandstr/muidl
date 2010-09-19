@@ -954,10 +954,7 @@ GList *analyse_methods_of_iface(
 {
 	GList *methods = all_methods_of_iface(pr->ns, iface);
 	int vtab_pos = 0;
-	for(GList *cur = g_list_first(methods);
-		cur != NULL;
-		cur = g_list_next(cur))
-	{
+	GLIST_FOREACH(cur, methods) {
 		IDL_tree method = cur->data;
 		struct method_info *inf = analyse_op_dcl(pr, method);
 		if(inf == NULL) {

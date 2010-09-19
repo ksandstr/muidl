@@ -115,8 +115,8 @@
  * NOTE that this is not robust against modification from inside the list;
  * instead, accumulate a bunch of nodes and delete them afterward.
  */
-#define GLIST_FOREACH(__name, list) \
-	for(GList *__name = g_list_first((list)); \
+#define GLIST_FOREACH(__name, list_head) \
+	for(GList *__name = (list_head); \
 		__name != NULL; \
 		__name = g_list_next(__name))
 

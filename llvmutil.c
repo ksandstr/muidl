@@ -74,10 +74,7 @@ void build_free_mallocs(struct llvm_ctx *ctx)
 {
 	if(ctx->malloc_ptrs == NULL) return;
 
-	for(GList *cur = g_list_first(ctx->malloc_ptrs);
-		cur != NULL;
-		cur = g_list_next(cur))
-	{
+	GLIST_FOREACH(cur, ctx->malloc_ptrs) {
 		LLVMValueRef ptr = cur->data;
 		LLVMBuildFree(ctx->builder, ptr);
 	}

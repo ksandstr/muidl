@@ -80,10 +80,7 @@ static void print_vtable(
 	g_free(vtpfx);
 
 	GList *methods = all_methods_of_iface(ns, iface);
-	for(GList *cur = g_list_first(methods);
-		cur != NULL;
-		cur = g_list_next(cur))
-	{
+	GLIST_FOREACH(cur, methods) {
 		IDL_tree op = cur->data;
 
 		char *rettypstr = return_type(ns, op, NULL, true),

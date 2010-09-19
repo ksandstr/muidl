@@ -130,7 +130,7 @@ static int pack_items(
 	assert(items_per_size[0] == NULL);
 	for(int sz=1; sz < (BITS_PER_WORD - 1); sz++) {
 		if(items_per_size[sz] == NULL) continue;
-		GList *link = g_list_first(items_per_size[sz]);
+		GList *link = items_per_size[sz];
 		struct comp_item *ci = link->data;
 		const int nbits = ci->bits_each * ci->dim;
 		items_per_size[sz] = g_list_delete_link(items_per_size[sz], link);
