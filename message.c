@@ -359,6 +359,13 @@ void build_msg_decoder(
 
 	assert(msg->_long == NULL || stritems != NULL);
 	int lp_offset = -1;
+	/* this is more safe than clever. it could be made cleverer while not
+	 * making it less safe.
+	 */
+	ctx->tpos = LLVMBuildAdd(ctx->builder, build_u_from_tag(ctx, ctx->tag),
+		CONST_WORD(1), "tpos");
+	ctx->tmax = LLVMBuildAdd(ctx->builder, ctx->tpos,
+		build_t_from_tag(ctx, ctx->tag), "tmax");
 	GLIST_FOREACH(cur, msg->_long) {
 		struct msg_param *lp = cur->data;
 		lp_offset++;
