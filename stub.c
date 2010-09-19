@@ -156,8 +156,6 @@ static LLVMValueRef build_stub_receive_strings(
 			struct msg_param *p = long_lists[j]->data;
 
 			int size = max_size(p->X._long.type);
-			printf("looking at `%s' (size %d) to fill stritem[%d] of len %d\n",
-				p->name, size, i, si->length);
 			if(size >= si->length) {
 				si->reply_pos = j;
 				si->param = p;
