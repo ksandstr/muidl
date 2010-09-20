@@ -348,7 +348,8 @@ LLVMTypeRef context_type_of_iface(struct llvm_ctx *ctx, IDL_tree iface)
 {
 	assert(IDL_NODE_TYPE(iface) == IDLN_INTERFACE);
 
-	GHashTable *exn_hash = g_hash_table_new(&g_str_hash, &g_str_equal);
+	GHashTable *exn_hash = g_hash_table_new_full(&g_str_hash, &g_str_equal,
+		&g_free, NULL);
 	collect_exceptions(ctx->ns, exn_hash, iface);
 	GList *exn_list = iface_exns_in_order(exn_hash);
 	g_hash_table_destroy(exn_hash);
