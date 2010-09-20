@@ -278,6 +278,7 @@ static void build_exn_raise_fns_for_iface(
 {
 	GHashTable *exn_hash = g_hash_table_new(&g_str_hash, &g_str_equal);
 	collect_exceptions(ctx->ns, exn_hash, iface);
+
 	GHashTableIter iter;
 	g_hash_table_iter_init(&iter, exn_hash);
 	gpointer key = NULL, value = NULL;
@@ -301,6 +302,8 @@ static void build_exn_raise_fns_for_iface(
 		/* set collapsible linkage. */
 		LLVMSetLinkage(fn, LLVMLinkOnceAnyLinkage);
 	}
+
+	g_hash_table_destroy(exn_hash);
 }
 
 
