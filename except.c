@@ -56,8 +56,16 @@ uint32_t exn_hash(IDL_tree exn)
 	IDL_LIST_FOREACH(m_cur, IDL_EXCEPT_DCL(exn).members) {
 		IDL_tree member = IDL_LIST(m_cur).data,
 			mtype = get_type_spec(IDL_MEMBER(member).type_spec);
-		int mtype_bits = size_in_bits(mtype),
+
+		int mtype_bits, mtype_words;
+		if(is_rigid_type(NULL, mtype)) {
+			mtype_bits = size_in_bits(mtype);
 			mtype_words = size_in_words(mtype);
+		} else {
+			mtype_bits = max_size(mtype) * 8;
+			mtype_words = (mtype_bits + BITS_PER_WORD - 1) / BITS_PER_WORD;
+		}
+
 		IDL_LIST_FOREACH(d_cur, IDL_MEMBER(member).dcls) {
 			IDL_tree dcl = IDL_LIST(d_cur).data;
 			int count = -1;
@@ -172,16 +180,34 @@ static LLVMTypeRef exn_raise_fn_type(struct llvm_ctx *ctx, IDL_tree exn)
 			mtype = get_type_spec(IDL_MEMBER(m).type_spec);
 		IDL_LIST_FOREACH(d_cur, IDL_MEMBER(m).dcls) {
 			IDL_tree dcl = IDL_LIST(d_cur).data;
+			const bool isvt = is_value_type(mtype);
 			T typ;
-			if(IDL_NODE_TYPE(dcl) == IDLN_TYPE_ARRAY
-				&& is_value_type(mtype))
-			{
+			if(IDL_NODE_TYPE(dcl) == IDLN_TYPE_ARRAY && isvt) {
 				typ = LLVMPointerType(llvm_value_type(ctx, mtype), 0);
-			} else if(!is_value_type(mtype)) {
+			} else if(!isvt) {
 				/* nonvalue types are passed by pointer; an array of those is
-				 * just a pointer to more than one.
+				 * either disallowed (seqs, strings) or just a pointer to more
+				 * than one.
 				 */
-				typ = LLVMPointerType(llvm_rigid_type(ctx, mtype), 0);
+				T mt;
+				if(is_rigid_type(ctx->ns, mtype)) {
+					mt = llvm_rigid_type(ctx, mtype);
+				} else if(IDL_NODE_TYPE(mtype) == IDLN_TYPE_STRING) {
+					mt = LLVMInt8TypeInContext(ctx->ctx);
+				} else if(IDL_NODE_TYPE(mtype) == IDLN_TYPE_WIDE_STRING) {
+					mt = ctx->i32t;
+				} else if(IDL_NODE_TYPE(mtype) == IDLN_TYPE_SEQUENCE) {
+					mt = NULL;
+					T m = llvm_rigid_type(ctx, get_type_spec(
+							IDL_TYPE_SEQUENCE(mtype).simple_type_spec));
+					g_ptr_array_add(types, LLVMPointerType(m, 0));
+					/* and the length */
+					g_ptr_array_add(types, ctx->i32t);
+				} else {
+					NOTDEFINED(mtype);
+				}
+
+				if(mt == NULL) typ = NULL; else typ = LLVMPointerType(mt, 0);
 			} else {
 				assert(IDL_NODE_TYPE(dcl) == IDLN_IDENT);
 				typ = llvm_value_type(ctx, mtype);
@@ -342,16 +368,36 @@ LLVMTypeRef context_type_of_iface(struct llvm_ctx *ctx, IDL_tree iface)
 				IDL_tree dcl = IDL_LIST(d_cur).data;
 				T m;
 				if(IDL_NODE_TYPE(dcl) == IDLN_TYPE_ARRAY) {
+					assert(is_rigid_type(ctx->ns, mtype));
 					long long size = IDL_INTEGER(IDL_LIST(
 						IDL_TYPE_ARRAY(dcl).size_list).data).value;
 					m = LLVMArrayType(llvm_rigid_type(ctx, mtype),
 						size);
 				} else if(IDL_NODE_TYPE(dcl) == IDLN_IDENT) {
-					m = llvm_rigid_type(ctx, mtype);
+					if(is_rigid_type(ctx->ns, mtype)) {
+						m = llvm_rigid_type(ctx, mtype);
+					} else if(IDL_NODE_TYPE(mtype) == IDLN_TYPE_STRING) {
+						int len = IDL_INTEGER(
+							IDL_TYPE_STRING(mtype).positive_int_const).value;
+						m = LLVMArrayType(LLVMInt8TypeInContext(ctx->ctx),
+							len + 1);
+						/* (TODO: wide strings) */
+					} else if(IDL_NODE_TYPE(mtype) == IDLN_TYPE_SEQUENCE) {
+						int len = IDL_INTEGER(
+							IDL_TYPE_SEQUENCE(mtype).positive_int_const).value;
+						T subtype = llvm_rigid_type(ctx, get_type_spec(
+								IDL_TYPE_SEQUENCE(mtype).simple_type_spec));
+						g_ptr_array_add(e_types, LLVMArrayType(subtype, len));
+						g_ptr_array_add(e_types, ctx->i32t);
+						m = NULL;
+					} else {
+						NOTDEFINED(mtype);
+					}
 				} else {
 					g_assert_not_reached();
 				}
-				g_ptr_array_add(e_types, m);
+
+				if(m != NULL) g_ptr_array_add(e_types, m);
 			}
 		}
 		T st = LLVMStructTypeInContext(ctx->ctx, (T *)e_types->pdata,
@@ -373,25 +419,44 @@ LLVMTypeRef context_type_of_iface(struct llvm_ctx *ctx, IDL_tree iface)
 void build_decode_exception(
 	struct llvm_ctx *ctx,
 	LLVMValueRef ex_ptr,
-	const struct message_info *msg)
+	const struct message_info *msg,
+	const struct stritem_info *stritems)
 {
 	assert(msg->ret_type == NULL);
 
+	GList *params = g_list_concat(
+		g_list_concat(g_list_copy(msg->untyped), g_list_copy(msg->seq)),
+		g_list_copy(msg->_long));
+
 	int max_arg = 0;
-	GLIST_FOREACH(p_cur, msg->untyped) {
-		const struct msg_param *u = p_cur->data;
-		max_arg = MAX(max_arg, u->arg_ix);
+	GLIST_FOREACH(p_cur, params) {
+		const struct msg_param *p = p_cur->data;
+		max_arg = MAX(max_arg, p->arg_ix);
 	}
 
 	/* set up the spots where out-parameters get stored. */
-	V args[max_arg + 1];
-	for(int i=0; i<max_arg+1; i++) args[i] = NULL;
-	GLIST_FOREACH(p_cur, msg->untyped) {
-		const struct msg_param *u = p_cur->data;
-		args[u->arg_ix] = LLVMBuildStructGEP(ctx->builder, ex_ptr,
-			u->arg_ix + 1, "ex.val.ptr");
+	V args[max_arg + 1];	/* (+1 in case the last one is a sequence) */
+	for(int i=0; i < max_arg + 1; i++) args[i] = NULL;
+	GLIST_FOREACH(p_cur, params) {
+		const struct msg_param *p = p_cur->data;
+		if(p->kind == P_LONG) {
+			V indexes[2] = { CONST_INT(0), CONST_INT(0) };
+			args[p->arg_ix + 0] = LLVMBuildGEP(ctx->builder,
+				LLVMBuildStructGEP(ctx->builder, ex_ptr,
+					p->arg_ix + 1, "ex.member.seq.data.addr"),
+				indexes, 2, "ex.member.seq.data.1stptr");
+			if(IDL_NODE_TYPE(p->X._long.type) == IDLN_TYPE_SEQUENCE) {
+				args[p->arg_ix + 1] = LLVMBuildStructGEP(ctx->builder, ex_ptr,
+					p->arg_ix + 2, "ex.member.seq.len.ptr");
+			}
+		} else {
+			args[p->arg_ix] = LLVMBuildStructGEP(ctx->builder, ex_ptr,
+				p->arg_ix + 1, "ex.member.ptr");
+		}
 	}
 
 	/* decode the message. */
-	build_msg_decoder(ctx, NULL, args, msg, NULL, true);
+	build_msg_decoder(ctx, NULL, args, msg, stritems, true);
+
+	g_list_free(params);
 }

@@ -611,6 +611,81 @@ fail:
 }
 
 
+static const char *get_dcl_name(IDL_tree dcl)
+{
+	switch(IDL_NODE_TYPE(dcl)) {
+		case IDLN_IDENT: return IDL_IDENT(dcl).str;
+		case IDLN_TYPE_ARRAY: return IDL_IDENT(IDL_TYPE_ARRAY(dcl).ident).str;
+		default: NOTDEFINED(dcl);
+	}
+}
+
+
+static void add_rigid_dcl(
+	struct message_info *msg,
+	IDL_tree mtype,
+	IDL_tree dcl,
+	int param_ix,
+	int arg_ix)
+{
+	int count = -1, words = -1;
+	bool is_array = false;
+	if(IDL_NODE_TYPE(dcl) == IDLN_IDENT) {
+		count = 1;
+		words = size_in_words(mtype);
+	} else if(IDL_NODE_TYPE(dcl) == IDLN_TYPE_ARRAY) {
+		count = 1;
+		is_array = true;
+		IDL_LIST_FOREACH(size_cur, IDL_TYPE_ARRAY(dcl).size_list) {
+			count *= IDL_INTEGER(IDL_LIST(size_cur).data).value;
+		}
+		words = size_in_words(dcl);
+	} else {
+		g_assert_not_reached();
+	}
+
+	struct msg_param *u = new_untyped(get_dcl_name(dcl),
+		is_array ? dcl : mtype, NULL, param_ix);
+	u->X.untyped.first_reg = msg->tag_u;
+	u->X.untyped.last_reg = msg->tag_u + words - 1;
+	u->arg_ix = arg_ix;
+	msg->tag_u += words;
+	msg->untyped = g_list_prepend(msg->untyped, u);
+}
+
+
+static void add_long_dcl(
+	struct message_info *msg,
+	IDL_tree mtype,
+	IDL_tree dcl,
+	int param_ix,
+	int *arg_ix_p)
+{
+	struct msg_param *lp = new_long_param(get_dcl_name(dcl),
+		mtype, NULL, param_ix);
+	lp->arg_ix = *arg_ix_p;
+	if(IDL_NODE_TYPE(mtype) == IDLN_TYPE_SEQUENCE) (*arg_ix_p) += 2;
+	else (*arg_ix_p)++;
+	msg->_long = g_list_prepend(msg->_long, lp);
+}
+
+
+static void add_seq_dcl(
+	struct message_info *msg,
+	IDL_tree mtype,
+	IDL_tree dcl,
+	int param_ix,
+	int *arg_ix_p)
+{
+	/* TODO: construct inline sequences from eligible types... eventually...
+	 * (also these would appear in a mixed order with the untyped parameters,
+	 * hardly ideal for positioning. there'd have to be an another pass for
+	 * that in build_exception_message().)
+	 */
+	add_long_dcl(msg, mtype, dcl, param_ix, arg_ix_p);
+}
+
+
 struct message_info *build_exception_message(IDL_tree exn)
 {
 	struct message_info *msg = g_new(struct message_info, 1);
@@ -629,46 +704,33 @@ struct message_info *build_exception_message(IDL_tree exn)
 	msg->seq = NULL;
 	msg->_long = NULL;
 
-	/* construct untyped parameters for exception members */
-	int param_ix = 0;
+	/* construct parameters for exception members. arg_ix is the index of the
+	 * member's first argument in the raiser function's prototype; arg_ix + 1
+	 * is the index of the corresponding member in the exception struct.
+	 */
+	int param_ix = 0, arg_ix = 0;
 	msg->tag_u = 2;
 	IDL_LIST_FOREACH(m_cur, IDL_EXCEPT_DCL(exn).members) {
 		IDL_tree member = IDL_LIST(m_cur).data,
 			mtype = get_type_spec(IDL_MEMBER(member).type_spec);
-		assert(is_rigid_type(NULL, mtype));
 		IDL_LIST_FOREACH(d_cur, IDL_MEMBER(member).dcls) {
 			IDL_tree dcl = IDL_LIST(d_cur).data;
-			int count = -1, words = -1;
-			bool is_array = false;
-			const char *name = NULL;
-			if(IDL_NODE_TYPE(dcl) == IDLN_IDENT) {
-				count = 1;
-				words = size_in_words(mtype);
-				name = IDL_IDENT(dcl).str;
-			} else if(IDL_NODE_TYPE(dcl) == IDLN_TYPE_ARRAY) {
-				count = 1;
-				is_array = true;
-				IDL_LIST_FOREACH(size_cur, IDL_TYPE_ARRAY(dcl).size_list) {
-					count *= IDL_INTEGER(IDL_LIST(size_cur).data).value;
-				}
-				words = size_in_words(dcl);
-				name = IDL_IDENT(IDL_TYPE_ARRAY(dcl).ident).str;
+			if(is_rigid_type(NULL, mtype)) {
+				add_rigid_dcl(msg, mtype, dcl, param_ix++, arg_ix++);
+			} else if(IDL_NODE_TYPE(mtype) == IDLN_TYPE_SEQUENCE) {
+				add_seq_dcl(msg, mtype, dcl, param_ix++, &arg_ix);
 			} else {
-				g_assert_not_reached();
+				add_long_dcl(msg, mtype, dcl, param_ix++, &arg_ix);
 			}
-
-			struct msg_param *u = new_untyped(name,
-				is_array ? dcl : mtype, NULL, param_ix);
-			u->X.untyped.first_reg = msg->tag_u;
-			u->X.untyped.last_reg = msg->tag_u + words - 1;
-			u->arg_ix = param_ix;	/* always one each */
-			msg->tag_u += words;
-			param_ix++;
-			msg->untyped = g_list_prepend(msg->untyped, u);
 		}
 	}
 
+	/* this leaves msg->params NULL, as exceptions don't really have
+	 * parameters as such.
+	 */
 	msg->untyped = g_list_reverse(msg->untyped);
+	msg->seq = g_list_reverse(msg->seq);
+	msg->_long = g_list_reverse(msg->_long);
 	msg->tag_u--;
 
 	return msg;
@@ -1016,7 +1078,8 @@ struct stritem_info *stub_stritems(const struct method_info *inf)
 		int str_ix = 0;
 		GLIST_FOREACH(long_cur, inf->replies[i]->_long) {
 			struct msg_param *lp = long_cur->data;
-			assert(IDL_PARAM_DCL(lp->param_dcl).attr != IDL_PARAM_IN);
+			assert(lp->param_dcl == NULL
+				|| IDL_PARAM_DCL(lp->param_dcl).attr != IDL_PARAM_IN);
 			add_stritem(result, str_ix++, lp);
 		}
 	}

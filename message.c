@@ -188,7 +188,9 @@ LLVMValueRef build_msg_encoder(
 			build_simple_string_item(ctx, words, args[l->arg_ix], len,
 				NULL);
 		} else {
-			/* TODO: map/grant items, structs, unions, arrays, wide strings */
+			/* TODO: map/grant items, sequences, structs, unions, arrays, wide
+			 * strings
+			 */
 			NOTDEFINED(type);
 		}
 		for(int i=0; i<2; i++) {

@@ -124,12 +124,34 @@ static LLVMTypeRef stub_fn_type(
 }
 
 
+/* hack around the LLVM brain damage wrt GEP and union pointers
+ * TODO: check if the cleaner way works with LLVM >= 2.8
+ */
+static LLVMValueRef get_ex_from_ctx(
+	struct llvm_ctx *ctx,
+	LLVMValueRef ctxptr,
+	int ix)
+{
+#if 1
+	T cp_type = LLVMGetElementType(LLVMTypeOf(ctxptr)),
+		u_types[LLVMCountUnionElementTypes(cp_type)];
+	LLVMGetUnionElementTypes(cp_type, u_types);
+	return LLVMBuildPointerCast(ctx->builder, ctxptr,
+		LLVMPointerType(u_types[ix], 0), "ex.ptr");
+#else
+	return LLVMBuildStructGEP(ctx->builder, ctxptr, ix, "ex.ptr");
+#endif
+
+}
+
+
 /* returns the acceptor. */
 static LLVMValueRef build_stub_receive_strings(
 	struct llvm_ctx *ctx,
 	struct method_info *inf,
 	struct stritem_info *stritems,
-	LLVMValueRef *args)
+	LLVMValueRef *args,
+	LLVMValueRef ctxptr)
 {
 	assert(stritems != NULL);
 	assert(stritems[0].length >= 0);
@@ -151,7 +173,7 @@ static LLVMValueRef build_stub_receive_strings(
 		 * written as an optimization later on, so...
 		 */
 		si->memptr = NULL;
-		for(int j=0; j < inf->num_reply_msgs; j++) {
+		for(int j=0; j < inf->num_reply_msgs && si->memptr == NULL; j++) {
 			if(long_lists[j] == NULL) continue;
 			struct msg_param *p = long_lists[j]->data;
 
@@ -160,13 +182,17 @@ static LLVMValueRef build_stub_receive_strings(
 				si->reply_pos = j;
 				si->param = p;
 				if(IS_EXN_MSG(inf->replies[j])) {
-					si->memptr = NULL;		/* TODO */
-					assert(false);
+					V indexes[2] = { CONST_INT(0), CONST_INT(0) },
+						exptr = get_ex_from_ctx(ctx, ctxptr,
+							inf->replies[j]->ctx_index);
+					si->memptr = LLVMBuildGEP(ctx->builder,
+						LLVMBuildStructGEP(ctx->builder, exptr,
+							p->arg_ix + 1, "ex.lp.mem.ptr"),
+						indexes, 2, "ex.lp.1st.ptr");
 				} else {
 					/* it's in an ordinary reply */
 					si->memptr = args[p->arg_ix];
 				}
-				break;
 			}
 		}
 		assert(si->memptr != NULL);
@@ -264,11 +290,6 @@ static void build_ipc_stub(
 	BB start_bb = add_sibling_block(ctx, "stub.start");
 	LLVMPositionBuilderAtEnd(ctx->builder, start_bb);
 	struct stritem_info *stritems = stub_stritems(inf);
-	V acceptor = CONST_WORD(0);
-	if(stritems != NULL && stritems[0].length >= 0) {
-		acceptor = build_stub_receive_strings(ctx, inf, stritems,
-			&args[arg_offset]);
-	}
 	V tag = build_msg_encoder(ctx, inf->request, NULL, &args[arg_offset],
 		false);
 
@@ -293,6 +314,12 @@ static void build_ipc_stub(
 	V ctxptr = NULL;
 	if(IDL_OP_DCL(inf->node).raises_expr != NULL) ctxptr = args[back_ix--];
 
+	V acceptor = CONST_WORD(0);
+	if(stritems != NULL && stritems[0].length >= 0) {
+		acceptor = build_stub_receive_strings(ctx, inf, stritems,
+			&args[arg_offset], ctxptr);
+	}
+
 	if(oneway) {
 		/* L4_nilthread == word(0) */
 		ctx->tag = build_l4_ipc_call(ctx, ipc_dest, timeouts,
@@ -301,7 +328,6 @@ static void build_ipc_stub(
 		/* load the acceptor. */
 		LLVMBuildStore(ctx->builder, acceptor,
 			UTCB_ADDR_VAL(ctx, CONST_INT(BR_OFFSET(0)), "acceptor.addr"));
-		/* FIXME: generate "stritems" from params, load buffer registers */
 		ctx->tag = build_l4_ipc_call(ctx, ipc_dest, timeouts,
 			ipc_dest, tag, NULL, &ctx->mr1, &ctx->mr2);
 	}
@@ -367,18 +393,9 @@ static void build_ipc_stub(
 			BB decode = add_sibling_block(ctx, "catch.x%x", msg->sublabel);
 			LLVMAddCase(sw, CONST_WORD(msg->sublabel), decode);
 			LLVMPositionBuilderAtEnd(ctx->builder, decode);
-#if 1
-			/* LLVM has some kind of brain damage wrt GEP and union pointers */
-			T cp_type = LLVMGetElementType(LLVMTypeOf(ctxptr)),
-				u_types[LLVMCountUnionElementTypes(cp_type)];
-			LLVMGetUnionElementTypes(cp_type, u_types);
-			V exptr = LLVMBuildPointerCast(ctx->builder, ctxptr,
-				LLVMPointerType(u_types[msg->ctx_index], 0), "ex.ptr");
-#else
-			V exptr = LLVMBuildStructGEP(ctx->builder, ctxptr,
-				msg->ctx_index, "ex.ptr");
-#endif
-			build_decode_exception(ctx, exptr, msg);
+			build_decode_exception(ctx,
+				get_ex_from_ctx(ctx, ctxptr, msg->ctx_index),
+				msg, stritems);
 			/* on exception, a stub returns 0 because it's an IPC success
 			 * regardless. the caller gets to check ctxptr->tag.
 			 */
@@ -408,6 +425,7 @@ static void build_ipc_stub(
 	ctx->builder = NULL;
 
 	g_free(args);
+	g_free(stritems);
 }
 
 

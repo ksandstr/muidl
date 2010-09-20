@@ -580,7 +580,8 @@ extern LLVMTypeRef context_type_of_iface(
 extern void build_decode_exception(
 	struct llvm_ctx *ctx,
 	LLVMValueRef ex_ptr,
-	const struct message_info *exception);
+	const struct message_info *exception,
+	const struct stritem_info *stritems);
 
 
 /* from sequence.c */

@@ -30,6 +30,17 @@
 module ParamTypesSuite
 {
 
+/* an exception that carries string items, so that test 4 can provoke the
+ * string item allocation and rebuilding mechanism.
+ */
+exception StringyFailure
+{
+	long number;
+	string<40> whatsit;
+	string<32> header;
+};
+
+
 interface StringTypes
 {
 
@@ -65,7 +76,20 @@ interface StringTypes
 		inout string<32> auxiliary,
 		inout string<80> actual);
 #endif
-};
 
+/* TEST 4: in strings and strings in the exception
+ * expected: success
+ */
+#if __TEST__ == 4
+	void unmentionable(in string<20> sha1_in_hex_or_smt)
+		raises(StringyFailure);
+
+	void unmentionable_the_sequel(
+		in string<20> blah_blah,
+		in string<80> foo)
+			raises(StringyFailure);
+#endif
+
+};
 
 };
