@@ -804,11 +804,7 @@ struct method_info *analyse_op_dcl(
 		/* fill in their index in the interface context union. */
 		IDL_tree iface = IDL_get_parent_node(method, IDLN_INTERFACE, NULL);
 		assert(iface != NULL);
-		GHashTable *exn_hash = g_hash_table_new_full(&g_str_hash, &g_str_equal,
-			&g_free, NULL);
-		collect_exceptions(pr->ns, exn_hash, iface);
-		GList *order_exns = iface_exns_in_order(exn_hash);
-		g_hash_table_destroy(exn_hash);
+		GList *order_exns = iface_exns_sorted(pr->ns, iface);
 		int ctx_pos = 0;
 		GLIST_FOREACH(e_cur, order_exns) {
 			ctx_pos++;		/* numbered from 1 on */

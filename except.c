@@ -123,52 +123,39 @@ char *exn_raise_fn_name(IDL_tree exn)
 }
 
 
-int collect_exceptions(IDL_ns ns, GHashTable *ex_repo_ids, IDL_tree iface)
-{
-	int ret = 0;
-	GList *methods = all_methods_of_iface(ns, iface);
-	GLIST_FOREACH(cur, methods) {
-		IDL_tree op = cur->data;
-		for(IDL_tree r_cur = IDL_OP_DCL(op).raises_expr;
-			r_cur != NULL;
-			r_cur = IDL_LIST(r_cur).next)
-		{
-			IDL_tree exn_id = IDL_LIST(r_cur).data;
-			const char *rid = IDL_IDENT(exn_id).repo_id;
-			if(g_hash_table_lookup(ex_repo_ids, rid) == NULL) {
-				/* exn_id actually refers to the IDL_EXCEPT_DCL's ident node.
-				 * the actual exception is an immediate parent.
-				 */
-				IDL_tree exn = IDL_get_parent_node(exn_id, IDLN_EXCEPT_DCL,
-					NULL);
-				assert(exn != NULL);
-				assert(strcmp(rid, IDL_IDENT(IDL_EXCEPT_DCL(exn).ident).repo_id) == 0);
-				g_hash_table_insert(ex_repo_ids, g_strdup(rid), exn);
-				ret++;
-			}
-		}
-	}
-	g_list_free(methods);
-
-	return ret;
-}
-
-
 static int exns_by_repoid_cmp(gconstpointer a, gconstpointer b) {
 	return strcmp(EXN_REPO_ID((IDL_tree)a), EXN_REPO_ID((IDL_tree)b));
 }
 
 
-GList *iface_exns_in_order(GHashTable *exn_hash)
+GList *iface_exns_sorted(IDL_ns ns, IDL_tree iface)
 {
-	GHashTableIter iter;
-	g_hash_table_iter_init(&iter, exn_hash);
-	gpointer k = NULL, v = NULL;
-	GList *list = NULL;
-	while(g_hash_table_iter_next(&iter, &k, &v)) {
-		list = g_list_prepend(list, v);
+	GHashTable *ex_repo_ids = g_hash_table_new(&g_str_hash, &g_str_equal);
+
+	GList *methods = all_methods_of_iface(ns, iface);
+	GLIST_FOREACH(cur, methods) {
+		IDL_tree op = cur->data;
+		IDL_LIST_FOREACH(r_cur, IDL_OP_DCL(op).raises_expr) {
+			IDL_tree exn_id = IDL_LIST(r_cur).data;
+			const char *rid = IDL_IDENT(exn_id).repo_id;
+			if(g_hash_table_lookup(ex_repo_ids, rid) != NULL) continue;
+
+			/* exn_id actually refers to the IDL_EXCEPT_DCL's ident node.
+			 * the actual exception is an immediate parent.
+			 */
+			IDL_tree exn = IDL_get_parent_node(exn_id, IDLN_EXCEPT_DCL,
+				NULL);
+			assert(exn != NULL);
+			assert(strcmp(rid, IDL_IDENT(IDL_EXCEPT_DCL(exn).ident).repo_id) == 0);
+			g_hash_table_insert(ex_repo_ids, (char *)rid, exn);
+		}
 	}
-	return g_list_sort(list, &exns_by_repoid_cmp);
+	g_list_free(methods);
+
+	GList *ret = g_hash_table_get_values(ex_repo_ids);
+	g_hash_table_destroy(ex_repo_ids);
+
+	return g_list_sort(ret, &exns_by_repoid_cmp);
 }
 
 
@@ -276,24 +263,17 @@ static void build_exn_raise_fns_for_iface(
 	GHashTable *seen_hash,
 	IDL_tree iface)
 {
-	GHashTable *exn_hash = g_hash_table_new(&g_str_hash, &g_str_equal);
-	collect_exceptions(ctx->ns, exn_hash, iface);
-
-	GHashTableIter iter;
-	g_hash_table_iter_init(&iter, exn_hash);
-	gpointer key = NULL, value = NULL;
-	while(g_hash_table_iter_next(&iter, &key, &value)) {
-		IDL_tree exn = value;
-		if(g_hash_table_lookup(seen_hash, key) != NULL
-			|| is_negs_exn(exn))
-		{
+	GList *exn_list = iface_exns_sorted(ctx->ns, iface);
+	GLIST_FOREACH(e_cur, exn_list) {
+		IDL_tree exn = e_cur->data;
+		const char *key = IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL(exn).ident);
+		if(g_hash_table_lookup(seen_hash, key) != NULL || is_negs_exn(exn)) {
 			/* already emitted for this module, or one of those exceptions that
 			 * doesn't get a raise function
 			 */
-			g_free(key);
 			continue;
 		}
-		g_hash_table_insert(seen_hash, key, value);
+		g_hash_table_insert(seen_hash, (char *)key, exn);
 
 		char *name = exn_raise_fn_name(exn);
 		V fn = build_exn_raise_fn(ctx, name, exn);
@@ -302,8 +282,7 @@ static void build_exn_raise_fns_for_iface(
 		/* set collapsible linkage. */
 		LLVMSetLinkage(fn, LLVMLinkOnceAnyLinkage);
 	}
-
-	g_hash_table_destroy(exn_hash);
+	g_list_free(exn_list);
 }
 
 
@@ -314,8 +293,7 @@ gboolean iter_build_exception_raise_fns(
 	struct llvm_ctx *ctx = ud;
 	bool made = false;
 	if(ctx->seen_exn_hash == NULL) {
-		ctx->seen_exn_hash = g_hash_table_new_full(&g_str_hash, &g_str_equal,
-			&g_free, NULL);
+		ctx->seen_exn_hash = g_hash_table_new(&g_str_hash, &g_str_equal);
 		made = true;
 	}
 
@@ -348,11 +326,7 @@ LLVMTypeRef context_type_of_iface(struct llvm_ctx *ctx, IDL_tree iface)
 {
 	assert(IDL_NODE_TYPE(iface) == IDLN_INTERFACE);
 
-	GHashTable *exn_hash = g_hash_table_new_full(&g_str_hash, &g_str_equal,
-		&g_free, NULL);
-	collect_exceptions(ctx->ns, exn_hash, iface);
-	GList *exn_list = iface_exns_in_order(exn_hash);
-	g_hash_table_destroy(exn_hash);
+	GList *exn_list = iface_exns_sorted(ctx->ns, iface);
 	if(exn_list == NULL) return NULL;
 
 	GPtrArray *u_types = g_ptr_array_new(),

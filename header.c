@@ -151,21 +151,16 @@ static void print_vtable(
 
 static void print_exn_raisers(struct print_ctx *pr, IDL_tree iface)
 {
-	GHashTable *ex_repo_ids = g_hash_table_new_full(&g_str_hash, &g_str_equal,
-		&g_free, NULL);
-	collect_exceptions(pr->ns, ex_repo_ids, iface);
+	GList *exn_list = iface_exns_sorted(pr->ns, iface);
 
 	/* output preprocessor-guarded externs for each, except the ones that are
 	 * raised by negative return value.
 	 */
-	GHashTableIter iter;
-	g_hash_table_iter_init(&iter, ex_repo_ids);
-	gpointer key = NULL, value = NULL;
 	bool first = true;
-	while(g_hash_table_iter_next(&iter, &key, &value)) {
-		const char *repo_id = key;
-		IDL_tree exn = value;
+	GLIST_FOREACH(e_cur, exn_list) {
+		IDL_tree exn = e_cur->data;
 		if(is_negs_exn(exn)) continue;
+		const char *repo_id = IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL(exn).ident);
 
 		if(first) {
 			first = false;
@@ -216,7 +211,7 @@ static void print_exn_raisers(struct print_ctx *pr, IDL_tree iface)
 		g_free(raiser_name);
 	}
 
-	g_hash_table_destroy(ex_repo_ids);
+	g_list_free(exn_list);
 }
 
 

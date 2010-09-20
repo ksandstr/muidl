@@ -549,20 +549,14 @@ extern gboolean iter_build_stubs(IDL_tree_func_data *tf, void *ctxptr);
 
 /* from except.c */
 
-/* collect previously unseen distinct exception repo IDs and resolve them into
- * IDL_EXCEPT_DCL nodes. inserts the result into seen_hash as dup(repo_id) ->
- * except_dcl. returns the number of new entries in the hash.
+/* gather and resolve all exceptions that operations of the given interface,
+ * including interfaces it's derived from, references. the resulting list is of
+ * <IDL_tree> sorted by repository ID.
+ *
+ * (the sort order of this function determines exception structure index in the
+ * type returned by context_type_of_iface().)
  */
-extern int collect_exceptions(
-	IDL_ns ns,
-	GHashTable *seen_hash,
-	IDL_tree iface);
-
-/* returns a list of IDL_tree, being the IDL_EXCEPT_DCL nodes in sorted order,
- * which is the basis for their indexing in the type returned by
- * context_type_of_iface().
- */
-extern GList *iface_exns_in_order(GHashTable *exn_hash);
+extern GList *iface_exns_sorted(IDL_ns ns, IDL_tree iface);
 
 extern char *exn_raise_fn_name(IDL_tree except_dcl);
 
