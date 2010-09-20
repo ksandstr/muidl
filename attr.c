@@ -73,6 +73,11 @@ bool is_noreply_exn(IDL_tree exn)
 }
 
 
+bool is_complex_exn(IDL_tree exn) {
+	return !is_negs_exn(exn) && !is_noreply_exn(exn);
+}
+
+
 bool is_packed(IDL_tree struct_type)
 {
 	assert(IDL_NODE_TYPE(struct_type) == IDLN_TYPE_STRUCT);

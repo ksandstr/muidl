@@ -377,6 +377,7 @@ extern IDL_tree get_array_type(IDL_tree type);
 extern IDL_tree find_exn(IDL_tree opdcl, bool (*pred)(IDL_tree exn));
 #define find_neg_exn(op) find_exn((op), &is_negs_exn)
 #define find_noreply_exn(op) find_exn((op), &is_noreply_exn)
+#define has_complex_exn(op) (find_exn((op), &is_complex_exn) != NULL)
 
 /* whether the given type can be returned to a dispatcher without ambiguity
  * even when a NegativeReturn exception is declared. (i.e. tests for octet and
@@ -519,9 +520,14 @@ extern bool has_pager_target(IDL_ns ns, IDL_tree op_dcl);
 extern bool is_packed(IDL_tree struct_type);
 extern int op_timeout_kind(IDL_tree opdcl);	/* returns mask of TIMEOUT_* */
 
-/* is this IDLN_EXCEPT_DCL a NegativeReturn, or NoReply exception? */
+/* is this IDLN_EXCEPT_DCL a NegativeReturn, NoReply, or complex exception?
+ *
+ * (complex is defined as !neg && !noreply, but this is made available for use
+ * with find_exn().)
+ */
 extern bool is_negs_exn(IDL_tree except_dcl);
 extern bool is_noreply_exn(IDL_tree except_dcl);
+extern bool is_complex_exn(IDL_tree except_dcl);
 
 
 /* from header.c */

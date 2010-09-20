@@ -36,7 +36,7 @@ static LLVMTypeRef stub_fn_type(
 	struct message_info *reply = NULL;
 	if(inf->num_reply_msgs > 0) reply = inf->replies[0];
 
-	const bool has_context = IDL_OP_DCL(inf->node).raises_expr != NULL;
+	const bool has_context = has_complex_exn(inf->node);
 	int num_params = IDL_list_length(IDL_OP_DCL(inf->node).parameter_dcls),
 		num_args = num_params * 2 + 2 + 1 + 2 + (has_context ? 1 : 0);
 	T arg_types[num_args];
