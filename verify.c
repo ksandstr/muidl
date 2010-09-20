@@ -124,6 +124,7 @@ static gboolean supported_types_only(IDL_tree_func_data *tf, gpointer udptr)
 				IDLN_TYPE_SEQUENCE,	/* or sequences */
 				IDLN_TYPE_ARRAY,	/* let alone arrays */
 				IDLN_TYPE_DCL,		/* or even typedefs. */
+				IDLN_TYPE_UNION,	/* in unions? ha ha. */
 				/* so sad. */
 			};
 			if(tf->up == NULL) break;
@@ -168,26 +169,23 @@ static gboolean supported_types_only(IDL_tree_func_data *tf, gpointer udptr)
 			}
 			return FALSE;
 
-		case IDLN_TYPE_ARRAY:
+		case IDLN_TYPE_ARRAY: {
 			if(IDL_list_length(IDL_TYPE_ARRAY(node).size_list) > 1) {
 				fail(v, "arrays must have a single dimension");
 			}
-			break;
 
-		/* structs and unions must be rigid, and therefore can't contain
-		 * sequences or strings.
-		 */
-		case IDLN_TYPE_STRUCT:
-			IDL_LIST_FOREACH(cur, IDL_TYPE_STRUCT(node).member_list) {
-				IDL_tree member = IDL_LIST(cur).data,
-					mtype = get_type_spec(IDL_MEMBER(member).type_spec);
-				if(!is_rigid_type(NULL, mtype)) {
-					fail(v, "struct fields' types must be rigid (<%s> not allowed)",
-						IDL_NODE_TYPE_NAME(mtype));
-				}
+			IDL_tree atype = get_array_type(node);
+			if(!is_rigid_type(NULL, atype)) {
+				fail(v, "arrays must be of rigid type (<%s> not allowed)",
+					IDL_NODE_TYPE_NAME(atype));
 			}
-			break;
 
+			break;
+		}
+
+		/* unions must be rigid, and therefore can't contain sequences or
+		 * strings.
+		 */
 		case IDLN_TYPE_UNION: {
 			const char *uname = IDL_IDENT(IDL_TYPE_UNION(node).ident).str;
 			IDL_tree swtype = get_type_spec(
