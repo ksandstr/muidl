@@ -321,6 +321,8 @@ struct member_item
 	int dim;		/* 0 for non-array, >0 for array */
 };
 
+#define MEMBER_BITS(mi) (size_in_bits((mi)->type) * MAX(1, (mi)->dim))
+
 
 /* from muidl.c */
 

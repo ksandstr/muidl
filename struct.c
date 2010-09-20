@@ -32,47 +32,14 @@
 #include "l4x2.h"
 
 
-/* a single item, unpacked from the IDL format. */
-struct comp_item
-{
-	IDL_tree type;
-	const char *name;
-	int bits_each, dim;
-};
-
-
 static GHashTable *packed_cache = NULL;
-
-
-/* TODO: this function should be refactored out entirely in favour of
- * expand_member_list() and some calls to size_in_bits().
- */
-static GPtrArray *unpack_idl_fields(IDL_tree stype)
-{
-	assert(IDL_NODE_TYPE(stype) == IDLN_TYPE_STRUCT);
-
-	GPtrArray *items = g_ptr_array_new();
-	struct member_item *mi = expand_member_list(
-		IDL_TYPE_STRUCT(stype).member_list);
-	for(int i=0; mi[i].type != NULL; i++) {
-		struct comp_item *ci = g_new(struct comp_item, 1);
-		ci->type = mi[i].type;
-		ci->bits_each = size_in_bits(ci->type);
-		assert(ci->bits_each >= 0);
-		ci->dim = MAX(mi[i].dim, 1);
-		ci->name = mi[i].name;
-		g_ptr_array_add(items, ci);
-	}
-	g_free(mi);
-	return items;
-}
 
 
 static struct packed_item *new_packed_item(
 	int word,
 	int bit,
 	int len,
-	const struct comp_item *ci)
+	const struct member_item *ci)
 {
 	int namelen = strlen(ci->name);
 	struct packed_item *ret = g_malloc(sizeof(struct packed_item)
@@ -80,7 +47,7 @@ static struct packed_item *new_packed_item(
 	ret->word = word;
 	ret->bit = bit;
 	ret->len = len;
-	ret->dim = ci->dim;
+	ret->dim = MAX(1, ci->dim);
 	ret->type = ci->type;
 	memcpy(ret->name, ci->name, namelen + 1);
 	return ret;
@@ -118,8 +85,8 @@ static int pack_items(
 	for(int sz=1; sz < (BITS_PER_WORD - 1); sz++) {
 		if(items_per_size[sz] == NULL) continue;
 		GList *link = items_per_size[sz];
-		struct comp_item *ci = link->data;
-		const int nbits = ci->bits_each * ci->dim;
+		struct member_item *ci = link->data;
+		const int nbits = MEMBER_BITS(ci);
 		items_per_size[sz] = g_list_delete_link(items_per_size[sz], link);
 
 		/* try different destination words. */
@@ -199,9 +166,8 @@ static int pack_items(
 
 static int item_by_bitsize_cmp(gconstpointer a, gconstpointer b)
 {
-	const struct comp_item *const *ca = a, *const *cb = b;
-	int asize = (*ca)->bits_each * (*ca)->dim,
-		bsize = (*cb)->bits_each * (*cb)->dim;
+	const struct member_item *ca = a, *cb = b;
+	int asize = MEMBER_BITS(ca), bsize = MEMBER_BITS(cb);
 	if(asize > bsize) return 1;
 	else if(asize < bsize) return -1;
 	else return 0;
@@ -222,8 +188,11 @@ const struct packed_format *packed_format_of(IDL_tree stype)
 	struct packed_format *ret = g_hash_table_lookup(packed_cache, s_id);
 	if(ret != NULL) return ret;
 
-	GPtrArray *items = unpack_idl_fields(stype);
-	g_ptr_array_sort(items, &item_by_bitsize_cmp);
+	struct member_item *items = expand_member_list(
+		IDL_TYPE_STRUCT(stype).member_list);
+	int num_items = 0;
+	while(items[num_items].type != NULL) num_items++;
+	qsort(items, num_items, sizeof(struct member_item), &item_by_bitsize_cmp);
 
 	/* packing of small (sub-word) items */
 	GList *items_by_size[BITS_PER_WORD - 1];
@@ -231,13 +200,13 @@ const struct packed_format *packed_format_of(IDL_tree stype)
 		items_by_size[i] = NULL;
 	}
 	int num_small = 0;
-	for(int i=0; i<items->len; i++) {
-		struct comp_item *item = items->pdata[i];
+	for(int i=0; i<num_items; i++) {
+		struct member_item *item = &items[i];
 		/* TODO: produce N items for arrays where bits_each < BITS_PER_WORD, so
 		 * that smaller items can be packed after e.g. an array member that
 		 * leaves 11 bits unused in each word.
 		 */
-		int bits = item->bits_each * item->dim;
+		int bits = MEMBER_BITS(item);
 		if(bits >= BITS_PER_WORD) break;
 		items_by_size[bits] = g_list_prepend(items_by_size[bits], item);
 		num_small++;
@@ -262,9 +231,9 @@ const struct packed_format *packed_format_of(IDL_tree stype)
 #endif
 
 	/* packing of word-length, and longer, items */
-	for(int i=0; i<items->len; i++) {
-		struct comp_item *item = items->pdata[i];
-		int nbits = item->bits_each * item->dim;
+	for(int i=0; i<num_items; i++) {
+		struct member_item *item = &items[i];
+		int nbits = MEMBER_BITS(item);
 		if(nbits < BITS_PER_WORD) continue;
 		g_ptr_array_add(packed, new_packed_item(num_words, 0, nbits, item));
 		int words = (nbits + BITS_PER_WORD - 1) / BITS_PER_WORD;
@@ -285,9 +254,8 @@ const struct packed_format *packed_format_of(IDL_tree stype)
 	}
 #endif
 
-	assert(packed->len == items->len);
-	g_ptr_array_foreach(items, (GFunc)&g_free, NULL);
-	g_ptr_array_free(items, TRUE);
+	assert(packed->len == num_items);
+	g_free(items);
 	items = NULL;
 
 	ret = g_malloc(sizeof(struct packed_format)
