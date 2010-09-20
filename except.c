@@ -320,7 +320,6 @@ gboolean iter_build_exception_raise_fns(
 }
 
 
-/* TODO: printing of the same in the -defs.h */
 /* TODO: memoize the typeref on the iface name under a hash in ctx */
 LLVMTypeRef context_type_of_iface(struct llvm_ctx *ctx, IDL_tree iface)
 {
