@@ -44,10 +44,10 @@ void free_message_info(struct message_info *inf)
 {
 	if(inf == NULL) return;
 
-	list_dispose(inf->params);
-	g_list_free(inf->untyped);
-	g_list_free(inf->seq);
-	g_list_free(inf->_long);
+	g_list_free(inf->params);
+	list_dispose(inf->untyped);
+	list_dispose(inf->seq);
+	list_dispose(inf->_long);
 	g_free(inf);
 }
 
