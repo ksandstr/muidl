@@ -824,6 +824,7 @@ struct method_info *analyse_op_dcl(
 				e->ctx_index = ctx_pos;
 			}
 		}
+		g_list_free(order_exns);
 
 #ifndef NDEBUG
 		for(int i=1; i<expos; i++) {
