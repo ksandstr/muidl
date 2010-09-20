@@ -222,3 +222,34 @@ char *mangle_repo_id(const char *repo_id)
 	}
 	return g_string_free(str, FALSE);
 }
+
+
+struct member_item *expand_member_list(IDL_tree list)
+{
+	GArray *items = g_array_new(FALSE, FALSE, sizeof(struct member_item));
+	IDL_LIST_FOREACH(m_cur, list) {
+		IDL_tree member = IDL_LIST(m_cur).data,
+			mtype = get_type_spec(IDL_MEMBER(member).type_spec);
+		IDL_LIST_FOREACH(d_cur, IDL_MEMBER(member).dcls) {
+			IDL_tree dcl = IDL_LIST(d_cur).data;
+			struct member_item mi = { .type = mtype };
+			IDL_tree id;
+			if(IDL_NODE_TYPE(dcl) == IDLN_IDENT) {
+				mi.dim = 0;
+				id = dcl;
+			} else if(IDL_NODE_TYPE(dcl) == IDLN_TYPE_ARRAY) {
+				mi.dim = IDL_INTEGER(IDL_LIST(
+					IDL_TYPE_ARRAY(dcl).size_list).data).value;
+				id = IDL_TYPE_ARRAY(dcl).ident;
+			} else {
+				g_assert_not_reached();
+			}
+			mi.name = IDL_IDENT(id).str;
+			g_array_append_val(items, mi);
+		}
+	}
+	struct member_item term = { .type = NULL };
+	g_array_append_val(items, term);
+	return (struct member_item *)g_array_free(items,
+		items->len > 1 ? FALSE : TRUE);
+}

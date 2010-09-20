@@ -175,36 +175,26 @@ static void print_exn_raisers(struct print_ctx *pr, IDL_tree iface)
 		code_f(pr, "extern void %s(%s", raiser_name,
 			IDL_EXCEPT_DCL(exn).members == NULL ? "void);" : "");
 		indent(pr, 1);
-		for(IDL_tree cur = IDL_EXCEPT_DCL(exn).members;
-			cur != NULL;
-			cur = IDL_LIST(cur).next)
-		{
-			const char *m_suffix = IDL_LIST(cur).next == NULL ? ");" : ",";
-			IDL_tree member = IDL_LIST(cur).data,
-				mtype = get_type_spec(IDL_MEMBER(member).type_spec);
-			for(IDL_tree d_cur = IDL_MEMBER(member).dcls;
-				d_cur != NULL;
-				d_cur = IDL_LIST(d_cur).next)
-			{
-				IDL_tree decl = IDL_LIST(d_cur).data;
-				IDL_tree name;
-				if(IDL_NODE_TYPE(decl) == IDLN_TYPE_ARRAY) {
-					name = IDL_TYPE_ARRAY(decl).ident;
-				} else if(IDL_NODE_TYPE(decl) == IDLN_IDENT) {
-					name = decl;
-				} else {
-					/* FIXME: what are these anyway */
-					NOTDEFINED(decl);
-				}
+
+		struct member_item *members = expand_member_list(
+			IDL_EXCEPT_DCL(exn).members);
+		for(int i=0; members[i].type != NULL; i++) {
+			const char *m_suffix = members[i+1].type == NULL ? ");" : ",";
+			IDL_tree mtype = members[i].type;
+			if(members[i].dim > 0) {
 				/* FIXME: output the correct type w/pointer when array */
+			} else {
+				/* FIXME: stick the right type in thur (strings, sequences,
+				 * etc)
+				 */
 				code_f(pr, "[%s] %s%s", IDL_NODE_TYPE_NAME(mtype),
-					IDL_IDENT(name).str,
-					IDL_LIST(d_cur).next == NULL ? m_suffix : ",");
+					members[i].name, m_suffix);
 			}
 		}
-		indent(pr, -1);
+		g_free(members);
 
-		code_f(pr, "#endif /* %s */", def);
+		indent(pr, -1);
+		code_f(pr, "#endif  /* %s */", def);
 
 		g_free(def);
 		g_free(mangled);

@@ -313,6 +313,15 @@ struct packed_format
 };
 
 
+/* generally in an array, terminated with type == NULL */
+struct member_item
+{
+	IDL_tree type;
+	const char *name;
+	int dim;		/* 0 for non-array, >0 for array */
+};
+
+
 /* from muidl.c */
 
 extern gboolean arg_verbose;
@@ -420,6 +429,12 @@ extern struct msg_param *find_pdecl(GList *params, IDL_tree pdecl);
 
 /* turn an IDL:blah/ItemName:1.0 repo id into a valid 1:1 C identifier */
 extern char *mangle_repo_id(const char *repo_id);
+
+/* expand list of IDL_MEMBER, i.e. <type, [decls]>, into <type, name, dim>.
+ * terminated by NULL type (because void is never a valid member type), and
+ * caller-freed.
+ */
+extern struct member_item *expand_member_list(IDL_tree list);
 
 
 /* these allocate from pr->tmpstrchunk. strings are valid until the next outer

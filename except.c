@@ -339,45 +339,36 @@ LLVMTypeRef context_type_of_iface(struct llvm_ctx *ctx, IDL_tree iface)
 
 		g_ptr_array_set_size(e_types, 0);
 		g_ptr_array_add(e_types, ctx->i32t);
-		IDL_LIST_FOREACH(cur, IDL_EXCEPT_DCL(exn).members) {
-			IDL_tree member = IDL_LIST(cur).data,
-				mtype = get_type_spec(IDL_MEMBER(member).type_spec);
-			IDL_LIST_FOREACH(d_cur, IDL_MEMBER(member).dcls) {
-				IDL_tree dcl = IDL_LIST(d_cur).data;
-				T m;
-				if(IDL_NODE_TYPE(dcl) == IDLN_TYPE_ARRAY) {
-					assert(is_rigid_type(ctx->ns, mtype));
-					long long size = IDL_INTEGER(IDL_LIST(
-						IDL_TYPE_ARRAY(dcl).size_list).data).value;
-					m = LLVMArrayType(llvm_rigid_type(ctx, mtype),
-						size);
-				} else if(IDL_NODE_TYPE(dcl) == IDLN_IDENT) {
-					if(is_rigid_type(ctx->ns, mtype)) {
-						m = llvm_rigid_type(ctx, mtype);
-					} else if(IDL_NODE_TYPE(mtype) == IDLN_TYPE_STRING) {
-						int len = IDL_INTEGER(
-							IDL_TYPE_STRING(mtype).positive_int_const).value;
-						m = LLVMArrayType(LLVMInt8TypeInContext(ctx->ctx),
-							len + 1);
-						/* (TODO: wide strings) */
-					} else if(IDL_NODE_TYPE(mtype) == IDLN_TYPE_SEQUENCE) {
-						int len = IDL_INTEGER(
-							IDL_TYPE_SEQUENCE(mtype).positive_int_const).value;
-						T subtype = llvm_rigid_type(ctx, get_type_spec(
-								IDL_TYPE_SEQUENCE(mtype).simple_type_spec));
-						g_ptr_array_add(e_types, LLVMArrayType(subtype, len));
-						g_ptr_array_add(e_types, ctx->i32t);
-						m = NULL;
-					} else {
-						NOTDEFINED(mtype);
-					}
-				} else {
-					g_assert_not_reached();
-				}
-
-				if(m != NULL) g_ptr_array_add(e_types, m);
+		struct member_item *members = expand_member_list(
+			IDL_EXCEPT_DCL(exn).members);
+		for(int i=0; members[i].type != NULL; i++) {
+			struct member_item *mi = &members[i];
+			T m;
+			if(mi->dim > 0) {
+				assert(is_rigid_type(ctx->ns, mi->type));
+				m = LLVMArrayType(llvm_rigid_type(ctx, mi->type), mi->dim);
+			} else if(is_rigid_type(ctx->ns, mi->type)) {
+				m = llvm_rigid_type(ctx, mi->type);
+			} else if(IDL_NODE_TYPE(mi->type) == IDLN_TYPE_STRING) {
+				int len = IDL_INTEGER(
+					IDL_TYPE_STRING(mi->type).positive_int_const).value;
+				m = LLVMArrayType(LLVMInt8TypeInContext(ctx->ctx), len + 1);
+				/* (TODO: wide strings) */
+			} else if(IDL_NODE_TYPE(mi->type) == IDLN_TYPE_SEQUENCE) {
+				int len = IDL_INTEGER(
+					IDL_TYPE_SEQUENCE(mi->type).positive_int_const).value;
+				T subtype = llvm_rigid_type(ctx, get_type_spec(
+						IDL_TYPE_SEQUENCE(mi->type).simple_type_spec));
+				g_ptr_array_add(e_types, LLVMArrayType(subtype, len));
+				g_ptr_array_add(e_types, ctx->i32t);
+				m = NULL;
+			} else {
+				g_assert_not_reached();
 			}
+
+			if(m != NULL) g_ptr_array_add(e_types, m);
 		}
+		g_free(members);
 		T st = LLVMStructTypeInContext(ctx->ctx, (T *)e_types->pdata,
 			e_types->len, 0);
 		g_ptr_array_add(u_types, st);

@@ -44,39 +44,26 @@ struct comp_item
 static GHashTable *packed_cache = NULL;
 
 
+/* TODO: this function should be refactored out entirely in favour of
+ * expand_member_list() and some calls to size_in_bits().
+ */
 static GPtrArray *unpack_idl_fields(IDL_tree stype)
 {
 	assert(IDL_NODE_TYPE(stype) == IDLN_TYPE_STRUCT);
 
 	GPtrArray *items = g_ptr_array_new();
-	for(IDL_tree m_cur = IDL_TYPE_STRUCT(stype).member_list;
-		m_cur != NULL;
-		m_cur = IDL_LIST(m_cur).next)
-	{
-		IDL_tree member = IDL_LIST(m_cur).data,
-			mtype = get_type_spec(IDL_MEMBER(member).type_spec);
-		for(IDL_tree d_cur = IDL_MEMBER(member).dcls;
-			d_cur != NULL;
-			d_cur = IDL_LIST(d_cur).next)
-		{
-			IDL_tree dcl = IDL_LIST(d_cur).data;
-			struct comp_item *ci = g_new(struct comp_item, 1);
-			ci->type = mtype;
-			ci->bits_each = size_in_bits(mtype);
-			assert(ci->bits_each >= 0);
-			if(IDL_NODE_TYPE(dcl) == IDLN_IDENT) {
-				ci->dim = 1;
-				ci->name = IDL_IDENT(dcl).str;
-			} else if(IDL_NODE_TYPE(dcl) == IDLN_TYPE_ARRAY) {
-				ci->dim = IDL_INTEGER(IDL_LIST(
-					IDL_TYPE_ARRAY(dcl).size_list).data).value;
-				ci->name = IDL_IDENT(IDL_TYPE_ARRAY(dcl).ident).str;
-			} else {
-				NOTDEFINED(dcl);
-			}
-			g_ptr_array_add(items, ci);
-		}
+	struct member_item *mi = expand_member_list(
+		IDL_TYPE_STRUCT(stype).member_list);
+	for(int i=0; mi[i].type != NULL; i++) {
+		struct comp_item *ci = g_new(struct comp_item, 1);
+		ci->type = mi[i].type;
+		ci->bits_each = size_in_bits(ci->type);
+		assert(ci->bits_each >= 0);
+		ci->dim = MAX(mi[i].dim, 1);
+		ci->name = mi[i].name;
+		g_ptr_array_add(items, ci);
 	}
+	g_free(mi);
 	return items;
 }
 
