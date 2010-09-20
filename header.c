@@ -235,6 +235,7 @@ static void print_extern_prototype(
 }
 
 
+/* FIXME: 'tarded. rigid_type() should handle value types also. */
 static char *fixed_type(IDL_ns ns, IDL_tree type)
 {
 	if(is_value_type(type)) return value_type(ns, type);
@@ -258,6 +259,25 @@ static char *stub_name(
 }
 
 
+/* return value is allocated in the heap. caller frees. */
+static char *iface_context_type(struct print_ctx *pr, IDL_tree iface)
+{
+	char *parts[5];
+	int p = 0;
+//	parts[p++] = g_strdup("muidl");
+	IDL_tree module = IDL_get_parent_node(iface, IDLN_MODULE, NULL);
+	if(module != NULL) {
+		parts[p++] = decapsify(IDL_IDENT(IDL_MODULE(module).ident).str);
+	}
+	parts[p++] = decapsify(IDL_IDENT(IDL_INTERFACE(iface).ident).str);
+	parts[p++] = g_strdup("ctx");
+	parts[p] = NULL;
+	char *ret = g_strjoinv("_", parts);
+	for(int i=0; i<p; i++) g_free(parts[i]);
+	return ret;
+}
+
+
 typedef void (*param_fn)(
 	struct print_ctx *pr,
 	int param_index,		/* first being 0, second 1 etc */
@@ -274,13 +294,14 @@ static int each_stub_parameter(
 	param_fn paramfn)
 {
 	assert((tok & ~(TIMEOUT_SEND | TIMEOUT_RECV)) == 0);
-	int pnum = 0;	/* just a counter for the callback */
+	const bool has_ctx = has_complex_exn(op);
+	int pnum = 0;	/* known as param_ix in newer code */
 	IDL_tree params = IDL_OP_DCL(op).parameter_dcls,
 		op_type = get_type_spec(IDL_OP_DCL(op).op_type_spec);
 
 	if(!has_pager_target(pr->ns, op)) {
 		(*paramfn)(pr, pnum++, "L4_ThreadId_t", "_service_tid",
-			tok == 0 && params == NULL && op_type == NULL);
+			tok == 0 && params == NULL && op_type == NULL && !has_ctx);
 	}
 
 	if(op_type != NULL) {
@@ -288,7 +309,7 @@ static int each_stub_parameter(
 		char *typ = rigid_type(pr->ns, op_type),
 			*ptrtyp = g_strconcat(typ, " *", NULL);
 		(*paramfn)(pr, pnum++, ptrtyp, "_retval_p",
-			tok == 0 && params == NULL);
+			tok == 0 && params == NULL && !has_ctx);
 		g_free(typ);
 		g_free(ptrtyp);
 	}
@@ -296,7 +317,7 @@ static int each_stub_parameter(
 	for(IDL_tree cur = params; cur != NULL; cur = IDL_LIST(cur).next) {
 		IDL_tree param = IDL_LIST(cur).data;
 		enum IDL_param_attr attr = IDL_PARAM_DCL(param).attr;
-		bool is_last = tok == 0 && IDL_LIST(cur).next == NULL,
+		bool is_last = tok == 0 && !has_ctx && IDL_LIST(cur).next == NULL,
 			in_only = attr == IDL_PARAM_IN;
 		IDL_tree type = get_type_spec(
 				IDL_PARAM_DCL(param).param_type_spec),
@@ -338,6 +359,7 @@ static int each_stub_parameter(
 		}
 		g_free(tmpstr);
 	}
+
 	if(tok != 0) {
 		/* add timeout parameters. */
 		static const char *to_names[] = {
@@ -346,10 +368,18 @@ static int each_stub_parameter(
 		for(int i=0; i<2; i++) {
 			if((tok & (1 << i)) == 0) continue;
 			(*paramfn)(pr, pnum++, "L4_Time_t", to_names[i],
-				tok >> (i + 1) == 0);
+				!has_ctx && tok >> (i + 1) == 0);
 		}
-
 	}
+
+	if(has_complex_exn(op)) {
+		IDL_tree iface = IDL_get_parent_node(op, IDLN_INTERFACE, NULL);
+		assert(iface != NULL);
+		char *typ = iface_context_type(pr, iface);
+		(*paramfn)(pr, pnum++, tmp_f(pr, "%s_t *", typ), "_context_ptr", true);
+		g_free(typ);
+	}
+
 	return pnum;
 }
 
@@ -398,6 +428,130 @@ char *get_stub_prefix(IDL_tree opdcl)
 		}
 	}
 	return g_strdup(stubpfx);
+}
+
+
+static char *long_exn_name(IDL_tree exn)
+{
+	char *parts[3];
+	int p = 0;
+	IDL_tree iface = IDL_get_parent_node(exn, IDLN_INTERFACE, NULL);
+	if(iface != NULL) {
+		parts[p++] = decapsify(IDL_IDENT(IDL_INTERFACE(iface).ident).str);
+	} else {
+		IDL_tree mod = IDL_get_parent_node(exn, IDLN_MODULE, NULL);
+		if(mod != NULL) {
+			parts[p++] = decapsify(IDL_IDENT(IDL_MODULE(mod).ident).str);
+		}
+	}
+	parts[p++] = decapsify(IDL_IDENT(IDL_EXCEPT_DCL(exn).ident).str);
+	parts[p] = NULL;
+	char *ret = g_strjoinv("_", parts);
+	for(int i=0; i<p; i++) g_free(parts[i]);
+	return ret;
+}
+
+
+static void print_iface_context_info(struct print_ctx *pr, IDL_tree iface)
+{
+	char *name = iface_context_type(pr, iface);
+	code_f(pr, "typedef union {");
+	indent(pr, 1);
+	code_f(pr, "uint32_t tag;");
+
+	GList *exns = iface_exns_sorted(pr->ns, iface);
+
+	/* give them sufficiently unique names for use in the context union. */
+	GPtrArray *exn_names = g_ptr_array_new_with_free_func(&g_free);
+	GLIST_FOREACH(e_cur, exns) {
+		IDL_tree exn = e_cur->data, ident = IDL_EXCEPT_DCL(exn).ident;
+		char *ex_name = decapsify(IDL_IDENT(ident).str);
+		/* is the name already in use? */
+		int loc = -1;
+		for(int i=0; i < exn_names->len; i++) {
+			if(strcmp(ex_name, exn_names->pdata[i]) == 0) {
+				loc = i;
+				break;
+			}
+		}
+		/* (only longify the current exception name for reserved words.) */
+		if(loc >= 0 || is_reserved_word(ex_name)) {
+			/* prefix both by their immediate parent interface or module's
+			 * name, where available.
+			 */
+			g_free(ex_name);
+			ex_name = long_exn_name(exn);
+			if(loc >= 0) {
+				g_free(exn_names->pdata[loc]);
+				exn_names->pdata[loc] = long_exn_name(g_list_nth_data(exns, loc));
+				assert(strcmp(ex_name, exn_names->pdata[loc]) != 0);
+			}
+		}
+		g_ptr_array_add(exn_names, ex_name);
+	}
+
+	int exn_pos = -1;
+	GLIST_FOREACH(e_cur, exns) {
+		exn_pos++;
+		IDL_tree exn = e_cur->data;
+		code_f(pr, "struct {");
+		indent(pr, 1);
+		code_f(pr, "uint32_t _tag;");
+
+		IDL_LIST_FOREACH(m_cur, IDL_EXCEPT_DCL(exn).members) {
+			IDL_tree memb = IDL_LIST(m_cur).data,
+				mtype = get_type_spec(IDL_MEMBER(memb).type_spec);
+			char *typestr = NULL;
+			IDL_LIST_FOREACH(d_cur, IDL_MEMBER(memb).dcls) {
+				IDL_tree dcl = IDL_LIST(d_cur).data;
+				if(IDL_NODE_TYPE(dcl) == IDLN_TYPE_ARRAY) {
+					assert(is_rigid_type(pr->ns, mtype));
+					long long size = IDL_INTEGER(IDL_LIST(
+						IDL_TYPE_ARRAY(dcl).size_list).data).value;
+					typestr = fixed_type(pr->ns, mtype);
+					code_f(pr, "%s %s[%lld];", typestr,
+						IDL_IDENT(IDL_TYPE_ARRAY(dcl).ident).str, size);
+				} else if(IDL_NODE_TYPE(dcl) == IDLN_IDENT) {
+					const char *mname = IDL_IDENT(dcl).str;
+					if(is_reserved_word(mname)) {
+						mname = tmp_f(pr, "_%s", mname);
+					}
+					if(is_rigid_type(pr->ns, mtype)) {
+						typestr = fixed_type(pr->ns, mtype);
+						code_f(pr, "%s %s;", typestr, mname);
+					} else if(IDL_NODE_TYPE(mtype) == IDLN_TYPE_STRING) {
+						int len = IDL_INTEGER(
+							IDL_TYPE_STRING(mtype).positive_int_const).value;
+						code_f(pr, "char %s[%d];", mname, len + 1);
+						/* TODO: wide strings */
+					} else if(IDL_NODE_TYPE(mtype) == IDLN_TYPE_SEQUENCE) {
+						int len = IDL_INTEGER(
+							IDL_TYPE_SEQUENCE(mtype).positive_int_const).value;
+						char *subtypestr = fixed_type(pr->ns, get_type_spec(
+								IDL_TYPE_SEQUENCE(mtype).simple_type_spec));
+						code_f(pr, "%s %s[%d];", subtypestr, mname, len);
+						code_f(pr, "uint32_t %s_len;", mname);
+						g_free(subtypestr);
+					} else {
+						NOTDEFINED(mtype);
+					}
+				} else {
+					g_assert_not_reached();
+				}
+			}
+			g_free(typestr);
+		}
+
+		indent(pr, -1);
+		code_f(pr, "} %s;", (char *)exn_names->pdata[exn_pos]);
+	}
+
+	indent(pr, -1);
+	code_f(pr, "} %s_t;", name);
+
+	g_free(name);
+	g_list_free(exns);
+	g_ptr_array_free(exn_names, TRUE);
 }
 
 
@@ -668,6 +822,16 @@ void print_common_header(struct print_ctx *pr)
 	IDL_tree_walk_in_order(pr->tree, &print_struct_decls, pr);
 	code_f(pr, " ");
 
+	/* context types and exception tag defines for the stub declarations. */
+	GHashTableIter iter;
+	g_hash_table_iter_init(&iter, pr->ifaces);
+	gpointer key, value = NULL;
+	while(g_hash_table_iter_next(&iter, &key, &value)) {
+		IDL_tree iface = value;
+		print_iface_context_info(pr, iface);
+	}
+	if(value != NULL) code_f(pr, " ");
+
 	/* stub prototypes. */
 	IDL_tree_walk_in_order(pr->tree, &print_stub_protos, pr);
 	code_f(pr, " ");
@@ -676,9 +840,7 @@ void print_common_header(struct print_ctx *pr)
 	 * implementations (so as to avoid polluting the namespace).
 	 */
 	if(g_hash_table_size(pr->ifaces) > 0) {
-		GHashTableIter iter;
 		g_hash_table_iter_init(&iter, pr->ifaces);
-		gpointer key, value;
 		while(g_hash_table_iter_next(&iter, &key, &value)) {
 			IDL_tree iface = (IDL_tree)value,
 				mod = IDL_get_parent_node(iface, IDLN_MODULE, NULL);
