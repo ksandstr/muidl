@@ -88,13 +88,15 @@ static int strvlen(char **strv) {
 
 bool is_reserved_word(const char *str)
 {
-	/* TODO: this list is not confirmed complete. */
+	/* TODO: this list is not confirmed complete. some of these are reserved by
+	 * stdlib, rather than C99 the language.
+	 */
 	static const char *reserved[] = {
 		"asm", "auto",
 		"bool", "break",
 		"case", "char", "const", "continue",
 		"default", "do", "double",
-		"else", "enum", "extern",
+		"else", "enum", "errno", "extern",
 		"false", "float", "for",
 		"goto",
 		"if", "inline", "int",
