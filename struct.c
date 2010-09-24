@@ -358,6 +358,10 @@ void decode_packed_struct_inline(
 			subval = LLVMBuildTruncOrBitCast(ctx->builder, subval,
 				types[field_ix], "st.val.cast");
 			LLVMBuildStore(ctx->builder, subval, dstptr);
+		} else if(IS_MAPGRANT_TYPE(pi->type)) {
+			/* two words, like peas in a pod */
+			assert(pi->bit == 0);
+			build_read_ipc_parameter_ixval(ctx, &dstptr, pi->type, start_mr);
 		} else {
 			NOTDEFINED(pi->type);
 		}
@@ -514,6 +518,10 @@ LLVMValueRef encode_packed_struct_inline(
 				tmp_f(ctx->pr, "fld.%s.shifted", pi->name));
 			wordval = LLVMBuildOr(ctx->builder, shifted, wordval,
 				tmp_f(ctx->pr, "word%d.%s.merged", cur_word, pi->name));
+		} else if(IS_MAPGRANT_TYPE(pi->type)) {
+			assert(pi->bit == 0);
+			assert(bit_offset == NULL);
+			build_write_ipc_parameter(ctx, start_mr, pi->type, &valptr);
 		} else {
 			NOTDEFINED(pi->type);
 		}
