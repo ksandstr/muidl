@@ -20,6 +20,7 @@
 
 #include <stdlib.h>
 #include <glib.h>
+#include <errno.h>
 #include <libIDL/IDL.h>
 #include <llvm-c/Core.h>
 
@@ -350,33 +351,32 @@ static void build_ipc_stub(
 	/* IPC success path. */
 	LLVMPositionBuilderAtEnd(ctx->builder, noerr_bb);
 	V label = build_label_from_tag(ctx, ctx->tag);
+	/* TODO: get this from the target's <errno.h>; it's the value that is
+	 * returned by the stub when the return message has a label that this
+	 * cannot recognize.
+	 */
+	V ex_tag_ptr = NULL;
+	if(ctxptr != NULL) {
+		ex_tag_ptr = LLVMBuildStructGEP(ctx->builder, ctxptr, 0, "ex.tag.ptr");
+	}
+	branch_set_phi(ctx, ctx->retval_phi, CONST_INT(-EINVAL));
+	V label_sw = LLVMBuildSwitch(ctx->builder, label, ctx->exit_bb, 3);
+
 	if(find_exn(inf->node, &is_negs_exn) != NULL) {
 		/* the dreaded MSG_ERROR (the simple exception) */
 		assert(!oneway);
-		V matches = LLVMBuildICmp(ctx->builder, LLVMIntEQ,
-				label, CONST_WORD(1), "negexn.matches");
-		BB msgerr_bb = add_sibling_block(ctx, "msgerr.match"),
-			no_msgerr_bb = add_sibling_block(ctx, "no.msgerr");
-		LLVMBuildCondBr(ctx->builder, matches, msgerr_bb, no_msgerr_bb);
-
+		BB msgerr_bb = add_sibling_block(ctx, "msgerr.match");
+		LLVMAddCase(label_sw, CONST_WORD(1), msgerr_bb);
 		LLVMPositionBuilderAtEnd(ctx->builder, msgerr_bb);
 		branch_set_phi(ctx, ctx->retval_phi,
 			LLVMBuildNeg(ctx->builder, ctx->mr1, "msgerr.val.neg"));
 		LLVMBuildBr(ctx->builder, ctx->exit_bb);
-
-		LLVMPositionBuilderAtEnd(ctx->builder, no_msgerr_bb);
 	}
 
 	/* complex exceptions */
 	if(ctxptr != NULL) {
-		BB no_exn_bb = add_sibling_block(ctx, "no.exn"),
-			exn_bb = add_sibling_block(ctx, "catch.exn");
-		V catch_cond = LLVMBuildICmp(ctx->builder, LLVMIntEQ, label,
-				CONST_WORD(2), "label.exn.p"),
-			ex_tag_ptr = LLVMBuildStructGEP(ctx->builder, ctxptr,
-				0, "ex.tag.ptr");
-		LLVMBuildCondBr(ctx->builder, catch_cond, exn_bb, no_exn_bb);
-
+		BB exn_bb = add_sibling_block(ctx, "catch.exn");
+		LLVMAddCase(label_sw, CONST_WORD(2), exn_bb);
 		LLVMPositionBuilderAtEnd(ctx->builder, exn_bb);
 		LLVMBuildStore(ctx->builder, ctx->mr1, ex_tag_ptr);
 		/* FIXME: come up with the correct return value for "unrecognized
@@ -402,14 +402,17 @@ static void build_ipc_stub(
 			branch_set_phi(ctx, ctx->retval_phi, CONST_WORD(0));
 			LLVMBuildBr(ctx->builder, ctx->exit_bb);
 		}
-
-		LLVMPositionBuilderAtEnd(ctx->builder, no_exn_bb);
-		/* in the no-exception case, tag will be 0. */
-		LLVMBuildStore(ctx->builder, CONST_WORD(0), ex_tag_ptr);
 	}
 
 	/* regular things */
+	BB noexn_success_bb = add_sibling_block(ctx, "noexn.success");
+	LLVMAddCase(label_sw, CONST_WORD(0), noexn_success_bb);
+	LLVMPositionBuilderAtEnd(ctx->builder, noexn_success_bb);
 	if(reply != NULL) {
+		if(ctxptr != NULL) {
+			/* in the no-exception case, tag will be 0. */
+			LLVMBuildStore(ctx->builder, CONST_WORD(0), ex_tag_ptr);
+		}
 		build_msg_decoder(ctx, ret_args, &args[arg_offset], reply,
 			stritems, true);
 	}
