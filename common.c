@@ -171,17 +171,17 @@ gboolean iter_build_common_module(IDL_tree_func_data *tf, void *ud)
 			/* only emit those structs that are mentioned in opdcl parameters,
 			 * or reachable structs, of the same module.
 			 */
-			IDL_tree mod = IDL_get_parent_node(tf->tree, IDLN_MODULE, NULL);
-			if(mod == NULL) {
-				/* ... if not inside a module, an interface is fine too. */
-				mod = IDL_get_parent_node(tf->tree, IDLN_INTERFACE, NULL);
+			IDL_tree parent = IDL_get_parent_node(tf->tree, IDLN_INTERFACE, NULL);
+			if(parent == NULL) {
+				/* ... if not inside an interface, a module is fine too. */
+				parent = IDL_get_parent_node(tf->tree, IDLN_MODULE, NULL);
 			}
-			if(mod == NULL) {
+			if(parent == NULL) {
 				/* or just the toplevel list... */
-				mod = ctx->pr->tree;
+				parent = ctx->pr->tree;
 			}
-			assert(mod != NULL);
-			if(is_struct_used(ctx, mod, tf->tree)) {
+			assert(parent != NULL);
+			if(is_struct_used(ctx, parent, tf->tree)) {
 				build_packed_struct_decoder(ctx, tf->tree);
 				build_packed_struct_encoder(ctx, tf->tree);
 			}
