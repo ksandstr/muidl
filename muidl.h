@@ -92,8 +92,14 @@
  * should be caught in analysis functions, however.
  */
 #define NOTDEFINED(t) do { \
-		fprintf(stderr, "%s:%d: %s not defined for <%s>\n", __FILE__, \
-			(int)__LINE__, __FUNCTION__, NODETYPESTR((t))); \
+		IDL_tree __t = (t); \
+		if(IDL_NODE_TYPE(__t) == IDLN_NATIVE) { \
+			fprintf(stderr, "%s:%d: %s not defined for native type `%s'\n", \
+				__FILE__, (int)__LINE__, __func__, NATIVE_NAME(__t)); \
+		} else { \
+			fprintf(stderr, "%s:%d: %s not defined for <%s>\n", __FILE__, \
+				(int)__LINE__, __func__, NODETYPESTR(__t)); \
+		} \
 		abort(); \
 	} while(0)
 
