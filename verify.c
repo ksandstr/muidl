@@ -240,6 +240,7 @@ static gboolean no_recv_timeout_in_oneway(
 	switch(IDL_NODE_TYPE(tf->tree)) {
 		case IDLN_MODULE:
 		case IDLN_INTERFACE:
+		case IDLN_LIST:
 			return TRUE;
 
 		case IDLN_OP_DCL:
