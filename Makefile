@@ -9,7 +9,7 @@ CFLAGS:=-std=gnu99 -Wall -g -O2 -march=native -pthread \
 LIBS:=-lm -ldl $(shell pkg-config --libs $(PKG)) \
 	$(shell $(LLVM_CONFIG) --libs $(LLVM_BITS))
 
-AUTOTEST_FILES := $(wildcard test*.idl)
+AUTOTEST_FILES := $(wildcard tests/*.idl)
 
 .PHONY: all clean distclean
 
@@ -19,6 +19,10 @@ all: tags muidl
 
 clean:
 	rm -f *.o
+	+make output-clean
+
+
+output-clean:
 	rm -f *-defs.h *-service.S *-client.S *-common.S
 
 
@@ -30,6 +34,7 @@ distclean: clean
 
 check:
 	./autotest.pl $(AUTOTEST_FILES)
+	+make output-clean
 
 
 muidl: muidl.o util.o analyse.o verify.o llvmutil.o attr.o l4x2.o \
