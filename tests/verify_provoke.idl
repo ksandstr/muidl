@@ -148,6 +148,21 @@ interface AutoTestCases
 	oneway void asbestos(in john smith);
 #endif
 
+/* TEST 14: union type with a non-valuetype discriminator
+ * expected: failure
+ */
+#if __TEST__ == 14
+	struct rigid {
+		long what;
+	};
+
+	union onion switch (rigid) {
+		default: boolean value;
+	};
+
+	oneway void blah(in onion whatever);
+#endif
+
 };
 
 };
