@@ -229,7 +229,7 @@ static void print_extern_prototype(
 static char *fixed_type(IDL_ns ns, IDL_tree type)
 {
 	if(is_value_type(type)) return value_type(ns, type);
-	else if(is_rigid_type(ns, type)) return rigid_type(ns, type);
+	else if(is_rigid_type(type)) return rigid_type(ns, type);
 	else NOTDEFINED(type);
 }
 
@@ -321,7 +321,7 @@ static int each_stub_parameter(
 		if(attr == IDL_PARAM_IN && is_value_type(type)) {
 			tmpstr = value_type(pr->ns, type);
 			(*paramfn)(pr, pnum++, tmpstr, c_name, is_last);
-		} else if(is_rigid_type(pr->ns, type)) {
+		} else if(is_rigid_type(type)) {
 			tmpstr = fixed_type(pr->ns, type);
 			(*paramfn)(pr, pnum++,
 				tmp_f(pr, "%s%s *", in_only ? "const " : "",
@@ -495,7 +495,7 @@ static void print_iface_context_info(struct print_ctx *pr, IDL_tree iface)
 			IDL_LIST_FOREACH(d_cur, IDL_MEMBER(memb).dcls) {
 				IDL_tree dcl = IDL_LIST(d_cur).data;
 				if(IDL_NODE_TYPE(dcl) == IDLN_TYPE_ARRAY) {
-					assert(is_rigid_type(pr->ns, mtype));
+					assert(is_rigid_type(mtype));
 					long long size = IDL_INTEGER(IDL_LIST(
 						IDL_TYPE_ARRAY(dcl).size_list).data).value;
 					typestr = fixed_type(pr->ns, mtype);
@@ -506,7 +506,7 @@ static void print_iface_context_info(struct print_ctx *pr, IDL_tree iface)
 					if(is_reserved_word(mname)) {
 						mname = tmp_f(pr, "_%s", mname);
 					}
-					if(is_rigid_type(pr->ns, mtype)) {
+					if(is_rigid_type(mtype)) {
 						typestr = fixed_type(pr->ns, mtype);
 						code_f(pr, "%s %s;", typestr, mname);
 					} else if(IDL_NODE_TYPE(mtype) == IDLN_TYPE_STRING) {
@@ -613,7 +613,7 @@ static gboolean print_struct_decls(IDL_tree_func_data *tf, gpointer userdata)
 		unsigned long max_size = 0;
 		if(is_value_type(type)) {
 			typestr = value_type(print->ns, type);
-		} else if(is_rigid_type(print->ns, type)) {
+		} else if(is_rigid_type(type)) {
 			typestr = rigid_type(print->ns, type);
 
 			/* and an array bound suffix, where applicable. */
@@ -661,7 +661,7 @@ static gboolean print_struct_decls(IDL_tree_func_data *tf, gpointer userdata)
 				const char *name = IDL_IDENT(data).str;
 				if(is_value_type(type)) {
 					fprintf(of, "\t%s %s;\n", typestr, name);
-				} else if(is_rigid_type(print->ns, type)) {
+				} else if(is_rigid_type(type)) {
 					if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
 						const char *t;
 						if(max_size <= 255) t = "uint8_t";

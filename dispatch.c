@@ -96,7 +96,7 @@ static void vtable_in_param_type(
 {
 	if(is_value_type(type)) {
 		dst[(*pos_p)++] = llvm_value_type(ctx, type);
-	} else if(is_rigid_type(ctx->ns, type)) {
+	} else if(is_rigid_type(type)) {
 		dst[(*pos_p)++] = LLVMPointerType(llvm_rigid_type(ctx, type), 0);
 	} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_STRING) {
 		dst[(*pos_p)++] = LLVMPointerType(LLVMInt8TypeInContext(ctx->ctx), 0);
@@ -121,7 +121,7 @@ static void vtable_out_param_type(
 	int *pos_p,
 	IDL_tree type)
 {
-	if(is_rigid_type(ctx->ns, type)) {
+	if(is_rigid_type(type)) {
 		dst[(*pos_p)++] = LLVMPointerType(llvm_rigid_type(ctx, type), 0);
 	} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
 		IDL_tree seqtype = get_type_spec(
@@ -151,7 +151,7 @@ static LLVMTypeRef vtable_return_type(
 	LLVMTypeRef t;
 	if(strcmp(ctyp, "int") == 0) t = ctx->i32t;
 	else if(strcmp(ctyp, "void") == 0) t = LLVMVoidTypeInContext(ctx->ctx);
-	else if(is_rigid_type(ctx->ns, ret_type)) {
+	else if(is_rigid_type(ret_type)) {
 		t = llvm_rigid_type(ctx, ret_type);
 	} else {
 		NOTDEFINED(ret_type);

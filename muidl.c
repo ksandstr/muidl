@@ -446,7 +446,7 @@ char *long_name(IDL_ns ns, IDL_tree node)
 }
 
 
-static bool is_struct_rigid(IDL_ns ns, IDL_tree type)
+static bool is_struct_rigid(IDL_tree type)
 {
 	for(IDL_tree cur = IDL_TYPE_STRUCT(type).member_list;
 		cur != NULL;
@@ -454,7 +454,7 @@ static bool is_struct_rigid(IDL_ns ns, IDL_tree type)
 	{
 		IDL_tree member = IDL_LIST(cur).data,
 			type = get_type_spec(IDL_MEMBER(member).type_spec);
-		if(!is_rigid_type(ns, type)) return false;
+		if(!is_rigid_type(type)) return false;
 	}
 	return true;
 }
@@ -487,16 +487,16 @@ IDL_tree get_array_type(IDL_tree type)
 }
 
 
-bool is_rigid_type(IDL_ns ns, IDL_tree type)
+bool is_rigid_type(IDL_tree type)
 {
 	if(type == NULL) return false;	/* void is not a rigid type either. */
 	switch(IDL_NODE_TYPE(type)) {
 		case IDLN_TYPE_STRUCT:
-			return is_struct_rigid(ns, type);
+			return is_struct_rigid(type);
 
 		case IDLN_TYPE_ARRAY:
 			/* is rigid if the element type is. */
-			return is_rigid_type(ns, get_array_type(type));
+			return is_rigid_type(get_array_type(type));
 
 		case IDLN_TYPE_UNION:
 			NOTDEFINED(type);
@@ -526,7 +526,7 @@ char *rigid_type(IDL_ns ns, IDL_tree type)
 		case IDLN_TYPE_ARRAY: {
 			IDL_tree subtype = get_array_type(type);
 			if(is_value_type(subtype)) return value_type(ns, subtype);
-			else if(is_rigid_type(ns, subtype)) {
+			else if(is_rigid_type(subtype)) {
 				return rigid_type(ns, subtype);
 			} else {
 				NOTDEFINED(subtype);

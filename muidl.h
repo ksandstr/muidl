@@ -375,7 +375,7 @@ extern bool is_reserved_word(const char *str)
 	__attribute__((pure));
 
 extern bool is_value_type(IDL_tree type) __attribute__((pure));
-extern bool is_rigid_type(IDL_ns ns, IDL_tree type);
+extern bool is_rigid_type(IDL_tree type);
 
 /* chase typedefs down to the final (non-typedef) type. */
 extern IDL_tree get_type_spec(IDL_tree node)

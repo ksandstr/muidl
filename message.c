@@ -146,7 +146,7 @@ LLVMValueRef build_msg_encoder(
 				raw = args[u->arg_ix];
 			}
 			build_write_ipc_parameter(ctx, CONST_INT(first_reg), type, &raw);
-		} else if(IS_MAPGRANT_TYPE(type) || is_rigid_type(ctx->ns, type)) {
+		} else if(IS_MAPGRANT_TYPE(type) || is_rigid_type(type)) {
 			/* TODO: mapgrantitems are currently always untyped, so we pass
 			 * them here. however whether they're map-item literals or mapping
 			 * or granting items should depend on a [map] or [grant] attribute

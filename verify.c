@@ -175,7 +175,7 @@ static gboolean supported_types_only(IDL_tree_func_data *tf, gpointer udptr)
 			}
 
 			IDL_tree atype = get_array_type(node);
-			if(!is_rigid_type(NULL, atype)) {
+			if(!is_rigid_type(atype)) {
 				fail(v, "arrays must be of rigid type (<%s> not allowed)",
 					IDL_NODE_TYPE_NAME(atype));
 			}
@@ -198,7 +198,7 @@ static gboolean supported_types_only(IDL_tree_func_data *tf, gpointer udptr)
 				IDL_tree body = IDL_LIST(cur).data,
 					elem = IDL_CASE_STMT(body).element_spec,
 					elemtype = get_type_spec(IDL_MEMBER(elem).type_spec);
-				if(!is_rigid_type(NULL, elemtype)) {
+				if(!is_rigid_type(elemtype)) {
 					fail(v, "union %s: field types must be rigid (not <%s>)",
 						uname, IDL_NODE_TYPE_NAME(elemtype));
 				}
@@ -212,7 +212,7 @@ static gboolean supported_types_only(IDL_tree_func_data *tf, gpointer udptr)
 			struct member_item *members = expand_member_list(
 				IDL_TYPE_STRUCT(node).member_list);
 			for(int i=0; members[i].type != NULL; i++) {
-				if(!is_rigid_type(NULL, members[i].type)) {
+				if(!is_rigid_type(members[i].type)) {
 					fail(v, "struct %s: field `%s' must be rigid (not <%s>)",
 						sname, members[i].name,
 						IDL_NODE_TYPE_NAME(members[i].type));

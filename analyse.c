@@ -106,7 +106,7 @@ static bool get_msg_label(struct message_info *inf, IDL_tree prop_node)
 
 int size_in_bits(IDL_tree type)
 {
-	assert(is_rigid_type(NULL, type));
+	assert(is_rigid_type(type));
 
 	switch(IDL_NODE_TYPE(type)) {
 		case IDLN_TYPE_INTEGER: {
@@ -390,7 +390,7 @@ static struct message_info *build_message(
 		int nargs = 0;
 		bool accept = (is_outhalf && attr != IDL_PARAM_IN)
 			|| (!is_outhalf && attr != IDL_PARAM_OUT);
-		if(is_rigid_type(NULL, type)) {
+		if(is_rigid_type(type)) {
 			nargs = 1;
 			if(accept) {
 				/* this may include overlong items. */
@@ -404,7 +404,7 @@ static struct message_info *build_message(
 			if(accept) {
 				IDL_tree subtype = get_type_spec(
 					IDL_TYPE_SEQUENCE(type).simple_type_spec);
-				assert(is_rigid_type(NULL, subtype));
+				assert(is_rigid_type(subtype));
 				/* this, too, will include overlong items. */
 				struct msg_param *s = new_inline_seq(name, type, subtype, p,
 					param_ix);
@@ -439,7 +439,7 @@ static struct message_info *build_message(
 	int next_u = 1;
 	if(has_sublabel) reg_in_use[next_u++] = true;
 	if(return_type != NULL && is_outhalf) {
-		assert(is_rigid_type(ns, return_type));
+		assert(is_rigid_type(return_type));
 		int rt_words = size_in_words(return_type);
 		assert(next_u + rt_words <= 63);
 		for(int i=0; i<rt_words; i++) reg_in_use[next_u + i] = true;
@@ -542,7 +542,7 @@ static struct message_info *build_message(
 		struct msg_param *u = cur->data;
 		IDL_tree type = u->X.untyped.type;
 		if(u->X.untyped.reg_manual || is_value_type(type)) continue;
-		assert(is_rigid_type(NULL, type));
+		assert(is_rigid_type(type));
 		num_compound--;
 		assert(num_compound >= 0);
 		/* accounts for typed items in the case that the following compound
@@ -715,7 +715,7 @@ struct message_info *build_exception_message(IDL_tree exn)
 			mtype = get_type_spec(IDL_MEMBER(member).type_spec);
 		IDL_LIST_FOREACH(d_cur, IDL_MEMBER(member).dcls) {
 			IDL_tree dcl = IDL_LIST(d_cur).data;
-			if(is_rigid_type(NULL, mtype)) {
+			if(is_rigid_type(mtype)) {
 				add_rigid_dcl(msg, mtype, dcl, param_ix++, arg_ix++);
 			} else if(IDL_NODE_TYPE(mtype) == IDLN_TYPE_SEQUENCE) {
 				add_seq_dcl(msg, mtype, dcl, param_ix++, &arg_ix);

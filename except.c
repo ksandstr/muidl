@@ -58,7 +58,7 @@ uint32_t exn_hash(IDL_tree exn)
 			mtype = get_type_spec(IDL_MEMBER(member).type_spec);
 
 		int mtype_bits, mtype_words;
-		if(is_rigid_type(NULL, mtype)) {
+		if(is_rigid_type(mtype)) {
 			mtype_bits = size_in_bits(mtype);
 			mtype_words = size_in_words(mtype);
 		} else {
@@ -177,7 +177,7 @@ static LLVMTypeRef exn_raise_fn_type(struct llvm_ctx *ctx, IDL_tree exn)
 				 * than one.
 				 */
 				T mt;
-				if(is_rigid_type(ctx->ns, mtype)) {
+				if(is_rigid_type(mtype)) {
 					mt = llvm_rigid_type(ctx, mtype);
 				} else if(IDL_NODE_TYPE(mtype) == IDLN_TYPE_STRING) {
 					mt = LLVMInt8TypeInContext(ctx->ctx);
@@ -344,9 +344,9 @@ LLVMTypeRef context_type_of_iface(struct llvm_ctx *ctx, IDL_tree iface)
 			struct member_item *mi = &members[i];
 			T m;
 			if(mi->dim > 0) {
-				assert(is_rigid_type(ctx->ns, mi->type));
+				assert(is_rigid_type(mi->type));
 				m = LLVMArrayType(llvm_rigid_type(ctx, mi->type), mi->dim);
-			} else if(is_rigid_type(ctx->ns, mi->type)) {
+			} else if(is_rigid_type(mi->type)) {
 				m = llvm_rigid_type(ctx, mi->type);
 			} else if(IDL_NODE_TYPE(mi->type) == IDLN_TYPE_STRING) {
 				int len = IDL_INTEGER(
