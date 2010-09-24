@@ -475,6 +475,9 @@ IDL_tree get_array_type(IDL_tree type)
 		case IDLN_TYPE_DCL:
 			return get_type_spec(IDL_TYPE_DCL(parent).type_spec);
 
+		case IDLN_MEMBER:
+			return get_type_spec(IDL_MEMBER(parent).type_spec);
+
 		default:
 			/* FIXME where the node type is something that declares typed
 			 * members.
