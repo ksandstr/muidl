@@ -312,7 +312,7 @@ static void build_ipc_stub(
 	}
 
 	V ctxptr = NULL;
-	if(IDL_OP_DCL(inf->node).raises_expr != NULL) ctxptr = args[back_ix--];
+	if(has_complex_exn(inf->node)) ctxptr = args[back_ix--];
 
 	V acceptor = CONST_WORD(0);
 	if(stritems != NULL && stritems[0].length >= 0) {
