@@ -27,14 +27,16 @@
 #include "posix-base.idl"
 
 
-module StructTypesSuite
-{
-
 #define TYPE_CONSUMER(name) \
-	interface test_consumer { \
+	interface name ## _test_consumer { \
 		void foo(inout name parameter); \
 	}
 
+
+module StructTypesSuite
+{
+
+typedef long mod_is_not_empty;
 
 /* TEST 0: small (sub-word) types in a struct
  * expected: success
@@ -98,4 +100,46 @@ struct LargeTypes {
 TYPE_CONSUMER(LargeTypes);
 #endif
 
+/* TEST 4: sub-word struct members in a struct
+ * expected: success
+ */
+#if __TEST__ == 4
+struct small {
+	octet first;
+	boolean second, third, fourth;
+	octet fifth;
 };
+
+interface SmallTypes {
+	void foo(in small first);
+	void bar(out small first);
+	void foo_bar(inout small first);
+};
+#endif
+
+/* TEST 5: struct type inside an interface (coverage)
+ * expected: success
+ */
+#if __TEST__ == 5
+interface StructParent {
+	struct sub {
+		long first;
+		octet second;
+	};
+
+	void operation(in sub parameter);
+};
+#endif
+
+};
+
+
+/* TEST 1000: struct type outside a module declaration
+ * expected: success
+ */
+struct LooseStruct {
+	long first;
+	octet second;
+};
+
+TYPE_CONSUMER(LooseStruct);
