@@ -250,6 +250,5 @@ struct member_item *expand_member_list(IDL_tree list)
 	}
 	struct member_item term = { .type = NULL };
 	g_array_append_val(items, term);
-	return (struct member_item *)g_array_free(items,
-		items->len > 1 ? FALSE : TRUE);
+	return (struct member_item *)g_array_free(items, FALSE);
 }
