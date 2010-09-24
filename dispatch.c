@@ -225,8 +225,12 @@ static void emit_out_param(
 	LLVMValueRef *dst,
 	IDL_tree ptyp)
 {
-	if(is_value_type(ptyp)) {
-		dst[0] = build_local_storage(ctx, llvm_value_type(ctx, ptyp),
+	if(IS_MAPGRANT_TYPE(ptyp)) {
+		/* this is just a pointer to a struct of 2 words. */
+		dst[0] = build_local_storage(ctx, ctx->mapgrant, NULL,
+			"out.mapgrant.mem");
+	} else if(is_rigid_type(ptyp)) {
+		dst[0] = build_local_storage(ctx, llvm_rigid_type(ctx, ptyp),
 			NULL, "out.val.mem");
 	} else if(IDL_NODE_TYPE(ptyp) == IDLN_TYPE_SEQUENCE) {
 		IDL_tree seqtype = get_type_spec(
@@ -243,13 +247,8 @@ static void emit_out_param(
 			IDL_TYPE_STRING(ptyp).positive_int_const).value;
 		dst[0] = build_local_storage(ctx, LLVMInt8TypeInContext(ctx->ctx),
 			CONST_INT(max_size + 1), "out.str.mem");
-	} else if(IS_MAPGRANT_TYPE(ptyp)) {
-		/* this is just a pointer to a struct of 2 words. */
-		dst[0] = build_local_storage(ctx, ctx->mapgrant, NULL,
-			"out.mapgrant.mem");
 	} else {
-		/* TODO: add the rest! */
-		NOTDEFINED(ptyp);
+		g_assert_not_reached();
 	}
 }
 
