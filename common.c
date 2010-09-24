@@ -111,10 +111,7 @@ static bool is_struct_used(
 		else if(IDL_NODE_TYPE(tf->tree) == IDLN_TYPE_STRUCT
 			&& tf->tree != stype)
 		{
-			for(IDL_tree cur = IDL_TYPE_STRUCT(tf->tree).member_list;
-				cur != NULL;
-				cur = IDL_LIST(cur).next)
-			{
+			IDL_LIST_FOREACH(cur, IDL_TYPE_STRUCT(tf->tree).member_list) {
 				IDL_tree m = IDL_LIST(cur).data,
 					type = get_type_spec(IDL_MEMBER(m).type_spec);
 				if(IDL_NODE_TYPE(type) != IDLN_TYPE_STRUCT) continue;
@@ -130,10 +127,7 @@ static bool is_struct_used(
 			}
 			return FALSE;
 		} else if(IDL_NODE_TYPE(tf->tree) == IDLN_OP_DCL) {
-			for(IDL_tree cur = IDL_OP_DCL(tf->tree).parameter_dcls;
-				cur != NULL;
-				cur = IDL_LIST(cur).next)
-			{
+			IDL_LIST_FOREACH(cur, IDL_OP_DCL(tf->tree).parameter_dcls) {
 				IDL_tree p = IDL_LIST(cur).data,
 					type = get_type_spec(IDL_PARAM_DCL(p).param_type_spec);
 				if(IDL_NODE_TYPE(type) != IDLN_TYPE_STRUCT) continue;
