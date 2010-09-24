@@ -613,7 +613,8 @@ static gboolean print_struct_decls(IDL_tree_func_data *tf, gpointer userdata)
 		unsigned long max_size = 0;
 		if(is_value_type(type)) {
 			typestr = value_type(print->ns, type);
-		} else if(is_rigid_type(type)) {
+		} else {
+			assert(is_rigid_type(type));
 			typestr = rigid_type(print->ns, type);
 
 			/* and an array bound suffix, where applicable. */
@@ -635,21 +636,13 @@ static gboolean print_struct_decls(IDL_tree_func_data *tf, gpointer userdata)
 					extra = 0;
 					break;
 
-				case IDLN_TYPE_STRUCT:
-					break;
-
 				default:
-					NOTDEFINED(type);
+					break;
 			}
 			if(bound != NULL) {
 				max_size = IDL_INTEGER(bound).value;
 				suffix = g_strdup_printf("[%lu]", max_size + extra);
 			}
-		} else {
-			/* only constant maximum length types are permitted in
-			 * µidl structs.
-			 */
-			NOTDEFINED(type);
 		}
 
 		for(IDL_tree dcl_node = IDL_MEMBER(member).dcls;
