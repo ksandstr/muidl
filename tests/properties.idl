@@ -39,4 +39,23 @@ interface oneway_recvtimeout_case {
 };
 #endif
 
+/* TEST 1: all stub timeout properties
+ * expected: success
+ */
+#if __TEST__ == 1
+interface stub_timeout_kinds {
+	[StubRecvTimeout]
+	void foo();
+
+	[StubSendTimeout]
+	void bar();
+
+	[StubSendTimeout, StubRecvTimeout]
+	void foo_bar();
+
+	[StubTimeouts]
+	void meh();
+};
+#endif
+
 };
