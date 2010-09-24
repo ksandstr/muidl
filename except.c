@@ -73,14 +73,13 @@ uint32_t exn_hash(IDL_tree exn)
 			if(IDL_NODE_TYPE(dcl) == IDLN_IDENT) {
 				count = 1;
 				name = IDL_IDENT(dcl).str;
-			} else if(IDL_NODE_TYPE(dcl) == IDLN_TYPE_ARRAY) {
+			} else {
+				assert(IDL_NODE_TYPE(dcl) == IDLN_TYPE_ARRAY);
 				count = 1;
 				name = IDL_IDENT(IDL_TYPE_ARRAY(dcl).ident).str;
 				IDL_LIST_FOREACH(size_cur, IDL_TYPE_ARRAY(dcl).size_list) {
 					count *= IDL_INTEGER(IDL_LIST(size_cur).data).value;
 				}
-			} else {
-				g_assert_not_reached();
 			}
 			if(first) first = false; else g_string_append_c(str, ' ');
 			g_string_append_printf(str, "%s:%d", name, count * mtype_bits);
