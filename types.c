@@ -245,8 +245,10 @@ void build_read_ipc_parameter_ixval(
 		/* FIXME: FAAAAAKE */
 		dst[0] = ctx->zero;
 	} else if(IS_MAPGRANT_TYPE(ctyp)) {
-		dst[0] = build_local_storage(ctx, ctx->mapgrant, NULL,
-			"mapgrant.mem");
+		if(dst[0] == NULL) {
+			dst[0] = build_local_storage(ctx, ctx->mapgrant, NULL,
+				"mapgrant.mem");
+		}
 		LLVMBuildStore(ctx->builder,
 			build_utcb_load(ctx, first_mr, "mapgrant.info"),
 			LLVMBuildStructGEP(ctx->builder, dst[0], 0, "mgitem.info.ptr"));
