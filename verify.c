@@ -206,6 +206,22 @@ static gboolean supported_types_only(IDL_tree_func_data *tf, gpointer udptr)
 			break;
 		}
 
+		/* structs may only contain rigid types. */
+		case IDLN_TYPE_STRUCT: {
+			const char *sname = IDL_IDENT(IDL_TYPE_STRUCT(node).ident).str;
+			struct member_item *members = expand_member_list(
+				IDL_TYPE_STRUCT(node).member_list);
+			for(int i=0; members[i].type != NULL; i++) {
+				if(!is_rigid_type(NULL, members[i].type)) {
+					fail(v, "struct %s: field `%s' must be rigid (not <%s>)",
+						sname, members[i].name,
+						IDL_NODE_TYPE_NAME(members[i].type));
+				}
+			}
+			g_free(members);
+			break;
+		}
+
 		default:
 			break;
 	}
