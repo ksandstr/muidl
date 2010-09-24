@@ -508,15 +508,29 @@ static gint method_by_tagmask_cmp(gconstpointer ap, gconstpointer bp)
 }
 
 
+/* FIXME: this mechanism doesn't distinguish between ops that can send a msg
+ * error back, and ops that're declared oneway. i.e. a oneway operation that
+ * takes a string item parameter will want to chuck -EINVAL through this
+ * routine, leading to reply_bb, when it really shouldn't.
+ *
+ * perhaps some context ought to be carried through here, or something.
+ */
 static void build_dispatcher_msgerr(struct llvm_ctx *ctx)
 {
-	LLVMValueRef msgerr_tag = LLVMBuildOr(ctx->builder,
-		CONST_WORD(1), CONST_WORD(1 << 16), "msgerr.tag");
-	LLVMBuildStore(ctx->builder,
-		LLVMBuildNeg(ctx->builder, ctx->errval_phi, "rcneg.val"),
-		UTCB_ADDR_VAL(ctx, CONST_INT(MR_OFFSET(1)), "mr1.addr"));
-	branch_set_phi(ctx, ctx->reply_tag, msgerr_tag);
-	LLVMBuildBr(ctx->builder, ctx->reply_bb);
+	if(ctx->reply_tag != NULL) {
+		LLVMValueRef msgerr_tag = LLVMBuildOr(ctx->builder,
+			CONST_WORD(1), CONST_WORD(1 << 16), "msgerr.tag");
+		LLVMBuildStore(ctx->builder,
+			LLVMBuildNeg(ctx->builder, ctx->errval_phi, "rcneg.val"),
+			UTCB_ADDR_VAL(ctx, CONST_INT(MR_OFFSET(1)), "mr1.addr"));
+		branch_set_phi(ctx, ctx->reply_tag, msgerr_tag);
+		LLVMBuildBr(ctx->builder, ctx->reply_bb);
+	} else {
+		/* no message sends a "invalid format" reply back, so jump right back
+		 * to wherever.
+		 */
+		LLVMBuildBr(ctx->builder, ctx->wait_bb);
+	}
 }
 
 
@@ -524,6 +538,15 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 {
 	GList *tagmask_list = NULL,
 		*methods = analyse_methods_of_iface(ctx->pr, &tagmask_list, iface);
+
+	bool has_replies = false;
+	GLIST_FOREACH(cur, methods) {
+		const struct method_info *inf = cur->data;
+		if(inf->num_reply_msgs > 0) {
+			has_replies = true;
+			break;
+		}
+	}
 
 	LLVMTypeRef param = LLVMPointerType(get_vtable_type(ctx, iface), 0),
 		fn_type = LLVMFunctionType(ctx->wordt, &param, 1, 0);
@@ -590,26 +613,34 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 	LLVMBuildCondBr(ctx->builder, build_ipcfailed_cond(ctx, ctx->tag),
 		ret_ec_bb, dispatch_bb);
 
-	/* send reply, receive next message. */
-	/* message registers were already loaded, since ia32 only requires the tag
-	 * in a cpu register.
-	 */
 	LLVMPositionBuilderAtEnd(ctx->builder, ctx->reply_bb);
-	ctx->reply_tag = LLVMBuildPhi(ctx->builder, ctx->wordt, "replytag.phi");
-	LLVMBuildStore(ctx->builder, stored_timeouts, xfer_timeouts_addr);
-	build_store_br(ctx, acceptor, 0);
-	if(have_stringbufs) build_set_strbufs(ctx, stritems);
-	/* TODO: these magic constants are actually L4_Timeouts(L4_Never,
-	 * L4_Never), and L4_anythread.
-	 */
-	ipc_tag = build_l4_ipc_call(ctx,
-		ctx->from, CONST_WORD(0), LLVMConstNot(CONST_WORD(0)),
-		ctx->reply_tag, &ipc_from, &ipc_mr1, &ipc_mr2);
-	LLVMAddIncoming(ctx->from, &ipc_from, &ctx->reply_bb, 1);
-	LLVMAddIncoming(ctx->mr1, &ipc_mr1, &ctx->reply_bb, 1);
-	LLVMAddIncoming(ctx->mr2, &ipc_mr2, &ctx->reply_bb, 1);
-	LLVMAddIncoming(ctx->tag, &ipc_tag, &ctx->reply_bb, 1);
-	LLVMBuildBr(ctx->builder, loop_bb);
+	if(!has_replies) {
+		/* no replies in this interface; go straight back to waiting. */
+		LLVMBuildBr(ctx->builder, ctx->wait_bb);
+		ctx->reply_tag = NULL;
+	} else {
+		/* send reply, receive next message. */
+		/* message registers were already loaded, since ia32 only requires the tag
+		 * in a cpu register.
+		 */
+		ctx->reply_tag = LLVMBuildPhi(ctx->builder, ctx->wordt,
+			"replytag.phi");
+		LLVMBuildStore(ctx->builder, stored_timeouts, xfer_timeouts_addr);
+		build_store_br(ctx, acceptor, 0);
+		if(have_stringbufs) build_set_strbufs(ctx, stritems);
+		/* TODO: these magic constants are actually L4_Timeouts(L4_Never,
+		 * L4_Never), and L4_anythread. replace them with something that has a
+		 * proper name.
+		 */
+		ipc_tag = build_l4_ipc_call(ctx,
+			ctx->from, CONST_WORD(0), LLVMConstNot(CONST_WORD(0)),
+			ctx->reply_tag, &ipc_from, &ipc_mr1, &ipc_mr2);
+		LLVMAddIncoming(ctx->from, &ipc_from, &ctx->reply_bb, 1);
+		LLVMAddIncoming(ctx->mr1, &ipc_mr1, &ctx->reply_bb, 1);
+		LLVMAddIncoming(ctx->mr2, &ipc_mr2, &ctx->reply_bb, 1);
+		LLVMAddIncoming(ctx->tag, &ipc_tag, &ctx->reply_bb, 1);
+		LLVMBuildBr(ctx->builder, loop_bb);
+	}
 
 	/* exit_bb's interface */
 	LLVMPositionBuilderAtEnd(ctx->builder, exit_bb);
