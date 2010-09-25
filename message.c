@@ -66,7 +66,9 @@ void build_write_ipc_parameter(
 	} else if(is_value_type(ctyp)) {
 		/* the other value types */
 		LLVMValueRef reg;
-		if(is_integral_type(ctyp)) {
+		if(is_integral_type(ctyp) || IS_TIME_TYPE(ctyp)
+			|| IS_FPAGE_TYPE(ctyp))
+		{
 			reg = WORD(val[0]);
 		} else {
 			/* TODO: type promotions for other single-word encodings */
@@ -75,7 +77,7 @@ void build_write_ipc_parameter(
 		LLVMBuildStore(ctx->builder, reg,
 			UTCB_ADDR_VAL(ctx, ixval, "store.mr.addr"));
 	} else {
-		/* TODO: add nicer things */
+		/* TODO: unions, etc. */
 		NOTDEFINED(ctyp);
 	}
 }
