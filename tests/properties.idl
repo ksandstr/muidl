@@ -58,4 +58,14 @@ interface stub_timeout_kinds {
 };
 #endif
 
+/* TEST 2: malformed UL property (coverage)
+ * expected: failure
+ */
+#if __TEST__ == 2
+[IfaceLabel(NOT_A_VALID_NUMBER)]
+interface bad_ul_prop {
+	void foo();
+};
+#endif
+
 };
