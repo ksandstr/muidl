@@ -787,16 +787,9 @@ struct method_info *analyse_op_dcl(
 		int expos = 1;
 		for(IDL_tree c = raises; c != NULL; c = IDL_LIST(c).next) {
 			assert(expos < num_replies); /* guaranteed by IDL_list_length() */
-			IDL_tree propnode = IDL_LIST(c).data,
-				exn = IDL_get_parent_node(propnode, IDLN_EXCEPT_DCL, NULL);
-			inf->replies[expos] = build_exception_message(exn);
-			if(!get_msg_label(inf->replies[expos], propnode)) {
-				/* exceptions, however, always need to be marked. */
-				fprintf(stderr, "exception `%s' doesn't have a Label property!\n",
-					IDL_IDENT_REPO_ID(propnode));
-				goto fail;
-			}
-			expos++;
+			IDL_tree ex_ident = IDL_LIST(c).data,
+				exn = IDL_get_parent_node(ex_ident, IDLN_EXCEPT_DCL, NULL);
+			inf->replies[expos++] = build_exception_message(exn);
 		}
 		assert(expos == num_replies);
 
