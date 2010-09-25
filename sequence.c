@@ -110,7 +110,7 @@ LLVMValueRef build_decode_inline_sequence(
 	if(bpe == BITS_PER_WORD) {
 		/* full word case */
 		LLVMValueRef item;
-		build_read_ipc_parameter_ixval(ctx, &item, seq->X.seq.elem_type,
+		build_read_ipc_parameter(ctx, &item, seq->X.seq.elem_type,
 			seq_pos);
 		LLVMBuildStore(ctx->builder, item,
 			LLVMBuildGEP(ctx->builder, seq_mem, &counter, 1,

@@ -330,7 +330,7 @@ void decode_packed_struct_inline(
 			 * 64-bit targets, where it'd be just a value type.
 			 */
 			V dtmp = NULL;
-			build_read_ipc_parameter_ixval(ctx, &dtmp, pi->type,
+			build_read_ipc_parameter(ctx, &dtmp, pi->type,
 				start_mr);
 			LLVMBuildStore(ctx->builder, dtmp, dstptr);
 		} else if(is_value_type(pi->type)) {
@@ -361,7 +361,7 @@ void decode_packed_struct_inline(
 		} else if(IS_MAPGRANT_TYPE(pi->type)) {
 			/* two words, like peas in a pod */
 			assert(pi->bit == 0);
-			build_read_ipc_parameter_ixval(ctx, &dstptr, pi->type, start_mr);
+			build_read_ipc_parameter(ctx, &dstptr, pi->type, start_mr);
 		} else {
 			NOTDEFINED(pi->type);
 		}

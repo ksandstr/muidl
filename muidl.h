@@ -754,20 +754,14 @@ extern int msg_min_u(const struct message_info *msg);
  * type.
  * otherwise, @dst[0] must point to the first element of a buffer of sufficient
  * maximum size, and @dst[1] will be assigned to the length value (i32).
- *
- * this function should be called build_read_ipc_argument() instead; parameters
- * are always translated according to direction attribute anyhow.
- *
- * FIXME: doesn't really belong in types.c but rather in a message.c or some
- * such.
  */
-extern void build_read_ipc_parameter_ixval(
+extern void build_read_ipc_parameter(
 	struct llvm_ctx *ctx,
 	LLVMValueRef *dst,
 	IDL_tree ctyp,
 	LLVMValueRef first_mr);
 
-/* similar interface as build_read_ipc_parameter_ixval():
+/* similar interface as build_read_ipc_parameter():
  * for value types, val[0] is the value itself.
  * for rigid types, val[0] is a pointer to the value.
  * for sequence types, val[0] is a pointer to the first value and val[1] is the

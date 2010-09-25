@@ -83,8 +83,7 @@ void build_write_ipc_parameter(
 }
 
 
-/* TODO: rename this to remove _ixval from the end. */
-void build_read_ipc_parameter_ixval(
+void build_read_ipc_parameter(
 	struct llvm_ctx *ctx,
 	LLVMValueRef *dst,
 	IDL_tree ctyp,
@@ -340,7 +339,7 @@ void build_msg_decoder(
 		 * decoded rigids, which we have, so provide it.
 		 */
 		V tmp[2] = { ret_args[0], NULL };
-		build_read_ipc_parameter_ixval(ctx, tmp, msg->ret_type,
+		build_read_ipc_parameter(ctx, tmp, msg->ret_type,
 			CONST_INT(ret_offs));
 		if(is_value_type(msg->ret_type)) {
 			assert(tmp[0] != ret_args[0]);
@@ -352,7 +351,7 @@ void build_msg_decoder(
 		struct msg_param *u = cur->data;
 		IDL_tree type = u->X.untyped.type;
 		V tmp[2] = { args[u->arg_ix], NULL };
-		build_read_ipc_parameter_ixval(ctx, tmp, type,
+		build_read_ipc_parameter(ctx, tmp, type,
 			CONST_INT(u->X.untyped.first_reg));
 		if(is_value_type(type)) {
 			if(pass_param_by_value(u->param_dcl)) args[u->arg_ix] = tmp[0];
