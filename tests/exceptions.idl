@@ -1,0 +1,103 @@
+/*
+ * tests/exceptions.idl -- test suite for exception coverage cases
+ * Copyright 2010  Kalle A. Sandström <ksandstr@iki.fi>
+ *
+ * This file is part of µiX.
+ *
+ * µiX is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * µiX is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with µiX.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+
+/* AUTOTEST: ./muidl -D __TEST__=%t -I idl -I share/idl %n */
+
+#include <muidl.idl>
+
+#include "l4x2.idl"
+#include "posix-base.idl"
+
+
+#define EXN_CONSUMER(name) \
+	interface name ## _exn_consumer { \
+		void thrower() raises(name); \
+	}
+
+module ExceptionsSuite {
+
+/* TEST 0: simple exception of sub-word value types
+ * expected: success
+ */
+#if __TEST__ == 0
+exception SimpleExn {
+	short first;
+	long second;
+	octet third;
+	boolean fourth;
+};
+EXN_CONSUMER(SimpleExn);
+#endif
+
+/* TEST 1: multiple exceptions in a single interface (coverage)
+ * expected: success
+ */
+#if __TEST__ == 1
+exception First {
+	short what;
+	long how;
+};
+exception Second {
+	octet where;
+	boolean why;
+};
+
+interface two_exceptions {
+	void foo() raises(First, Second);
+	void bar() raises(First);
+	void foo_bar() raises(Second);
+};
+#endif
+
+/* TEST 2: exceptions with rigid-typed fields (coverage)
+ * expected: success
+ */
+#if __TEST__ == 2
+struct rigid {
+	long what;
+	short foo;
+};
+exception RigidExn {
+	rigid field;
+	long another;
+};
+EXN_CONSUMER(RigidExn);
+#endif
+
+/* TEST 3: the MSG_ERROR exception
+ * expected: success
+ */
+#if __TEST__ == 3
+interface errno_thrower {
+	void foo() raises(Posix::Errno);
+};
+#endif
+
+/* TEST 4: the no-reply exception
+ * expected: success
+ */
+#if __TEST__ == 4
+interface noreply_thrower {
+	void foo() raises(muidl::NoReply);
+};
+#endif
+
+};
