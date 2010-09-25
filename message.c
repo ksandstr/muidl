@@ -487,7 +487,9 @@ void build_msg_decoder(
 					"seq.len");
 				args[lp->arg_ix + 0] = ptr;
 				/* the length part is passed like a value type. */
-				if(IDL_PARAM_DCL(lp->param_dcl).attr == IDL_PARAM_IN) {
+				if(lp->param_dcl != NULL
+					&& IDL_PARAM_DCL(lp->param_dcl).attr == IDL_PARAM_IN)
+				{
 					args[lp->arg_ix + 1] = len;
 				} else {
 					LLVMBuildStore(ctx->builder, len, args[lp->arg_ix + 1]);
