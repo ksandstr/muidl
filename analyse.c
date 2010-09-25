@@ -106,8 +106,6 @@ static bool get_msg_label(struct message_info *inf, IDL_tree prop_node)
 
 int size_in_bits(IDL_tree type)
 {
-	assert(is_rigid_type(type));
-
 	switch(IDL_NODE_TYPE(type)) {
 		case IDLN_TYPE_INTEGER: {
 			static const int8_t bits_per[] = {
@@ -125,10 +123,9 @@ int size_in_bits(IDL_tree type)
 				|| IS_TIME_TYPE(type))
 			{
 				return BITS_PER_WORD;
-			} else if(IS_MAPGRANT_TYPE(type)) {
-				return BITS_PER_WORD * 2;
 			} else {
-				NOTDEFINED(type);
+				assert(IS_MAPGRANT_TYPE(type));
+				return BITS_PER_WORD * 2;
 			}
 
 		case IDLN_TYPE_OCTET:
@@ -157,9 +154,11 @@ int size_in_bits(IDL_tree type)
 		case IDLN_TYPE_ENUM:
 		case IDLN_TYPE_FLOAT:
 			/* TODO */
+			g_assert_not_reached();
 
 		default:
-			NOTDEFINED(type);
+			assert(is_rigid_type(type));
+			g_assert_not_reached();
 	}
 }
 
