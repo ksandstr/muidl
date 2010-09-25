@@ -34,6 +34,11 @@
 
 module ExceptionsSuite {
 
+exception StringyExn {
+	string<32> what;
+	string<64> foo;
+};
+
 /* TEST 0: simple exception of sub-word value types
  * expected: success
  */
@@ -97,6 +102,23 @@ interface errno_thrower {
 #if __TEST__ == 4
 interface noreply_thrower {
 	void foo() raises(muidl::NoReply);
+};
+#endif
+
+/* TEST 5: exceptions with string types
+ * expected: success
+ */
+#if __TEST__ == 5
+EXN_CONSUMER(StringyExn);
+#endif
+
+/* TEST 6: exceptions with string types in an operation that returns strings
+ * expected: success
+ */
+#if __TEST__ == 6
+interface stringy_memcpy {
+	void foo(out string<16> tiny, out string<128> huge)
+		raises(StringyExn);
 };
 #endif
 
