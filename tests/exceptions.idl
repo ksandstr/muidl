@@ -39,6 +39,11 @@ exception StringyExn {
 	string<64> foo;
 };
 
+exception SeqExn {
+	sequence<short, 30> small;
+	sequence<long, 30> large;
+};
+
 /* TEST 0: simple exception of sub-word value types
  * expected: success
  */
@@ -119,6 +124,23 @@ EXN_CONSUMER(StringyExn);
 interface stringy_memcpy {
 	void foo(out string<16> tiny, out string<128> huge)
 		raises(StringyExn);
+};
+#endif
+
+/* TEST 7: exceptions with sequence types
+ * expected: success
+ */
+#if __TEST__ == 7
+EXN_CONSUMER(SeqExn);
+#endif
+
+/* TEST 8: exceptions with sequence types in an operation that returns strings
+ * expected: success
+ */
+#if __TEST__ == 8
+interface sequencey_memcpy {
+	void foo(out string<16> tiny, out string<2048> huge)
+		raises(SeqExn);
 };
 #endif
 
