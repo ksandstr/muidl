@@ -68,4 +68,15 @@ interface bad_ul_prop {
 };
 #endif
 
+/* TEST 3: interface with a valid IfaceLabel (coverage)
+ * expected: success
+ */
+#if __TEST__ == 3
+[IfaceLabel(0xf00d)]
+interface iface_with_label {
+	void foo();
+	oneway void bar(in long whatwhat);
+};
+#endif
+
 };
