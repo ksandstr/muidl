@@ -98,7 +98,8 @@ static LLVMTypeRef stub_fn_type(
 		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_WIDE_STRING) {
 			/* TODO: use a wchar_t from the ABI */
 			at_base[p->arg_ix] = LLVMPointerType(ctx->i32t, 0);
-		} else if(is_rigid_type(type)) {
+		} else {
+			assert(is_rigid_type(type));
 			at_base[p->arg_ix] = LLVMPointerType(
 				llvm_rigid_type(ctx, type), 0);
 		}
