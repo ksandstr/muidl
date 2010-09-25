@@ -129,35 +129,23 @@ LLVMTypeRef llvm_struct_type(
 	assert(IDL_NODE_TYPE(type) == IDLN_TYPE_STRUCT);
 	GArray *types = g_array_new(FALSE, FALSE, sizeof(T));
 	GPtrArray *names = names_p != NULL ? g_ptr_array_new() : NULL;
-	for(IDL_tree cur = IDL_TYPE_STRUCT(type).member_list;
-		cur != NULL;
-		cur = IDL_LIST(cur).next)
-	{
-		IDL_tree member = IDL_LIST(cur).data,
-			mtype = get_type_spec(IDL_MEMBER(member).type_spec);
+
+	struct member_item *members = expand_member_list(
+		IDL_TYPE_STRUCT(type).member_list);
+	for(int i=0; members[i].type != NULL; i++) {
+		IDL_tree mtype = members[i].type;
 		T mt = llvm_rigid_type(ctx, mtype);
-		for(IDL_tree dcl_cur = IDL_MEMBER(member).dcls;
-			dcl_cur != NULL;
-			dcl_cur = IDL_LIST(dcl_cur).next)
-		{
-			IDL_tree dcl = IDL_LIST(dcl_cur).data;
-			if(IDL_NODE_TYPE(dcl) == IDLN_IDENT) {
-				g_array_append_val(types, mt);
-				if(names_p != NULL) {
-					g_ptr_array_add(names, g_strdup(IDL_IDENT(dcl).str));
-				}
-			} else if(IDL_NODE_TYPE(dcl) == IDLN_TYPE_ARRAY) {
-				T ary = LLVMArrayType(mt, ARRAY_TYPE_LENGTH(dcl));
-				g_array_append_val(types, ary);
-				if(names_p != NULL) {
-					g_ptr_array_add(names, g_strdup(IDL_IDENT(
-						IDL_TYPE_ARRAY(dcl).ident).str));
-				}
-			} else {
-				NOTDEFINED(member);
-			}
+		if(members[i].dim == 0) {
+			g_array_append_val(types, mt);
+		} else {
+			T ary = LLVMArrayType(mt, members[i].dim);
+			g_array_append_val(types, ary);
+		}
+		if(names_p != NULL) {
+			g_ptr_array_add(names, g_strdup(members[i].name));
 		}
 	}
+	g_free(members);
 
 	if(names_p != NULL) {
 		char **namev = g_new(char *, names->len + 1);
