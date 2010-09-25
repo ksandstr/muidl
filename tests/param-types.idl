@@ -43,6 +43,7 @@ exception StringyFailure
 
 interface StringTypes
 {
+	void filler();
 
 /* TEST 1: in-string items
  * expected: success
@@ -90,6 +91,30 @@ interface StringTypes
 			raises(StringyFailure);
 #endif
 
+};
+
+
+interface NativeTypes
+{
+	void filler();
+
+/* TEST 100: the word type (coverage)
+ * expected: success
+ */
+#if __TEST__ == 100
+	void word_input(in L4X2::word param);
+	void word_output(out L4X2::word param);
+	void word_inout(inout L4X2::word param);
+#endif
+
+/* TEST 101: the time type (coverage)
+ * expected: success
+ */
+#if __TEST__ == 101
+	void time_input(in L4X2::Time param);
+	void time_output(out L4X2::Time param);
+	void time_inout(inout L4X2::Time param);
+#endif
 };
 
 };
