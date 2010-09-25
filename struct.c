@@ -398,7 +398,7 @@ static bool is_short_fmt(const struct packed_format *fmt)
 	for(int i=0, sub=0; i < fmt->num_items; i++) {
 		const struct packed_item *item = fmt->items[i];
 		if(item->len < BITS_PER_WORD) sub++;
-		if(i >= 3 || sub >= 2) return false;
+		if(i > 3 || sub > 2) return false;
 	}
 	return true;
 }
