@@ -340,7 +340,7 @@ static LLVMBasicBlockRef build_op_decode(
 	}
 
 	/* the decoder. */
-	build_msg_decoder(ctx, NULL, d_args, req, stritems, false);
+	build_msg_decoder(ctx, NULL, d_args, req, 0, stritems, false);
 
 	/* the function call. */
 	V *call_args = args;

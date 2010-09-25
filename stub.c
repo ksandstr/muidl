@@ -199,7 +199,12 @@ static LLVMValueRef build_stub_receive_strings(
 		}
 		assert(si->memptr != NULL);
 		for(int j=0; j < inf->num_reply_msgs; j++) {
-			long_lists[j] = g_list_next(long_lists[j]);
+			/* (pretty sure that g_list_next(NULL) == NULL, but let's
+			 * be safe)
+			 */
+			if(long_lists[j] != NULL) {
+				long_lists[j] = g_list_next(long_lists[j]);
+			}
 		}
 
 		V si_words[2];
@@ -413,7 +418,7 @@ static void build_ipc_stub(
 			LLVMPositionBuilderAtEnd(ctx->builder, decode);
 			build_decode_exception(ctx,
 				get_ex_from_ctx(ctx, ctxptr, msg->ctx_index),
-				msg, stritems);
+				msg, i, stritems);
 			/* on exception, a stub returns 0 because it's an IPC success
 			 * regardless. the caller gets to check ctxptr->tag.
 			 */
@@ -431,7 +436,7 @@ static void build_ipc_stub(
 			/* in the no-exception case, tag will be 0. */
 			LLVMBuildStore(ctx->builder, CONST_WORD(0), ex_tag_ptr);
 		}
-		build_msg_decoder(ctx, ret_args, &args[arg_offset], reply,
+		build_msg_decoder(ctx, ret_args, &args[arg_offset], reply, 0,
 			stritems, true);
 	}
 	branch_set_phi(ctx, ctx->retval_phi, CONST_WORD(0));

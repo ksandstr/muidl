@@ -41,6 +41,18 @@ interface Stringserv
 		out long whot,
 		out tiny miniscule);
 
+	exception StringyException {
+		string<40> longer_string;
+		string<16> shorter_string;
+	};
+
+	[Label(44)]
+	void get_displaced_things(
+		in long identifier,
+		out string<32> short_string,
+		out string<64> longer_string)
+			raises(StringyException);
+
 #if 0
 	typedef sequence<short, 300> shortseq;
 

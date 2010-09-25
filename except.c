@@ -386,6 +386,7 @@ void build_decode_exception(
 	struct llvm_ctx *ctx,
 	LLVMValueRef ex_ptr,
 	const struct message_info *msg,
+	int msg_index,
 	const struct stritem_info *stritems)
 {
 	assert(msg->ret_type == NULL);
@@ -422,7 +423,7 @@ void build_decode_exception(
 	}
 
 	/* decode the message. */
-	build_msg_decoder(ctx, NULL, args, msg, stritems, true);
+	build_msg_decoder(ctx, NULL, args, msg, msg_index, stritems, true);
 
 	g_list_free(params);
 }

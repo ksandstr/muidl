@@ -142,7 +142,7 @@ void build_read_ipc_parameter(
 }
 
 
-/* FIXME: move this into another file */
+/* FIXME: move these two into another file */
 static LLVMValueRef get_strlen_fn(struct llvm_ctx *ctx)
 {
 	V fn = LLVMGetNamedFunction(ctx->module, "strlen");
@@ -152,6 +152,21 @@ static LLVMValueRef get_strlen_fn(struct llvm_ctx *ctx)
 		sizet = ctx->wordt;		/* FIXME: get from ABI; should be size_t */
 	T fntype = LLVMFunctionType(sizet, &charptr, 1, 0);
 	fn = LLVMAddFunction(ctx->module, "strlen", fntype);
+
+	return fn;
+}
+
+
+static LLVMValueRef get_memcpy_fn(struct llvm_ctx *ctx)
+{
+	V fn = LLVMGetNamedFunction(ctx->module, "memcpy");
+	if(fn != NULL) return fn;
+
+	T voidptr = LLVMPointerType(LLVMInt8TypeInContext(ctx->ctx), 0),
+		sizet = ctx->wordt;		/* FIXME: get from ABI! */
+	T argtypes[] = { voidptr, voidptr, sizet },
+		fntype = LLVMFunctionType(voidptr, argtypes, 3, 0);
+	fn = LLVMAddFunction(ctx->module, "memcpy", fntype);
 
 	return fn;
 }
@@ -326,6 +341,7 @@ void build_msg_decoder(
 	LLVMValueRef *ret_args,
 	LLVMValueRef *args,
 	const struct message_info *msg,
+	int msg_index,
 	const struct stritem_info *stritems,
 	bool is_out_half)
 {
@@ -429,14 +445,22 @@ void build_msg_decoder(
 
 		/* the actual parameter decoding. */
 		LLVMPositionBuilderAtEnd(ctx->builder, cont_bb);
+		V memptr = stritems[lp_offset].memptr;
+		if(stritems[lp_offset].reply_pos != msg_index) {
+			/* memcpy() strings received elsewhere into place */
+			assert(is_out_half);		/* only occurs in stub out-half. */
+			V memcpy_fn = get_memcpy_fn(ctx),
+				mc_args[] = { args[lp->arg_ix], memptr, item_len_bytes };
+			LLVMBuildCall(ctx->builder, memcpy_fn, mc_args, 3, "memcpy.call");
+		}
 		switch(IDL_NODE_TYPE(type)) {
 			case IDLN_TYPE_STRING: {
 				/* terminate. */
 				LLVMBuildStore(ctx->builder,
 					LLVMConstInt(LLVMInt8TypeInContext(ctx->ctx), 0, 0),
-					LLVMBuildGEP(ctx->builder, stritems[lp_offset].memptr,
+					LLVMBuildGEP(ctx->builder, memptr,
 						&item_len_bytes, 1, "str.nullpo"));	/* ガ！ */
-				args[lp->arg_ix] = stritems[lp_offset].memptr;
+				args[lp->arg_ix] = memptr;
 				break;
 			}
 
@@ -447,9 +471,7 @@ void build_msg_decoder(
 				/* TODO: use a llvm_rigid_type() instead! */
 				LLVMTypeRef itemtype = llvm_value_type(ctx, typ);
 				LLVMValueRef ptr = LLVMBuildPointerCast(ctx->builder,
-					stritems[lp_offset].memptr,
-					LLVMPointerType(itemtype, 0),
-					"seq.ptr");
+					memptr, LLVMPointerType(itemtype, 0), "seq.ptr");
 				LLVMValueRef len = LLVMBuildUDiv(ctx->builder,
 					item_len_bytes,
 					LLVMBuildTruncOrBitCast(ctx->builder,

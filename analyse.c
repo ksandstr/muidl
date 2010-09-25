@@ -1049,6 +1049,7 @@ static void add_stritem(GArray *result, int i, struct msg_param *p)
 		struct stritem_info tmp = {
 			.length = 0,
 			.stringlike = false,
+			.reply_pos = 0,		/* default */
 		};
 		g_array_append_val(result, tmp);
 		si = &g_array_index(result, struct stritem_info,

@@ -604,6 +604,7 @@ extern void build_decode_exception(
 	struct llvm_ctx *ctx,
 	LLVMValueRef ex_ptr,
 	const struct message_info *exception,
+	int exception_index,		/* for stritems[n]->reply_pos */
 	const struct stritem_info *stritems);
 
 
@@ -731,6 +732,7 @@ extern void build_msg_decoder(
 	LLVMValueRef *dst_ret_args,
 	LLVMValueRef *dst_args,
 	const struct message_info *msg,
+	int msg_index,		/* as in stritems[]->reply_pos */
 	const struct stritem_info *stritems,
 	bool is_out_half);
 
