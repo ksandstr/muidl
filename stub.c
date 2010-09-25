@@ -332,7 +332,24 @@ static void build_ipc_stub(
 			UTCB_ADDR_VAL(ctx, CONST_INT(BR_OFFSET(0)), "acceptor.addr"));
 		ctx->tag = build_l4_ipc_call(ctx, ipc_dest, timeouts,
 			ipc_dest, tag, NULL, &ctx->mr1, &ctx->mr2);
+
+		int min_u = 66;
+		for(int i=0; i < inf->num_reply_msgs; i++) {
+			const struct message_info *msg = inf->replies[i];
+			if(IDL_NODE_TYPE(msg->node) == IDLN_EXCEPT_DCL
+				&& (is_negs_exn(msg->node) || is_noreply_exn(msg->node)))
+			{
+				continue;
+			}
+
+			int mu = msg_min_u(inf->replies[i]);
+			min_u = MIN(min_u, mu);
+		}
+		min_u--;
+
+		build_store_received_regs(ctx, min_u, ctx->mr1, ctx->mr2);
 	}
+
 	/* check for IPC errors. */
 	BB err_bb = add_sibling_block(ctx, "ipcerror"),
 		noerr_bb = add_sibling_block(ctx, "ipcok");

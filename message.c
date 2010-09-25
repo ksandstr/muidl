@@ -228,6 +228,34 @@ LLVMValueRef build_msg_encoder(
 }
 
 
+LLVMValueRef build_ipc_input_val_ix(
+	struct llvm_ctx *ctx,
+	LLVMValueRef mr_ix,
+	const char *name)
+{
+	if(LLVMIsConstant(mr_ix)) {
+		/* the gag here is that if mr_ix is a constant, then LLVM should be
+		 * able to fold the selection away and not emit conditional move
+		 * instructions. this works at all times before inline sequences.
+		 */
+		V loaded = LLVMBuildLoad(ctx->builder,
+			UTCB_ADDR_VAL(ctx, mr_ix, "mr.addr"), "mr.val");
+		V maybe_1 = LLVMBuildSelect(ctx->builder,
+			LLVMBuildICmp(ctx->builder, LLVMIntEQ, mr_ix, CONST_INT(1), "mr.one.p"),
+			ctx->mr1, loaded, "maybe.mr.one");
+		return LLVMBuildSelect(ctx->builder,
+			LLVMBuildICmp(ctx->builder, LLVMIntEQ, mr_ix, CONST_INT(2), "mr.two.p"),
+			ctx->mr2, maybe_1, name);
+	} else {
+		return LLVMBuildLoad(ctx->builder,
+			UTCB_ADDR_VAL(ctx, mr_ix, "mr.addr"), name);
+	}
+}
+
+
+/* TODO: unify this with build_ipc_input_val_ix() if it proves to be
+ * useful
+ */
 static LLVMValueRef build_ipc_input_val(struct llvm_ctx *ctx, int mr)
 {
 	if(mr == 0) return ctx->tag;
@@ -452,4 +480,21 @@ void build_msg_decoder(
 				NOTDEFINED(type);
 		}
 	}
+}
+
+
+int msg_min_u(const struct message_info *msg)
+{
+	int acc = 1000;
+	GLIST_FOREACH(cur, msg->untyped) {
+		const struct msg_param *u = cur->data;
+		IDL_tree t = u->X.untyped.type;
+		if(is_value_type(t)) continue;
+		if(IDL_NODE_TYPE(t) == IDLN_TYPE_STRUCT) {
+			const struct packed_format *fmt = packed_format_of(t);
+			if(is_short_fmt(fmt)) continue;
+		}
+		acc = MIN(acc, u->X.untyped.first_reg);
+	}
+	return acc;
 }

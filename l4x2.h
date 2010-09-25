@@ -76,5 +76,16 @@ extern LLVMValueRef build_recv_stritem_len(
 	LLVMValueRef *nullpos_p,
 	LLVMValueRef tpos);
 
+/* min_u is the minimum tag_u value in the message_info structs that the
+ * preceding IPC receive operation is expecting to possibly receive. i.e. for
+ * dispatchers it's from among the ops' request sides, and for client it's each
+ * stub's replies.
+ */
+extern void build_store_received_regs(
+	struct llvm_ctx *ctx,
+	int min_u,
+	LLVMValueRef mr1,
+	LLVMValueRef mr2);
+
 
 #endif

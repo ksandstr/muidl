@@ -548,6 +548,15 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 		}
 	}
 
+	/* compute min_u for build_store_received_regs(). */
+	int min_u = 66;
+	GLIST_FOREACH(cur, methods) {
+		const struct method_info *inf = cur->data;
+		int mu = msg_min_u(inf->request);
+		min_u = MIN(min_u, mu);
+	}
+	min_u--;
+
 	LLVMTypeRef param = LLVMPointerType(get_vtable_type(ctx, iface), 0),
 		fn_type = LLVMFunctionType(ctx->wordt, &param, 1, 0);
 
@@ -598,6 +607,7 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 		ipc_tag = build_l4_ipc_call(ctx,
 			CONST_WORD(0), CONST_WORD(0), LLVMConstNot(CONST_WORD(0)),
 			CONST_WORD(0), &ipc_from, &ipc_mr1, &ipc_mr2);
+	build_store_received_regs(ctx, min_u, ipc_mr1, ipc_mr2);
 	LLVMBuildBr(ctx->builder, loop_bb);
 
 	/* the main dispatch-replywait loop. */
@@ -635,6 +645,7 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 		ipc_tag = build_l4_ipc_call(ctx,
 			ctx->from, CONST_WORD(0), LLVMConstNot(CONST_WORD(0)),
 			ctx->reply_tag, &ipc_from, &ipc_mr1, &ipc_mr2);
+		build_store_received_regs(ctx, min_u, ipc_mr1, ipc_mr2);
 		LLVMAddIncoming(ctx->from, &ipc_from, &ctx->reply_bb, 1);
 		LLVMAddIncoming(ctx->mr1, &ipc_mr1, &ctx->reply_bb, 1);
 		LLVMAddIncoming(ctx->mr2, &ipc_mr2, &ctx->reply_bb, 1);

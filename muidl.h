@@ -684,6 +684,9 @@ extern void build_write_ipc_parameter(
  */
 extern const struct packed_format *packed_format_of(IDL_tree struct_type);
 
+/* see if the packed format is short enough to en/decode inline. */
+extern bool is_short_fmt(const struct packed_format *fmt);
+
 extern LLVMValueRef get_struct_fn(
 	struct llvm_ctx *ctx,
 	IDL_tree structtype,
@@ -760,5 +763,20 @@ extern void build_msg_decoder(
 	const struct message_info *msg,
 	const struct stritem_info *stritems,
 	bool is_out_half);
+
+/* must only be used if mr_ix is a constant. */
+extern LLVMValueRef build_ipc_input_val_ix(
+	struct llvm_ctx *ctx,
+	LLVMValueRef mr_ix,
+	const char *name);
+
+/* computes the register offset of the first non-valuetype parameter encoded as
+ * untyped words. that is to say, for a message of "long a, long b, tiny_struct
+ * c" would return 3 -- where "c" starts; the corresponding tag_u value is the
+ * return value minus one.
+ *
+ * if no such a parameter exists, returns > 64.
+ */
+extern int msg_min_u(const struct message_info *msg);
 
 #endif

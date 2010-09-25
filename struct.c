@@ -338,7 +338,7 @@ void decode_packed_struct_inline(
 			if(cur_word != pi->word || wordval == NULL) {
 				cur_word = pi->word;
 				V old_wv = wordval;
-				wordval = build_utcb_load(ctx, start_mr,
+				wordval = build_ipc_input_val_ix(ctx, start_mr,
 					tmp_f(ctx->pr, "st.word%d", pi->word));
 				if(old_wv == NULL) {
 					/* shift it down, since we start at an offset. */
@@ -393,7 +393,7 @@ void decode_packed_struct_fncall(
 
 
 /* see if the packed format is short enough to en/decode inline. */
-static bool is_short_fmt(const struct packed_format *fmt)
+bool is_short_fmt(const struct packed_format *fmt)
 {
 	for(int i=0, sub=0; i < fmt->num_items; i++) {
 		const struct packed_item *item = fmt->items[i];

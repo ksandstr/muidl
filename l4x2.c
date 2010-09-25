@@ -22,6 +22,7 @@
 
 #include "muidl.h"
 #include "llvmutil.h"
+#include "l4x2.h"
 
 
 LLVMValueRef build_utcb_get(struct llvm_ctx *ctx)
@@ -256,4 +257,21 @@ LLVMValueRef build_recv_stritem_len(
 		"stritemlen.rval.len");
 	return LLVMBuildExtractValue(ctx->builder, agg, 1,
 		"stritemlen.rval.new.tpos");
+}
+
+
+void build_store_received_regs(
+	struct llvm_ctx *ctx,
+	int min_u,
+	LLVMValueRef mr1,
+	LLVMValueRef mr2)
+{
+	if(min_u < 1) {
+		LLVMBuildStore(ctx->builder, mr1,
+			UTCB_ADDR_VAL(ctx, CONST_INT(MR_OFFSET(1)), "mr1.addr"));
+	}
+	if(min_u < 2) {
+		LLVMBuildStore(ctx->builder, mr2,
+			UTCB_ADDR_VAL(ctx, CONST_INT(MR_OFFSET(2)), "mr2.addr"));
+	}
 }

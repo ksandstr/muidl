@@ -15,6 +15,32 @@ interface Stringserv
 		in string<32> log_id,
 		in string<128> boring_message);
 
+
+	struct small {
+		boolean first, second;
+		octet third;
+		short fourth;
+	};
+
+	[Label(42)]
+	void log_with_id(
+		in long identifier,
+		in string<128> whatever_dude,
+		out long woord,
+		out small something);
+
+	struct tiny {
+		octet what;
+		boolean how;
+	};
+
+	[Label(43)]
+	void log_with_id_aaaannnnd(
+		in long id,
+		in string<128> w_e,
+		out long whot,
+		out tiny miniscule);
+
 #if 0
 	typedef sequence<short, 300> shortseq;
 

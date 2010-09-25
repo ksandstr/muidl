@@ -201,8 +201,8 @@ void build_read_ipc_parameter_ixval(
 {
 	if(IS_LONGLONG_TYPE(ctyp)) {
 		/* unpack a two-word parameter. */
-		LLVMValueRef low = build_utcb_load(ctx, first_mr, "longparm.lo.mr"),
-			high = build_utcb_load(ctx,
+		LLVMValueRef low = build_ipc_input_val_ix(ctx, first_mr, "longparm.lo.mr"),
+			high = build_ipc_input_val_ix(ctx,
 				LLVMBuildAdd(ctx->builder, first_mr, CONST_INT(1),
 					"longparm.hi.mr.ix"),
 				"longparm.hi.mr");
@@ -238,11 +238,11 @@ void build_read_ipc_parameter_ixval(
 				"mapgrant.mem");
 		}
 		LLVMBuildStore(ctx->builder,
-			build_utcb_load(ctx, first_mr, "mapgrant.info"),
+			build_ipc_input_val_ix(ctx, first_mr, "mapgrant.info"),
 			LLVMBuildStructGEP(ctx->builder, dst[0], 0, "mgitem.info.ptr"));
 		LLVMBuildStore(ctx->builder,
-			build_utcb_load(ctx, LLVMBuildAdd(ctx->builder, first_mr,
-					CONST_INT(1), "off.bump"),
+			build_ipc_input_val_ix(ctx,
+				LLVMBuildAdd(ctx->builder, first_mr, CONST_INT(1), "off.bump"),
 				"mapgrant.fpage"),
 			LLVMBuildStructGEP(ctx->builder, dst[0], 1, "mgitem.fpage.ptr"));
 	} else {
