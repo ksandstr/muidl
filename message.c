@@ -451,6 +451,11 @@ void build_msg_decoder(
 			assert(is_out_half);		/* only occurs in stub out-half. */
 			V memcpy_fn = get_memcpy_fn(ctx),
 				mc_args[] = { args[lp->arg_ix], memptr, item_len_bytes };
+			T voidptr = LLVMPointerType(LLVMInt8TypeInContext(ctx->ctx), 0);
+			for(int i=0; i<2; i++) {
+				mc_args[i] = LLVMBuildPointerCast(ctx->builder, mc_args[i],
+					voidptr, i == 0 ? "memcpy.arg.dst" : "memcpy.arg.src");
+			}
 			LLVMBuildCall(ctx->builder, memcpy_fn, mc_args, 3, "memcpy.call");
 		}
 		switch(IDL_NODE_TYPE(type)) {
