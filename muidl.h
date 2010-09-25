@@ -646,36 +646,6 @@ extern LLVMTypeRef llvm_struct_type(
 	char ***names_p,
 	IDL_tree type);
 
-/* when @ctyp is a value type, @dst[0] is assigned to the value.
- * when @ctyp is a rigid type, @dst[0] must be a pointer to the appropriate
- * type.
- * otherwise, @dst[0] must point to the first element of a buffer of sufficient
- * maximum size, and @dst[1] will be assigned to the length value (i32).
- *
- * this function should be called build_read_ipc_argument() instead; parameters
- * are always translated according to direction attribute anyhow.
- *
- * FIXME: doesn't really belong in types.c but rather in a message.c or some
- * such.
- */
-extern void build_read_ipc_parameter_ixval(
-	struct llvm_ctx *ctx,
-	LLVMValueRef *dst,
-	IDL_tree ctyp,
-	LLVMValueRef first_mr);
-
-/* similar interface as build_read_ipc_parameter_ixval():
- * for value types, val[0] is the value itself.
- * for rigid types, val[0] is a pointer to the value.
- * for sequence types, val[0] is a pointer to the first value and val[1] is the
- * length value (i32).
- */
-extern void build_write_ipc_parameter(
-	struct llvm_ctx *ctx,
-	LLVMValueRef first_mr,
-	IDL_tree ctyp,
-	const LLVMValueRef *val);
-
 
 /* from struct.c */
 
@@ -778,5 +748,35 @@ extern LLVMValueRef build_ipc_input_val_ix(
  * if no such a parameter exists, returns > 64.
  */
 extern int msg_min_u(const struct message_info *msg);
+
+/* when @ctyp is a value type, @dst[0] is assigned to the value.
+ * when @ctyp is a rigid type, @dst[0] must be a pointer to the appropriate
+ * type.
+ * otherwise, @dst[0] must point to the first element of a buffer of sufficient
+ * maximum size, and @dst[1] will be assigned to the length value (i32).
+ *
+ * this function should be called build_read_ipc_argument() instead; parameters
+ * are always translated according to direction attribute anyhow.
+ *
+ * FIXME: doesn't really belong in types.c but rather in a message.c or some
+ * such.
+ */
+extern void build_read_ipc_parameter_ixval(
+	struct llvm_ctx *ctx,
+	LLVMValueRef *dst,
+	IDL_tree ctyp,
+	LLVMValueRef first_mr);
+
+/* similar interface as build_read_ipc_parameter_ixval():
+ * for value types, val[0] is the value itself.
+ * for rigid types, val[0] is a pointer to the value.
+ * for sequence types, val[0] is a pointer to the first value and val[1] is the
+ * length value (i32).
+ */
+extern void build_write_ipc_parameter(
+	struct llvm_ctx *ctx,
+	LLVMValueRef first_mr,
+	IDL_tree ctyp,
+	const LLVMValueRef *val);
 
 #endif
