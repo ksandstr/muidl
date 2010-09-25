@@ -461,6 +461,9 @@ void build_msg_decoder(
 		switch(IDL_NODE_TYPE(type)) {
 			case IDLN_TYPE_STRING: {
 				/* terminate. */
+				memptr = LLVMBuildPointerCast(ctx->builder, memptr,
+					LLVMPointerType(LLVMInt8TypeInContext(ctx->ctx), 0),
+					"str.ptr");
 				LLVMBuildStore(ctx->builder,
 					LLVMConstInt(LLVMInt8TypeInContext(ctx->ctx), 0, 0),
 					LLVMBuildGEP(ctx->builder, memptr,
