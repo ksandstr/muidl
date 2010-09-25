@@ -352,7 +352,8 @@ LLVMTypeRef context_type_of_iface(struct llvm_ctx *ctx, IDL_tree iface)
 					IDL_TYPE_STRING(mi->type).positive_int_const).value;
 				m = LLVMArrayType(LLVMInt8TypeInContext(ctx->ctx), len + 1);
 				/* (TODO: wide strings) */
-			} else if(IDL_NODE_TYPE(mi->type) == IDLN_TYPE_SEQUENCE) {
+			} else {
+				assert(IDL_NODE_TYPE(mi->type) == IDLN_TYPE_SEQUENCE);
 				int len = IDL_INTEGER(
 					IDL_TYPE_SEQUENCE(mi->type).positive_int_const).value;
 				T subtype = llvm_rigid_type(ctx, get_type_spec(
@@ -360,8 +361,6 @@ LLVMTypeRef context_type_of_iface(struct llvm_ctx *ctx, IDL_tree iface)
 				g_ptr_array_add(e_types, LLVMArrayType(subtype, len));
 				g_ptr_array_add(e_types, ctx->i32t);
 				m = NULL;
-			} else {
-				g_assert_not_reached();
 			}
 
 			if(m != NULL) g_ptr_array_add(e_types, m);
