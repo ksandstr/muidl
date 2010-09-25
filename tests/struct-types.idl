@@ -59,6 +59,7 @@ TYPE_CONSUMER(SmallTypes);
 struct WordTypes {
 	long first;
 	unsigned long second;
+	wchar third;
 	/* TODO: test float also! */
 	/* TODO: and long long, unsigned long long for 64-bit targets! */
 };
