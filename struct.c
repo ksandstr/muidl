@@ -441,6 +441,9 @@ LLVMValueRef encode_packed_struct_inline(
 	const struct packed_format *fmt = packed_format_of(ctyp);
 	assert(fmt != NULL);
 
+	/* for sub-word items, bit_offset is required. for word and larger ones it
+	 * is forbidden.
+	 */
 	assert(bit_offset == NULL || (fmt->num_bits < BITS_PER_WORD
 		&& fmt->num_words == 1));
 	assert(bit_offset != NULL || fmt->num_bits >= BITS_PER_WORD);
@@ -582,6 +585,9 @@ LLVMValueRef encode_packed_struct(
 {
 	const struct packed_format *fmt = packed_format_of(ctyp);
 	assert(fmt != NULL);
+	if(bit_offset == NULL && fmt->num_bits < BITS_PER_WORD) {
+		bit_offset = CONST_INT(0);
+	}
 	if(is_short_fmt(fmt)) {
 		return encode_packed_struct_inline(ctx, first_mr_word, bit_offset,
 			ctyp, src_base);
