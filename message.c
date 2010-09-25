@@ -253,69 +253,6 @@ LLVMValueRef build_ipc_input_val_ix(
 }
 
 
-/* TODO: unify this with build_ipc_input_val_ix() if it proves to be
- * useful
- */
-static LLVMValueRef build_ipc_input_val(struct llvm_ctx *ctx, int mr)
-{
-	if(mr == 0) return ctx->tag;
-	else if(mr == 1) return ctx->mr1;
-	else if(mr == 2) return ctx->mr2;
-	else {
-		return LLVMBuildLoad(ctx->builder,
-			UTCB_ADDR_VAL(ctx, CONST_INT(MR_OFFSET(mr)), "mr.addr"),
-			tmp_f(ctx->pr, "mr%d", mr));
-	}
-}
-
-
-/* (see build_read_ipc_parameter_ixval() comment in muidl.h)
- *
- * (also note that this function is most likely a pointless optimization as LLVM
- * seems quite capable of recognizing values that don't need to be computed at
- * run time.)
- */
-static void build_read_ipc_parameter(
-	struct llvm_ctx *ctx,
-	LLVMValueRef *dst,
-	IDL_tree ctyp,
-	int first_mr)
-{
-	if(IS_LONGLONG_TYPE(ctyp)) {
-		/* unpack a two-word parameter. */
-		LLVMValueRef low = build_ipc_input_val(ctx, first_mr),
-			high = build_ipc_input_val(ctx, first_mr + 1);
-		LLVMTypeRef i64t = LLVMInt64TypeInContext(ctx->ctx);
-		low = LLVMBuildBitCast(ctx->builder, low, i64t,
-			"longparm.lo.cast");
-		high = LLVMBuildBitCast(ctx->builder, high, i64t,
-			"longparm.hi.cast");
-		dst[0] = LLVMBuildOr(ctx->builder, low,
-				LLVMBuildShl(ctx->builder, high, LLVMConstInt(i64t, 32, 0),
-					"longparm.hi.shift"),
-				"longparm.value");
-	} else if(IS_LONGDOUBLE_TYPE(ctyp)) {
-		fprintf(stderr, "%s: long doubles are TODO\n", __func__);
-		abort();
-	} else if(IS_MAPGRANT_TYPE(ctyp)) {
-		dst[0] = build_local_storage(ctx, ctx->mapgrant, NULL,
-			"mapgrant.mem");
-		LLVMBuildStore(ctx->builder, build_ipc_input_val(ctx, first_mr),
-			LLVMBuildStructGEP(ctx->builder, dst[0], 0, "mgitem.info.ptr"));
-		LLVMBuildStore(ctx->builder, build_ipc_input_val(ctx, first_mr + 1),
-			LLVMBuildStructGEP(ctx->builder, dst[0], 1, "mgitem.fpage.ptr"));
-	} else if(is_value_type(ctyp)) {
-		/* appropriate for all value types. */
-		dst[0] = LLVMBuildTruncOrBitCast(ctx->builder,
-			build_ipc_input_val(ctx, first_mr),
-			llvm_value_type(ctx, ctyp), "shortparm");
-	} else {
-		build_read_ipc_parameter_ixval(ctx, dst, ctyp,
-			CONST_INT(first_mr));
-	}
-}
-
-
 /* FIXME: move this out */
 static bool pass_param_by_value(IDL_tree pdecl)
 {
@@ -343,7 +280,8 @@ void build_msg_decoder(
 		 * decoded rigids, which we have, so provide it.
 		 */
 		V tmp[2] = { ret_args[0], NULL };
-		build_read_ipc_parameter(ctx, tmp, msg->ret_type, ret_offs);
+		build_read_ipc_parameter_ixval(ctx, tmp, msg->ret_type,
+			CONST_INT(ret_offs));
 		if(is_value_type(msg->ret_type)) {
 			assert(tmp[0] != ret_args[0]);
 			LLVMBuildStore(ctx->builder, tmp[0], ret_args[0]);
@@ -354,7 +292,8 @@ void build_msg_decoder(
 		struct msg_param *u = cur->data;
 		IDL_tree type = u->X.untyped.type;
 		V tmp[2] = { args[u->arg_ix], NULL };
-		build_read_ipc_parameter(ctx, tmp, type, u->X.untyped.first_reg);
+		build_read_ipc_parameter_ixval(ctx, tmp, type,
+			CONST_INT(u->X.untyped.first_reg));
 		if(is_value_type(type)) {
 			if(pass_param_by_value(u->param_dcl)) args[u->arg_ix] = tmp[0];
 			else LLVMBuildStore(ctx->builder, tmp[0], args[u->arg_ix]);
