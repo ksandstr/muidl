@@ -73,24 +73,23 @@ static void print_vtable(
 	FILE *of,
 	IDL_tree file_tree,
 	IDL_ns ns,
-	IDL_tree iface)
+	struct iface_info *iface)
 {
-	char *vtpfx = vtable_prefix(ns, iface);
+	char *vtpfx = vtable_prefix(ns, iface->node);
 	fprintf(of, "struct %s_vtable\n{\n", vtpfx);
 	g_free(vtpfx);
 
-	GList *methods = all_methods_of_iface(ns, iface);
-	GLIST_FOREACH(cur, methods) {
-		IDL_tree op = cur->data;
+	GLIST_FOREACH(cur, iface->ops) {
+		const struct method_info *op = cur->data;
 
-		char *rettypstr = return_type(ns, op, NULL, true),
-			*name = decapsify(METHOD_NAME(op));
+		char *rettypstr = return_type(ns, op->node, NULL, true),
+			*name = decapsify(METHOD_NAME(op->node));
 		fprintf(of, "\t%s%s(*%s)(", rettypstr, type_space(rettypstr), name);
 		g_free(rettypstr);
 		g_free(name);
 
 		bool first_param = true;
-		IDL_tree rettyp = get_type_spec(IDL_OP_DCL(op).op_type_spec);
+		IDL_tree rettyp = get_type_spec(IDL_OP_DCL(op->node).op_type_spec);
 		if(rettyp != NULL && !is_value_type(rettyp)) {
 			/* compound type return values are declared as the first parameter,
 			 * because they're on the "left side".
@@ -99,12 +98,9 @@ static void print_vtable(
 			print_out_param(of, ns, rettyp, "_result");
 		}
 
-		IDL_tree params = IDL_OP_DCL(op).parameter_dcls;
+		IDL_tree params = IDL_OP_DCL(op->node).parameter_dcls;
 		if(first_param && params == NULL) fprintf(of, "void");
-		for(IDL_tree iter = params;
-			iter != NULL;
-			iter = IDL_LIST(iter).next)
-		{
+		IDL_LIST_FOREACH(iter, params) {
 			if(first_param) first_param = false; else fprintf(of, ", ");
 			IDL_tree p = IDL_LIST(iter).data,
 				decl = IDL_PARAM_DCL(p).simple_declarator,
@@ -145,7 +141,6 @@ static void print_vtable(
 		fprintf(of, ");\n");
 	}
 	fprintf(of, "};\n");
-	g_list_free(methods);
 }
 
 
@@ -820,9 +815,8 @@ void print_common_header(struct print_ctx *pr)
 	 * implementations (so as to avoid polluting the namespace).
 	 */
 	GLIST_FOREACH(cur, pr->ifaces) {
-		struct iface_info *inf = cur->data;
-		IDL_tree iface = inf->node,
-			mod = IDL_get_parent_node(iface, IDLN_MODULE, NULL);
+		struct iface_info *iface = cur->data;
+		IDL_tree mod = IDL_get_parent_node(iface->node, IDLN_MODULE, NULL);
 
 		/* vtable etc. selector */
 		char *modpfx = NULL, *ifpfx;
@@ -830,7 +824,7 @@ void print_common_header(struct print_ctx *pr)
 			modpfx = g_utf8_strup(IDL_IDENT(IDL_MODULE(mod).ident).str,
 				-1);
 		}
-		ifpfx = g_utf8_strup(IDL_IDENT(IDL_INTERFACE(iface).ident).str,
+		ifpfx = g_utf8_strup(IDL_IDENT(IDL_INTERFACE(iface->node).ident).str,
 			-1);
 		code_f(pr, "#if defined(%s%s%s_IMPL_SOURCE) || defined(MUIDL_SOURCE)",
 			modpfx == NULL ? " " : modpfx, mod == NULL ? "" : "_",
@@ -839,13 +833,13 @@ void print_common_header(struct print_ctx *pr)
 		g_free(ifpfx);
 
 		/* vtable declaration */
-		code_f(pr, "\n/* vtable for `%s': */", inf->name);
+		code_f(pr, "\n/* vtable for `%s': */", iface->name);
 		print_vtable(pr->of, pr->tree, pr->ns, iface);
 
 		/* dispatcher prototype */
 		code_f(pr, " ");
 		char *vtprefix = NULL,
-			*dispname = dispatcher_name(pr->ns, iface, &vtprefix);
+			*dispname = dispatcher_name(pr->ns, iface->node, &vtprefix);
 		code_f(pr, "extern L4_Word_t %s(", dispname);
 		g_free(dispname);
 		indent(pr, 1);
@@ -854,7 +848,7 @@ void print_common_header(struct print_ctx *pr)
 		g_free(vtprefix);
 
 		/* exception raisers */
-		print_exn_raisers(pr, iface);
+		print_exn_raisers(pr, iface->node);
 
 		/* close off vtable selector */
 		code_f(pr, "\n#endif\n");
