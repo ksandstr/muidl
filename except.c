@@ -158,50 +158,47 @@ GList *iface_exns_sorted(IDL_ns ns, IDL_tree iface)
 }
 
 
-/* TODO: refactor to use a member_item array given as parameter */
-static LLVMTypeRef exn_raise_fn_type(struct llvm_ctx *ctx, IDL_tree exn)
+static LLVMTypeRef exn_raise_fn_type(struct llvm_ctx *ctx, IDL_tree node)
 {
+	struct member_item *members = expand_member_list(
+		IDL_EXCEPT_DCL(node).members);
 	GPtrArray *types = g_ptr_array_new();
-	IDL_LIST_FOREACH(m_cur, IDL_EXCEPT_DCL(exn).members) {
-		IDL_tree m = IDL_LIST(m_cur).data,
-			mtype = get_type_spec(IDL_MEMBER(m).type_spec);
-		IDL_LIST_FOREACH(d_cur, IDL_MEMBER(m).dcls) {
-			IDL_tree dcl = IDL_LIST(d_cur).data;
-			const bool isvt = is_value_type(mtype);
-			T typ;
-			if(IDL_NODE_TYPE(dcl) == IDLN_TYPE_ARRAY && isvt) {
-				typ = LLVMPointerType(llvm_value_type(ctx, mtype), 0);
-			} else if(!isvt) {
-				/* nonvalue types are passed by pointer; an array of those is
-				 * either disallowed (seqs, strings) or just a pointer to more
-				 * than one.
-				 */
-				T mt;
-				if(is_rigid_type(mtype)) {
-					mt = llvm_rigid_type(ctx, mtype);
-				} else if(IDL_NODE_TYPE(mtype) == IDLN_TYPE_STRING) {
-					mt = LLVMInt8TypeInContext(ctx->ctx);
-				} else if(IDL_NODE_TYPE(mtype) == IDLN_TYPE_WIDE_STRING) {
-					mt = ctx->i32t;
-				} else if(IDL_NODE_TYPE(mtype) == IDLN_TYPE_SEQUENCE) {
-					mt = NULL;
-					T m = llvm_rigid_type(ctx, get_type_spec(
-							IDL_TYPE_SEQUENCE(mtype).simple_type_spec));
-					g_ptr_array_add(types, LLVMPointerType(m, 0));
-					/* and the length */
-					g_ptr_array_add(types, ctx->i32t);
-				} else {
-					NOTDEFINED(mtype);
-				}
-
-				if(mt == NULL) typ = NULL; else typ = LLVMPointerType(mt, 0);
+	for(int i=0; members[i].type != NULL; i++) {
+		const struct member_item *m = &members[i];
+		const bool isvt = is_value_type(m->type);
+		T typ;
+		if(isvt && m->dim > 0) {
+			typ = LLVMPointerType(llvm_value_type(ctx, m->type), 0);
+		} else if(!isvt) {
+			/* nonvalue types are passed by pointer; an array of those is
+			 * either disallowed (seqs, strings) or just a pointer to more
+			 * than one.
+			 */
+			T mt;
+			if(is_rigid_type(m->type)) {
+				mt = llvm_rigid_type(ctx, m->type);
+			} else if(IDL_NODE_TYPE(m->type) == IDLN_TYPE_STRING) {
+				mt = LLVMInt8TypeInContext(ctx->ctx);
+			} else if(IDL_NODE_TYPE(m->type) == IDLN_TYPE_WIDE_STRING) {
+				mt = ctx->i32t;
+			} else if(IDL_NODE_TYPE(m->type) == IDLN_TYPE_SEQUENCE) {
+				mt = NULL;
+				T subtype = llvm_rigid_type(ctx, get_type_spec(
+						IDL_TYPE_SEQUENCE(m->type).simple_type_spec));
+				g_ptr_array_add(types, LLVMPointerType(subtype, 0));
+				g_ptr_array_add(types, ctx->i32t);	/* length parameter */
 			} else {
-				assert(IDL_NODE_TYPE(dcl) == IDLN_IDENT);
-				typ = llvm_value_type(ctx, mtype);
+				NOTDEFINED(m->type);
 			}
-			if(typ != NULL) g_ptr_array_add(types, typ);
+
+			if(mt == NULL) typ = NULL; else typ = LLVMPointerType(mt, 0);
+		} else {
+			assert(m->dim == 0);
+			typ = llvm_value_type(ctx, m->type);
 		}
+		if(typ != NULL) g_ptr_array_add(types, typ);
 	}
+	g_free(members);
 
 	T ret = LLVMFunctionType(LLVMVoidTypeInContext(ctx->ctx),
 		(LLVMTypeRef *)types->pdata, types->len, 0);
