@@ -122,42 +122,6 @@ char *exn_raise_fn_name(IDL_tree exn)
 }
 
 
-static int exns_by_repoid_cmp(gconstpointer a, gconstpointer b) {
-	return strcmp(EXN_REPO_ID((IDL_tree)a), EXN_REPO_ID((IDL_tree)b));
-}
-
-
-GList *iface_exns_sorted(IDL_ns ns, IDL_tree iface)
-{
-	GHashTable *ex_repo_ids = g_hash_table_new(&g_str_hash, &g_str_equal);
-
-	GList *methods = all_methods_of_iface(ns, iface);
-	GLIST_FOREACH(cur, methods) {
-		IDL_tree op = cur->data;
-		IDL_LIST_FOREACH(r_cur, IDL_OP_DCL(op).raises_expr) {
-			IDL_tree exn_id = IDL_LIST(r_cur).data;
-			const char *rid = IDL_IDENT(exn_id).repo_id;
-			if(g_hash_table_lookup(ex_repo_ids, rid) != NULL) continue;
-
-			/* exn_id actually refers to the IDL_EXCEPT_DCL's ident node.
-			 * the actual exception is an immediate parent.
-			 */
-			IDL_tree exn = IDL_get_parent_node(exn_id, IDLN_EXCEPT_DCL,
-				NULL);
-			assert(exn != NULL);
-			assert(strcmp(rid, IDL_IDENT(IDL_EXCEPT_DCL(exn).ident).repo_id) == 0);
-			g_hash_table_insert(ex_repo_ids, (char *)rid, exn);
-		}
-	}
-	g_list_free(methods);
-
-	GList *ret = g_hash_table_get_values(ex_repo_ids);
-	g_hash_table_destroy(ex_repo_ids);
-
-	return g_list_sort(ret, &exns_by_repoid_cmp);
-}
-
-
 static LLVMTypeRef exn_raise_fn_type(struct llvm_ctx *ctx, IDL_tree node)
 {
 	struct member_item *members = expand_member_list(

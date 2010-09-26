@@ -497,7 +497,6 @@ extern LLVMValueRef build_malloc_storage(
 /* from analyse.c */
 
 extern struct iface_info *analyse_interface(IDL_ns ns, IDL_tree iface);
-extern GList *all_methods_of_iface(IDL_ns ns, IDL_tree iface);
 
 extern struct method_info *analyse_op_dcl(IDL_ns ns, IDL_tree op);
 
@@ -591,7 +590,7 @@ extern LLVMValueRef build_stubs_for_iface(
 	const struct iface_info *iface);
 
 
-/* from except.c */
+/* from iface.c */
 
 /* gather and resolve all exceptions that operations of the given interface,
  * including interfaces it's derived from, references. the resulting list is of
@@ -601,6 +600,11 @@ extern LLVMValueRef build_stubs_for_iface(
  * type returned by context_type_of_iface().)
  */
 extern GList *iface_exns_sorted(IDL_ns ns, IDL_tree iface);
+
+extern GList *all_methods_of_iface(IDL_ns ns, IDL_tree iface);
+
+
+/* from except.c */
 
 extern char *exn_raise_fn_name(IDL_tree except_dcl);
 
