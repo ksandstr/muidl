@@ -997,7 +997,12 @@ static int method_info_by_label_cmp(gconstpointer ap, gconstpointer bp)
 }
 
 
-GList *analyse_methods_of_iface(
+/* collect all operations of the interface given (including those in
+ * subclasses, as per all_methods_of_iface()), separate tag-masked operations
+ * into a given list, sort the rest by ascending label and return. result is a
+ * GList of <struct method_info *> with vtab_offset filled in for each.
+ */
+static GList *analyse_methods_of_iface(
 	IDL_ns ns,
 	GList **tagmask_list_p,
 	IDL_tree iface)

@@ -502,21 +502,6 @@ extern struct method_info *analyse_op_dcl(IDL_ns ns, IDL_tree op);
 
 extern struct message_info *build_exception_message(IDL_tree except_dcl);
 
-/* collect all operations of the interface given (including those in
- * subclasses, as per all_methods_of_iface()), separate tag-masked operations
- * into a given list, sort the rest by ascending label and return. result is a
- * GList of <struct method_info *> with vtab_offset filled in for each.
- *
- * the caller must do ``g_list_foreach(result, (GFunc)free_method_info,
- * NULL);'' followed by ``g_list_free(result); g_list_free(*tagmask_list_p);''
- * to not leak memory.
- */
-extern GList *analyse_methods_of_iface(
-	IDL_ns ns,
-	GList **tagmask_list_p,
-	IDL_tree iface);
-
-
 /* result is a list of string buffers required by a dispatcher of the given
  * list of <struct method_info *>. caller frees. zero-length is represented by
  * NULL, or by the first item being the terminator.
