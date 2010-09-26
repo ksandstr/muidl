@@ -306,6 +306,8 @@ struct iface_info
 	const char *name;
 	GList *ops;		/* of <struct method_info *> */
 	GList *tagmask_ops;		/* subset of ops */
+
+	bool has_replies;	/* is at least one method is not oneway? */
 };
 
 
@@ -579,7 +581,9 @@ extern gboolean iter_build_common_module(IDL_tree_func_data *, void *);
 
 /* from dispatch.c */
 
-extern gboolean iter_build_dispatchers(IDL_tree_func_data *tf, void *ctx);
+extern LLVMValueRef build_dispatcher_function(
+	struct llvm_ctx *ctx,
+	const struct iface_info *iface);
 extern LLVMValueRef build_fetch_supp_ctx(struct llvm_ctx *ctx);
 
 

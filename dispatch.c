@@ -164,27 +164,28 @@ static LLVMTypeRef vtable_return_type(
 /* TODO: wrap this to cache things in @ctx, and move it into a llvmutil.c or
  * some such
  */
-static LLVMTypeRef get_vtable_type(struct llvm_ctx *ctx, IDL_tree iface)
+static LLVMTypeRef get_vtable_type(
+	struct llvm_ctx *ctx,
+	const struct iface_info *iface)
 {
-	GList *methods = all_methods_of_iface(ctx->ns, iface);
-	int num_fields = g_list_length(methods), f_offs = 0;
+	int num_fields = g_list_length(iface->ops), f_offs = 0;
 	LLVMTypeRef field_types[num_fields];
-	GList *cur = methods;
+	GList *cur = iface->ops;
 	while(f_offs < num_fields) {
 		assert(cur != NULL);
-		IDL_tree op = cur->data,
-			idl_rettyp = get_type_spec(IDL_OP_DCL(op).op_type_spec),
-			param_list = IDL_OP_DCL(op).parameter_dcls;
+		struct method_info *op = cur->data;
+		IDL_tree idl_rettyp = get_type_spec(IDL_OP_DCL(op->node).op_type_spec),
+			param_list = IDL_OP_DCL(op->node).parameter_dcls;
 		/* each parameter can be a sequence */
 		const int n_args_max = IDL_list_length(param_list) * 2
 			+ (idl_rettyp != NULL ? 1 : 0);
 		LLVMTypeRef arg_types[n_args_max];
 		int arg_pos = 0;
 		bool ret_actual = false;
-		LLVMTypeRef rettyp = vtable_return_type(ctx, op, &ret_actual);
+		LLVMTypeRef rettyp = vtable_return_type(ctx, op->node, &ret_actual);
 		if(idl_rettyp != NULL && !ret_actual) {
 			vtable_out_param_type(ctx, arg_types, &arg_pos, idl_rettyp);
-			if(find_neg_exn(op) != NULL) rettyp = ctx->i32t;
+			if(find_neg_exn(op->node) != NULL) rettyp = ctx->i32t;
 			else rettyp = LLVMVoidTypeInContext(ctx->ctx);
 		}
 		for(IDL_tree p_cur = param_list;
@@ -214,7 +215,6 @@ static LLVMTypeRef get_vtable_type(struct llvm_ctx *ctx, IDL_tree iface)
 			LLVMFunctionType(rettyp, arg_types, arg_pos, 0), 0);
 	}
 	assert(cur == NULL);
-	g_list_free(methods);
 
 	return LLVMStructTypeInContext(ctx->ctx, field_types, num_fields, 0);
 }
@@ -534,23 +534,15 @@ static void build_dispatcher_msgerr(struct llvm_ctx *ctx)
 }
 
 
-static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
+LLVMValueRef build_dispatcher_function(
+	struct llvm_ctx *ctx,
+	const struct iface_info *iface)
 {
-	GList *tagmask_list = NULL,
-		*methods = analyse_methods_of_iface(ctx->ns, &tagmask_list, iface);
-
-	bool has_replies = false;
-	GLIST_FOREACH(cur, methods) {
-		const struct method_info *inf = cur->data;
-		if(inf->num_reply_msgs > 0) {
-			has_replies = true;
-			break;
-		}
-	}
-
-	/* compute min_u for build_store_received_regs(). */
+	/* compute min_u for build_store_received_regs() over all ops' request
+	 * halves.
+	 */
 	int min_u = 66;
-	GLIST_FOREACH(cur, methods) {
+	GLIST_FOREACH(cur, iface->ops) {
 		const struct method_info *inf = cur->data;
 		int mu = msg_min_u(inf->request);
 		min_u = MIN(min_u, mu);
@@ -560,7 +552,7 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 	LLVMTypeRef param = LLVMPointerType(get_vtable_type(ctx, iface), 0),
 		fn_type = LLVMFunctionType(ctx->wordt, &param, 1, 0);
 
-	char *dispname = dispatcher_name(ctx->ns, iface, NULL);
+	char *dispname = dispatcher_name(ctx->ns, iface->node, NULL);
 	LLVMValueRef fn = LLVMAddFunction(ctx->module, dispname, fn_type);
 	ctx->vtab_arg = LLVMGetFirstParam(fn);
 	g_free(dispname);
@@ -590,7 +582,7 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 		stored_timeouts = LLVMBuildLoad(ctx->builder, xfer_timeouts_addr,
 			"stored_timeouts");
 	/* string buffers */
-	struct stritem_info *stritems = dispatcher_stritems(methods);
+	struct stritem_info *stritems = dispatcher_stritems(iface->ops);
 	build_alloc_stritems(ctx, stritems);
 	const bool have_stringbufs = stritems != NULL && stritems[0].length >= 0;
 	/* acceptor word (TODO: map/grant items) */
@@ -624,7 +616,7 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 		ret_ec_bb, dispatch_bb);
 
 	LLVMPositionBuilderAtEnd(ctx->builder, ctx->reply_bb);
-	if(!has_replies) {
+	if(!iface->has_replies) {
 		/* no replies in this interface; go straight back to waiting. */
 		LLVMBuildBr(ctx->builder, ctx->wait_bb);
 		ctx->reply_tag = NULL;
@@ -666,7 +658,7 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 
 	/* recognize interfaces that've got tag-mask dispatching. */
 	GList *tm_list = NULL;
-	GLIST_FOREACH(cur, methods) {
+	GLIST_FOREACH(cur, iface->ops) {
 		struct method_info *inf = cur->data;
 		if(inf->request->tagmask != NO_TAGMASK) {
 			assert(inf->request->sublabel == NO_SUBLABEL);
@@ -743,7 +735,7 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 
 	int top_label = -1;
 	LLVMValueRef sublabelswitch = NULL;
-	GLIST_FOREACH(cur, methods) {
+	GLIST_FOREACH(cur, iface->ops) {
 		struct method_info *inf = cur->data;
 		/* tag-mask dispatching is handled above */
 		if(inf->request->tagmask != NO_TAGMASK) continue;
@@ -791,32 +783,6 @@ static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree ifa
 
 	LLVMDisposeBuilder(ctx->builder);
 	ctx->builder = NULL;
-	g_list_foreach(methods, (GFunc)free_method_info, NULL);
-	g_list_free(methods);
-	g_list_free(tagmask_list);
 	g_free(stritems);
 	return fn;
-}
-
-
-gboolean iter_build_dispatchers(IDL_tree_func_data *tf, void *ud)
-{
-	struct llvm_ctx *ctx = ud;
-
-	/* TODO: add extern functions to the module on first invocation,
-	 * somehow
-	 */
-
-	switch(IDL_NODE_TYPE(tf->tree)) {
-		case IDLN_LIST:
-		case IDLN_MODULE:
-		case IDLN_SRCFILE:
-			return TRUE;
-
-		default: return FALSE;
-
-		case IDLN_INTERFACE:
-			build_dispatcher_function(ctx, tf->tree);
-			return FALSE;
-	}
 }

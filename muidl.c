@@ -773,10 +773,16 @@ static void print_into(
 }
 
 
+typedef LLVMValueRef (*per_iface_fn)(
+	struct llvm_ctx *,
+	const struct iface_info *);
+
+
 static LLVMModuleRef make_llvm_module(
 	struct llvm_ctx *ctx,
 	LLVMModuleRef mod,
 	const char *basename,
+	per_iface_fn iface_fn,
 	IDL_tree_func treefn)
 {
 	if(mod == NULL) {
@@ -790,7 +796,16 @@ static LLVMModuleRef make_llvm_module(
 	ctx->stritem_len_fn = NULL;
 	assert(ctx->malloc_ptrs == NULL);
 
-	IDL_tree_walk_in_order(ctx->pr->tree, treefn, ctx);
+	if(iface_fn != NULL) {
+		GLIST_FOREACH(cur, ctx->pr->ifaces) {
+			struct iface_info *inf = cur->data;
+			(*iface_fn)(ctx, inf);
+		}
+	}
+
+	if(treefn != NULL) {
+		IDL_tree_walk_in_order(ctx->pr->tree, treefn, ctx);
+	}
 
 	char *outmsg = NULL;
 	if(LLVMVerifyModule(mod, LLVMPrintMessageAction, &outmsg)) {
@@ -891,23 +906,21 @@ bool do_idl_file(const char *cppopts, const char *filename)
 	}
 	if(target_mask & T_COMMON) {
 		LLVMModuleRef mod = make_llvm_module(lc, NULL, basename,
-			&iter_build_common_module);
+			NULL, &iter_build_common_module);
 		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-common.S",
 			basename));
 		LLVMDisposeModule(mod);
 	}
 	if(target_mask & T_SERVICE) {
 		LLVMModuleRef mod = make_llvm_module(lc, NULL, basename,
-			&iter_build_dispatchers);
-		make_llvm_module(lc, mod, basename,
-			&iter_build_exception_raise_fns);
+			&build_dispatcher_function, &iter_build_exception_raise_fns);
 		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-service.S",
 			basename));
 		LLVMDisposeModule(mod);
 	}
 	if(target_mask & T_CLIENT) {
 		LLVMModuleRef mod = make_llvm_module(lc, NULL, basename,
-			&iter_build_stubs);
+			NULL, &iter_build_stubs);
 		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-client.S",
 			basename));
 		LLVMDisposeModule(mod);

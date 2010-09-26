@@ -1109,5 +1109,15 @@ struct iface_info *analyse_interface(IDL_ns ns, IDL_tree iface)
 	inf->name = IDL_IDENT(IDL_INTERFACE(iface).ident).str;
 	inf->tagmask_ops = NULL;
 	inf->ops = analyse_methods_of_iface(ns, &inf->tagmask_ops, iface);
+
+	inf->has_replies = false;
+	GLIST_FOREACH(cur, inf->ops) {
+		const struct method_info *op = cur->data;
+		if(op->num_reply_msgs > 0) {
+			inf->has_replies = true;
+			break;
+		}
+	}
+
 	return inf;
 }
