@@ -843,7 +843,9 @@ bool do_idl_file(const char *cppopts, const char *filename)
 	}
 	if(target_mask & T_SERVICE) {
 		LLVMModuleRef mod = make_llvm_module(lc, NULL, basename,
-			&build_dispatcher_function, &iter_build_exception_raise_fns);
+			&build_dispatcher_function, NULL);
+		make_llvm_module(lc, mod, basename,
+			&build_exception_raise_fns_for_iface, NULL);
 		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-service.S",
 			basename));
 		LLVMDisposeModule(mod);

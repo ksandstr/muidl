@@ -158,6 +158,7 @@ GList *iface_exns_sorted(IDL_ns ns, IDL_tree iface)
 }
 
 
+/* TODO: refactor to use a member_item array given as parameter */
 static LLVMTypeRef exn_raise_fn_type(struct llvm_ctx *ctx, IDL_tree exn)
 {
 	GPtrArray *types = g_ptr_array_new();
@@ -212,9 +213,9 @@ static LLVMTypeRef exn_raise_fn_type(struct llvm_ctx *ctx, IDL_tree exn)
 static LLVMValueRef build_exn_raise_fn(
 	struct llvm_ctx *ctx,
 	const char *fn_name,
-	IDL_tree exn)
+	const struct message_info *exn)
 {
-	T fntype = exn_raise_fn_type(ctx, exn);
+	T fntype = exn_raise_fn_type(ctx, exn->node);
 	V fn = LLVMAddFunction(ctx->module, fn_name, fntype);
 	begin_function(ctx, fn);
 	BB start_bb = add_sibling_block(ctx, "start"),
@@ -224,19 +225,17 @@ static LLVMValueRef build_exn_raise_fn(
 	V supp_ptr = build_fetch_supp_ctx(ctx);
 
 	V tag;
-	if(is_noreply_exn(exn)) {
+	if(is_noreply_exn(exn->node)) {
 		/* special thing. */
 		tag = CONST_WORD(~0ull);
 	} else {
 		tag = LLVMBuildShl(ctx->builder, CONST_WORD(2), CONST_WORD(16),
 			"label.shifted");
-		struct message_info *msg = build_exception_message(exn);
 		unsigned num_args = LLVMCountParams(fn);
 		V *args = g_new(V, num_args);
 		LLVMGetParams(fn, args);
-		tag = build_msg_encoder(ctx, msg, NULL, args, false);
+		tag = build_msg_encoder(ctx, exn, NULL, args, false);
 		g_free(args);
-		free_message_info(msg);
 	}
 
 	/* store the tag to indicate a raised exception. */
@@ -257,65 +256,38 @@ static LLVMValueRef build_exn_raise_fn(
 }
 
 
-static void build_exn_raise_fns_for_iface(
+LLVMValueRef build_exception_raise_fns_for_iface(
 	struct llvm_ctx *ctx,
-	GHashTable *seen_hash,
-	IDL_tree iface)
+	const struct iface_info *iface)
 {
-	GList *exn_list = iface_exns_sorted(ctx->ns, iface);
-	GLIST_FOREACH(e_cur, exn_list) {
-		IDL_tree exn = e_cur->data;
-		const char *key = IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL(exn).ident);
-		if(g_hash_table_lookup(seen_hash, key) != NULL || is_negs_exn(exn)) {
-			/* already emitted for this module, or one of those exceptions that
-			 * doesn't get a raise function
-			 */
-			continue;
+	GHashTable *seen_exn_hash = g_hash_table_new(&g_str_hash, &g_str_equal);
+	GLIST_FOREACH(o_cur, iface->ops) {
+		const struct method_info *op = o_cur->data;
+		for(int i=1; i < op->num_reply_msgs; i++) {
+			const struct message_info *msg = op->replies[i];
+			const char *key = IDL_IDENT_REPO_ID(
+				IDL_EXCEPT_DCL(msg->node).ident);
+			if(g_hash_table_lookup(seen_exn_hash, key) != NULL
+				|| is_negs_exn(msg->node))
+			{
+				/* already emitted for this module, or one of those exceptions
+				 * that doesn't get a raise function
+				 */
+				continue;
+			}
+			g_hash_table_insert(seen_exn_hash, (char *)key, (void *)msg);
+
+			char *name = exn_raise_fn_name(msg->node);
+			V fn = build_exn_raise_fn(ctx, name, msg);
+			g_free(name);
+
+			/* set collapsible linkage. */
+			LLVMSetLinkage(fn, LLVMLinkOnceAnyLinkage);
 		}
-		g_hash_table_insert(seen_hash, (char *)key, exn);
-
-		char *name = exn_raise_fn_name(exn);
-		V fn = build_exn_raise_fn(ctx, name, exn);
-		g_free(name);
-
-		/* set collapsible linkage. */
-		LLVMSetLinkage(fn, LLVMLinkOnceAnyLinkage);
-	}
-	g_list_free(exn_list);
-}
-
-
-gboolean iter_build_exception_raise_fns(
-	IDL_tree_func_data *tf,
-	void *ud)
-{
-	struct llvm_ctx *ctx = ud;
-	bool made = false;
-	if(ctx->seen_exn_hash == NULL) {
-		ctx->seen_exn_hash = g_hash_table_new(&g_str_hash, &g_str_equal);
-		made = true;
 	}
 
-	gboolean rv;
-	switch(IDL_NODE_TYPE(tf->tree)) {
-		case IDLN_LIST:
-		case IDLN_MODULE:
-		case IDLN_SRCFILE:
-			rv = TRUE;
-			break;
-
-		default: rv = FALSE; break;
-
-		case IDLN_INTERFACE:
-			build_exn_raise_fns_for_iface(ctx, ctx->seen_exn_hash, tf->tree);
-			rv = FALSE;
-			break;
-	}
-	if(made) {
-		g_hash_table_destroy(ctx->seen_exn_hash);
-		ctx->seen_exn_hash = NULL;
-	}
-	return rv;
+	g_hash_table_destroy(seen_exn_hash);
+	return NULL;
 }
 
 

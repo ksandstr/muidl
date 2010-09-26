@@ -191,9 +191,6 @@ struct llvm_ctx
 	/* stub-specific things */
 	LLVMBasicBlockRef exit_bb;
 	LLVMValueRef retval_phi;
-
-	/* things for except.c */
-	GHashTable *seen_exn_hash;
 };
 
 
@@ -610,9 +607,9 @@ extern char *exn_raise_fn_name(IDL_tree except_dcl);
 /* this is expensive. */
 extern uint32_t exn_hash(IDL_tree except_dcl);
 
-extern gboolean iter_build_exception_raise_fns(
-	IDL_tree_func_data *tf,
-	void *ctxptr);
+extern LLVMValueRef build_exception_raise_fns_for_iface(
+	struct llvm_ctx *ctx,
+	const struct iface_info *iface);
 
 extern LLVMTypeRef context_type_of_iface(
 	struct llvm_ctx *ctx,
