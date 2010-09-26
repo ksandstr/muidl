@@ -198,7 +198,7 @@ static LLVMTypeRef exn_raise_fn_type(struct llvm_ctx *ctx, IDL_tree exn)
 				assert(IDL_NODE_TYPE(dcl) == IDLN_IDENT);
 				typ = llvm_value_type(ctx, mtype);
 			}
-			g_ptr_array_add(types, typ);
+			if(typ != NULL) g_ptr_array_add(types, typ);
 		}
 	}
 
