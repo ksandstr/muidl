@@ -359,7 +359,6 @@ extern char *vtable_prefix(IDL_ns ns, IDL_tree iface);
  * the caller must g_free().
  */
 extern char *dispatcher_name(IDL_ns ns, IDL_tree iface, char **vtprefix_p);
-extern GList *all_methods_of_iface(IDL_ns ns, IDL_tree iface);
 extern char *decapsify(const char *name);
 extern char *return_type(
 	IDL_ns ns,
@@ -501,6 +500,7 @@ extern LLVMValueRef build_malloc_storage(
 /* from analyse.c */
 
 extern struct iface_info *analyse_interface(IDL_ns ns, IDL_tree iface);
+extern GList *all_methods_of_iface(IDL_ns ns, IDL_tree iface);
 
 extern struct method_info *analyse_op_dcl(IDL_ns ns, IDL_tree op);
 
