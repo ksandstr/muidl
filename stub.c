@@ -455,34 +455,18 @@ static void build_ipc_stub(
 }
 
 
-gboolean iter_build_stubs(IDL_tree_func_data *tf, void *ud)
+LLVMValueRef build_stubs_for_iface(
+	struct llvm_ctx *ctx,
+	const struct iface_info *iface)
 {
-	struct llvm_ctx *ctx = ud;
-	switch(IDL_NODE_TYPE(tf->tree)) {
-		case IDLN_LIST:
-		case IDLN_MODULE:
-		case IDLN_SRCFILE:
-			return TRUE;
-
-		default: return FALSE;
-
-		case IDLN_INTERFACE: {
-			GList *tagmask_list = NULL,
-				*methods = analyse_methods_of_iface(ctx->ns,
-					&tagmask_list, tf->tree);
-			GLIST_FOREACH(cur, methods) {
-				struct method_info *inf = cur->data;
-				/* (TODO: don't build the timeoutless variant if given an
-				 * attribute not to do so. see header.c for details.)
-				 */
-				build_ipc_stub(ctx, inf, 0);
-				int tok = op_timeout_kind(inf->node);
-				if(tok != 0) build_ipc_stub(ctx, inf, tok);
-			}
-			g_list_foreach(methods, (GFunc)&free_method_info, NULL);
-			g_list_free(methods);
-			g_list_free(tagmask_list);
-			return FALSE;
-		}
+	GLIST_FOREACH(cur, iface->ops) {
+		struct method_info *inf = cur->data;
+		/* (TODO: don't build the timeoutless variant if given an
+		 * attribute not to do so. see header.c for details.)
+		 */
+		build_ipc_stub(ctx, inf, 0);
+		int tok = op_timeout_kind(inf->node);
+		if(tok != 0) build_ipc_stub(ctx, inf, tok);
 	}
+	return NULL;
 }

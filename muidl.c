@@ -920,7 +920,7 @@ bool do_idl_file(const char *cppopts, const char *filename)
 	}
 	if(target_mask & T_CLIENT) {
 		LLVMModuleRef mod = make_llvm_module(lc, NULL, basename,
-			NULL, &iter_build_stubs);
+			&build_stubs_for_iface, NULL);
 		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-client.S",
 			basename));
 		LLVMDisposeModule(mod);

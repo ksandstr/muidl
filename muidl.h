@@ -589,7 +589,9 @@ extern LLVMValueRef build_fetch_supp_ctx(struct llvm_ctx *ctx);
 
 /* from stub.c */
 
-extern gboolean iter_build_stubs(IDL_tree_func_data *tf, void *ctxptr);
+extern LLVMValueRef build_stubs_for_iface(
+	struct llvm_ctx *ctx,
+	const struct iface_info *iface);
 
 
 /* from except.c */
