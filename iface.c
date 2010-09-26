@@ -39,10 +39,7 @@ static bool collect_methods(
 	 * to contrast: interface inheritance is idempotent, so multiple
 	 * overlapping inheritance of interfaces is A-OK.
 	 */
-	for(IDL_tree cur = IDL_INTERFACE(iface).inheritance_spec;
-		cur != NULL;
-		cur = IDL_LIST(cur).next)
-	{
+	IDL_LIST_FOREACH(cur, IDL_INTERFACE(iface).inheritance_spec) {
 		IDL_tree inh_id = IDL_LIST(cur).data;
 		char *inh_repoid = IDL_IDENT_REPO_ID(inh_id);
 		if(g_hash_table_lookup(ifaces_seen, inh_repoid) == NULL) {
@@ -72,10 +69,7 @@ static bool collect_methods(
 	}
 
 	/* then the actual methods. */
-	for(IDL_tree cur = IDL_INTERFACE(iface).body;
-		cur != NULL;
-		cur = IDL_LIST(cur).next)
-	{
+	IDL_LIST_FOREACH(cur, IDL_INTERFACE(iface).body) {
 		IDL_tree op = IDL_LIST(cur).data;
 		if(IDL_NODE_TYPE(op) != IDLN_OP_DCL) continue;
 		*methods_p = g_list_prepend(*methods_p, op);
