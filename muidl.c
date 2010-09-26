@@ -647,7 +647,7 @@ char *vtable_prefix(IDL_ns ns, IDL_tree iface)
 
 static gboolean pick_ifaces(IDL_tree_func_data *tf, gpointer userdata)
 {
-	GHashTable *ifaces = userdata;
+	GList **ifaces_p = userdata;
 	switch(IDL_NODE_TYPE(tf->tree)) {
 		default: return FALSE;
 
@@ -656,24 +656,21 @@ static gboolean pick_ifaces(IDL_tree_func_data *tf, gpointer userdata)
 		case IDLN_LIST:
 			return TRUE;
 
-		case IDLN_INTERFACE: {
-			char *name = IDL_IDENT(IDL_INTERFACE(tf->tree).ident).str;
-			g_hash_table_insert(ifaces, name, tf->tree);
+		case IDLN_INTERFACE:
+			*ifaces_p = g_list_prepend(*ifaces_p, tf->tree);
+			/* TODO: are there interfaces within interfaces? who knows? µIDL
+			 * will not handle these until v2.
+			 */
 			return FALSE;
-		}
 	}
 }
 
 
-/* result is <char *> -> <IDL_tree [nodetype IDLN_INTERFACE]>, where the key is
- * allocated within the given tree and is the unqualified name of the interface
- * in question.
- */
-static GHashTable *collect_ifaces(IDL_tree tree, IDL_ns ns)
+static GList *collect_ifaces(IDL_tree tree, IDL_ns ns)
 {
-	GHashTable *ifaces = g_hash_table_new(&g_str_hash, &g_str_equal);
-	IDL_tree_walk_in_order(tree, &pick_ifaces, ifaces);
-	return ifaces;
+	GList *ifaces = NULL;
+	IDL_tree_walk_in_order(tree, &pick_ifaces, &ifaces);
+	return g_list_reverse(ifaces);
 }
 
 
@@ -864,7 +861,12 @@ bool do_idl_file(const char *cppopts, const char *filename)
 		return false;
 	}
 
-	GHashTable *ifaces = collect_ifaces(tree, ns);
+	GList *ifaces = collect_ifaces(tree, ns);
+	GLIST_FOREACH(cur, ifaces) {
+		IDL_tree node = cur->data;
+		struct iface_info *inf = analyse_interface(ns, node);
+		cur->data = inf;
+	}
 
 	const char *filepart = strrchr(filename, '/');
 	if(filepart == NULL) filepart = filename; else filepart++;
@@ -912,7 +914,8 @@ bool do_idl_file(const char *cppopts, const char *filename)
 	}
 
 	g_string_chunk_free(print_ctx.tmpstrchunk);
-	g_hash_table_destroy(ifaces);
+	g_list_foreach(ifaces, (GFunc)&free_iface_info, NULL);
+	g_list_free(ifaces);
 	g_free(commonname);
 
 	dispose_llvm_ctx(lc);

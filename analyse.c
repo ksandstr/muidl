@@ -742,9 +742,7 @@ struct message_info *build_exception_message(IDL_tree exn)
  * this function keeps label == 0 || (tagmask set && sublabel == 0) as
  * indication that the label has not been set.
  */
-struct method_info *analyse_op_dcl(
-	struct print_ctx *pr,
-	IDL_tree method)
+struct method_info *analyse_op_dcl(IDL_ns ns, IDL_tree method)
 {
 	int num_replies;
 	if(IDL_OP_DCL(method).f_oneway) num_replies = 0;
@@ -760,7 +758,7 @@ struct method_info *analyse_op_dcl(
 	inf->num_reply_msgs = num_replies;
 
 	/* build the request. */
-	inf->request = build_message(pr->ns, method, return_type,
+	inf->request = build_message(ns, method, return_type,
 		op_has_sublabel(method), false);
 	if(inf->request == NULL) goto fail;
 	inf->request->node = method;
@@ -773,7 +771,7 @@ struct method_info *analyse_op_dcl(
 
 	if(num_replies > 0) {
 		/* the usual reply: return type and out, inout out-halves */
-		inf->replies[0] = build_message(pr->ns, method, return_type,
+		inf->replies[0] = build_message(ns, method, return_type,
 			false, true);
 		inf->replies[0]->node = method;
 		inf->replies[0]->label = 0;
@@ -796,7 +794,7 @@ struct method_info *analyse_op_dcl(
 		/* fill in their index in the interface context union. */
 		IDL_tree iface = IDL_get_parent_node(method, IDLN_INTERFACE, NULL);
 		assert(iface != NULL);
-		GList *order_exns = iface_exns_sorted(pr->ns, iface);
+		GList *order_exns = iface_exns_sorted(ns, iface);
 		int ctx_pos = 0;
 		GLIST_FOREACH(e_cur, order_exns) {
 			ctx_pos++;		/* numbered from 1 on */
@@ -1000,15 +998,15 @@ static int method_info_by_label_cmp(gconstpointer ap, gconstpointer bp)
 
 
 GList *analyse_methods_of_iface(
-	struct print_ctx *pr,
+	IDL_ns ns,
 	GList **tagmask_list_p,
 	IDL_tree iface)
 {
-	GList *methods = all_methods_of_iface(pr->ns, iface);
+	GList *methods = all_methods_of_iface(ns, iface);
 	int vtab_pos = 0;
 	GLIST_FOREACH(cur, methods) {
 		IDL_tree method = cur->data;
-		struct method_info *inf = analyse_op_dcl(pr, method);
+		struct method_info *inf = analyse_op_dcl(ns, method);
 		if(inf == NULL) {
 			/* FIXME: fail properly */
 			fprintf(stderr, "error: analyse_op_dcl() failed\n");
@@ -1101,4 +1099,15 @@ struct stritem_info *dispatcher_stritems(GList *method_info_list)
 	struct stritem_info tmp = { .length = -1 };
 	g_array_append_val(result, tmp);
 	return (void *)g_array_free(result, result->len == 1);
+}
+
+
+struct iface_info *analyse_interface(IDL_ns ns, IDL_tree iface)
+{
+	struct iface_info *inf = g_new(struct iface_info, 1);
+	inf->node = iface;
+	inf->name = IDL_IDENT(IDL_INTERFACE(iface).ident).str;
+	inf->tagmask_ops = NULL;
+	inf->ops = analyse_methods_of_iface(ns, &inf->tagmask_ops, iface);
+	return inf;
 }

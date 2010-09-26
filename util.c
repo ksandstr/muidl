@@ -63,6 +63,19 @@ void free_method_info(struct method_info *inf)
 }
 
 
+void free_iface_info(struct iface_info *inf)
+{
+	if(inf == NULL) return;
+
+	GLIST_FOREACH(cur, inf->ops) {
+		free_method_info(cur->data);
+	}
+	g_list_free(inf->ops);
+	g_list_free(inf->tagmask_ops);
+	g_free(inf);
+}
+
+
 bool warn_once(const char *fmt, ...)
 {
 	if(warn_once_hash == NULL) {

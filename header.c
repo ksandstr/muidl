@@ -806,14 +806,11 @@ void print_common_header(struct print_ctx *pr)
 	code_f(pr, " ");
 
 	/* context types and exception tag defines for the stub declarations. */
-	GHashTableIter iter;
-	g_hash_table_iter_init(&iter, pr->ifaces);
-	gpointer key, value = NULL;
-	while(g_hash_table_iter_next(&iter, &key, &value)) {
-		IDL_tree iface = value;
-		print_iface_context_info(pr, iface);
+	GLIST_FOREACH(cur, pr->ifaces) {
+		struct iface_info *inf = cur->data;
+		print_iface_context_info(pr, inf->node);
 	}
-	if(value != NULL) code_f(pr, " ");
+	if(pr->ifaces != NULL) code_f(pr, " ");
 
 	/* stub prototypes. */
 	IDL_tree_walk_in_order(pr->tree, &print_stub_protos, pr);
@@ -822,47 +819,45 @@ void print_common_header(struct print_ctx *pr)
 	/* interface vtables and dispatcher prototypes, but only for service
 	 * implementations (so as to avoid polluting the namespace).
 	 */
-	if(g_hash_table_size(pr->ifaces) > 0) {
-		g_hash_table_iter_init(&iter, pr->ifaces);
-		while(g_hash_table_iter_next(&iter, &key, &value)) {
-			IDL_tree iface = (IDL_tree)value,
-				mod = IDL_get_parent_node(iface, IDLN_MODULE, NULL);
+	GLIST_FOREACH(cur, pr->ifaces) {
+		struct iface_info *inf = cur->data;
+		IDL_tree iface = inf->node,
+			mod = IDL_get_parent_node(iface, IDLN_MODULE, NULL);
 
-			/* vtable etc. selector */
-			char *modpfx = NULL, *ifpfx;
-			if(mod != NULL) {
-				modpfx = g_utf8_strup(IDL_IDENT(IDL_MODULE(mod).ident).str,
-					-1);
-			}
-			ifpfx = g_utf8_strup(IDL_IDENT(IDL_INTERFACE(iface).ident).str,
+		/* vtable etc. selector */
+		char *modpfx = NULL, *ifpfx;
+		if(mod != NULL) {
+			modpfx = g_utf8_strup(IDL_IDENT(IDL_MODULE(mod).ident).str,
 				-1);
-			code_f(pr, "#if defined(%s%s%s_IMPL_SOURCE) || defined(MUIDL_SOURCE)",
-				modpfx == NULL ? " " : modpfx, mod == NULL ? "" : "_",
-				ifpfx);
-			g_free(modpfx);
-			g_free(ifpfx);
-
-			/* vtable declaration */
-			code_f(pr, "\n/* vtable for `%s': */", (const char *)key);
-			print_vtable(pr->of, pr->tree, pr->ns, iface);
-
-			/* dispatcher prototype */
-			code_f(pr, " ");
-			char *vtprefix = NULL,
-				*dispname = dispatcher_name(pr->ns, iface, &vtprefix);
-			code_f(pr, "extern L4_Word_t %s(", dispname);
-			g_free(dispname);
-			indent(pr, 1);
-			code_f(pr, "const struct %s_vtable *vtable);", vtprefix);
-			indent(pr, -1);
-			g_free(vtprefix);
-
-			/* exception raisers */
-			print_exn_raisers(pr, iface);
-
-			/* close off vtable selector */
-			code_f(pr, "\n#endif\n");
 		}
+		ifpfx = g_utf8_strup(IDL_IDENT(IDL_INTERFACE(iface).ident).str,
+			-1);
+		code_f(pr, "#if defined(%s%s%s_IMPL_SOURCE) || defined(MUIDL_SOURCE)",
+			modpfx == NULL ? " " : modpfx, mod == NULL ? "" : "_",
+			ifpfx);
+		g_free(modpfx);
+		g_free(ifpfx);
+
+		/* vtable declaration */
+		code_f(pr, "\n/* vtable for `%s': */", inf->name);
+		print_vtable(pr->of, pr->tree, pr->ns, iface);
+
+		/* dispatcher prototype */
+		code_f(pr, " ");
+		char *vtprefix = NULL,
+			*dispname = dispatcher_name(pr->ns, iface, &vtprefix);
+		code_f(pr, "extern L4_Word_t %s(", dispname);
+		g_free(dispname);
+		indent(pr, 1);
+		code_f(pr, "const struct %s_vtable *vtable);", vtprefix);
+		indent(pr, -1);
+		g_free(vtprefix);
+
+		/* exception raisers */
+		print_exn_raisers(pr, iface);
+
+		/* close off vtable selector */
+		code_f(pr, "\n#endif\n");
 	}
 
 	code_f(pr, "#endif");

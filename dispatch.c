@@ -537,7 +537,7 @@ static void build_dispatcher_msgerr(struct llvm_ctx *ctx)
 static LLVMValueRef build_dispatcher_function(struct llvm_ctx *ctx, IDL_tree iface)
 {
 	GList *tagmask_list = NULL,
-		*methods = analyse_methods_of_iface(ctx->pr, &tagmask_list, iface);
+		*methods = analyse_methods_of_iface(ctx->ns, &tagmask_list, iface);
 
 	bool has_replies = false;
 	GLIST_FOREACH(cur, methods) {

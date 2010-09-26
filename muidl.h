@@ -139,8 +139,8 @@ struct print_ctx
 	IDL_tree tree;
 	const char *idlfilename;
 	const char *common_header_name;
-	GHashTable *ifaces;
 	int indent_level;
+	GList *ifaces;		/* of <struct iface_info *> */
 
 	/* cleared at end of print_into() */
 	GStringChunk *tmpstrchunk;
@@ -300,6 +300,15 @@ struct stritem_info
 };
 
 
+struct iface_info
+{
+	IDL_tree node;
+	const char *name;
+	GList *ops;		/* of <struct method_info *> */
+	GList *tagmask_ops;		/* subset of ops */
+};
+
+
 /* the bit-packed format of a structure. */
 
 struct packed_item {
@@ -422,6 +431,7 @@ extern void print_decode_inline_seqs(
 extern void list_dispose(GList *list);
 extern void free_message_info(struct message_info *inf);
 extern void free_method_info(struct method_info *inf);
+extern void free_iface_info(struct iface_info *inf);
 
 /* output a "warning: %s[fmt]", but only once per program execution.
  * returns true if a message was output.
@@ -488,7 +498,9 @@ extern LLVMValueRef build_malloc_storage(
 
 /* from analyse.c */
 
-extern struct method_info *analyse_op_dcl(struct print_ctx *pr, IDL_tree op);
+extern struct iface_info *analyse_interface(IDL_ns ns, IDL_tree iface);
+
+extern struct method_info *analyse_op_dcl(IDL_ns ns, IDL_tree op);
 
 extern struct message_info *build_exception_message(IDL_tree except_dcl);
 
@@ -502,7 +514,7 @@ extern struct message_info *build_exception_message(IDL_tree except_dcl);
  * to not leak memory.
  */
 extern GList *analyse_methods_of_iface(
-	struct print_ctx *pr,
+	IDL_ns ns,
 	GList **tagmask_list_p,
 	IDL_tree iface);
 

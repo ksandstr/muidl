@@ -468,7 +468,7 @@ gboolean iter_build_stubs(IDL_tree_func_data *tf, void *ud)
 
 		case IDLN_INTERFACE: {
 			GList *tagmask_list = NULL,
-				*methods = analyse_methods_of_iface(ctx->pr,
+				*methods = analyse_methods_of_iface(ctx->ns,
 					&tagmask_list, tf->tree);
 			GLIST_FOREACH(cur, methods) {
 				struct method_info *inf = cur->data;
