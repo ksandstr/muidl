@@ -162,8 +162,8 @@ static LLVMValueRef get_memcpy_fn(struct llvm_ctx *ctx)
 	V fn = LLVMGetNamedFunction(ctx->module, "memcpy");
 	if(fn != NULL) return fn;
 
-	T voidptr = LLVMPointerType(LLVMInt8TypeInContext(ctx->ctx), 0),
-		sizet = ctx->wordt;		/* FIXME: get from ABI! */
+	/* TODO: get size_t from ABI? */
+	T voidptr = ctx->voidptrt, sizet = ctx->wordt;
 	T argtypes[] = { voidptr, voidptr, sizet },
 		fntype = LLVMFunctionType(voidptr, argtypes, 3, 0);
 	fn = LLVMAddFunction(ctx->module, "memcpy", fntype);
@@ -207,33 +207,18 @@ LLVMValueRef build_msg_encoder(
 		const int first_reg = u->X.untyped.first_reg;
 		bool inout = u->param_dcl != NULL
 			&& IDL_PARAM_DCL(u->param_dcl).attr == IDL_PARAM_INOUT;
-#if 0
-		printf("param `%s' (%p): arg_ix %d, regs [%d..%d], argval %p, type <%s>\n",
-			u->name, u, u->arg_ix, first_reg, u->X.untyped.last_reg,
-			args[u->arg_ix], IDL_NODE_TYPE_NAME(type));
-#endif
+		/* FIXME: does this handle arrays properly? */
 		if(is_value_type(type)) {
-			V raw;
+			V raw = args[u->arg_ix];
 			if(is_out_half || inout) {
-				/* flatten the pointer. */
-				raw = LLVMBuildLoad(ctx->builder, args[u->arg_ix], "outp.flat");
-			} else {
-				/* already flat. */
-				raw = args[u->arg_ix];
+				/* flatten. */
+				raw = LLVMBuildLoad(ctx->builder, raw, "outp.flat");
 			}
 			build_write_ipc_parameter(ctx, CONST_INT(first_reg), type, &raw);
-		} else if(IS_MAPGRANT_TYPE(type) || is_rigid_type(type)) {
-			/* TODO: mapgrantitems are currently always untyped, so we pass
-			 * them here. however whether they're map-item literals or mapping
-			 * or granting items should depend on a [map] or [grant] attribute
-			 * on the parameter declaration.
-			 */
+		} else {
+			assert(is_rigid_type(type));
 			build_write_ipc_parameter(ctx, CONST_INT(first_reg), type,
 				&args[u->arg_ix]);
-		} else {
-			/* anything else... shouldn't appear! */
-			/* FIXME: structs, arrays, unions before here though. */
-			NOTDEFINED(type);
 		}
 	}
 
@@ -308,9 +293,9 @@ LLVMValueRef build_ipc_input_val_ix(
 	const char *name)
 {
 	if(LLVMIsConstant(mr_ix)) {
-		/* the gag here is that if mr_ix is a constant, then LLVM should be
-		 * able to fold the selection away and not emit conditional move
-		 * instructions. this works at all times before inline sequences.
+		/* the gag here is that if mr_ix is a constant, then LLVM will fold the
+		 * selection away and not emit conditional move instructions. this is
+		 * the case before inline sequences are decoded.
 		 */
 		V loaded = LLVMBuildLoad(ctx->builder,
 			UTCB_ADDR_VAL(ctx, mr_ix, "mr.addr"), "mr.val");
