@@ -85,62 +85,54 @@ static LLVMValueRef build_ipcfailed_cond(
 }
 
 
-/* dst should have two LLVMTypeRefs' worth of space to allow for sequences
- * (pointer + length).
- */
-static void vtable_in_param_type(
+static int vtable_byref_param_args(
 	struct llvm_ctx *ctx,
 	LLVMTypeRef *dst,
-	int *pos_p,
 	IDL_tree type)
 {
-	if(is_value_type(type)) {
-		dst[(*pos_p)++] = llvm_value_type(ctx, type);
-	} else if(is_rigid_type(type)) {
-		dst[(*pos_p)++] = LLVMPointerType(llvm_rigid_type(ctx, type), 0);
+	int count = 1;
+	if(is_rigid_type(type)) {
+		dst[0] = LLVMPointerType(llvm_rigid_type(ctx, type), 0);
 	} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_STRING) {
-		dst[(*pos_p)++] = LLVMPointerType(LLVMInt8TypeInContext(ctx->ctx), 0);
+		dst[0] = LLVMPointerType(LLVMInt8TypeInContext(ctx->ctx), 0);
 	} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_WIDE_STRING) {
 		/* TODO: get wchar_t size from ABI! */
-		dst[(*pos_p)++] = LLVMPointerType(ctx->i32t, 0);
-	} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
+		dst[0] = LLVMPointerType(ctx->i32t, 0);
+	} else {
+		assert(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE);
 		IDL_tree seqtype = get_type_spec(
 			IDL_TYPE_SEQUENCE(type).simple_type_spec);
-		dst[(*pos_p)++] = LLVMPointerType(llvm_value_type(ctx, seqtype), 0);
-		dst[(*pos_p)++] = ctx->i32t;
-	} else {
-		/* should not be reached, either. something fell out. */
-		NOTDEFINED(type);
+		dst[0] = LLVMPointerType(llvm_value_type(ctx, seqtype), 0);
+		dst[1] = ctx->i32t;
+		count = 2;
 	}
+	return count;
 }
 
 
-static void vtable_out_param_type(
+/* dst should have two LLVMTypeRefs' worth of space to allow for sequences
+ * (pointer + length). returns number of entries added, 2 for sequences and 1
+ * for everything else.
+ */
+static int vtable_param_args(
 	struct llvm_ctx *ctx,
 	LLVMTypeRef *dst,
-	int *pos_p,
-	IDL_tree type)
+	IDL_tree pdecl)
 {
-	if(is_rigid_type(type)) {
-		dst[(*pos_p)++] = LLVMPointerType(llvm_rigid_type(ctx, type), 0);
-	} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
-		IDL_tree seqtype = get_type_spec(
-			IDL_TYPE_SEQUENCE(type).simple_type_spec);
-		dst[(*pos_p)++] = LLVMPointerType(llvm_rigid_type(ctx, seqtype), 0);
-		dst[(*pos_p)++] = LLVMPointerType(ctx->i32t, 0);
-	} else if(IS_MAPGRANT_TYPE(type)) {
-		dst[(*pos_p)++] = LLVMPointerType(ctx->mapgrant, 0);
-	} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_STRING) {
-		dst[(*pos_p)++] = LLVMPointerType(LLVMInt8TypeInContext(ctx->ctx), 0);
-	} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_WIDE_STRING) {
-		/* TODO: use an ABI-specific wchar_t type */
-		dst[(*pos_p)++] = LLVMPointerType(ctx->i32t, 0);
+	IDL_tree type = get_type_spec(IDL_PARAM_DCL(pdecl).param_type_spec);
+	if(is_byval_param(pdecl)) {
+		dst[0] = llvm_value_type(ctx, type);
+		return 1;
 	} else {
-		NOTDEFINED(type);
+		return vtable_byref_param_args(ctx, dst, type);
 	}
 }
 
 
+/* FIXME: this is a terrible hack and should be remedied by separating the "has
+ * return value y/n" decision from the type choice (i.e. also type
+ * representation, of which we have 2: llvm and C)
+ */
 static LLVMTypeRef vtable_return_type(
 	struct llvm_ctx *ctx,
 	IDL_tree op,
@@ -168,11 +160,11 @@ static LLVMTypeRef get_vtable_type(
 	struct llvm_ctx *ctx,
 	const struct iface_info *iface)
 {
-	int num_fields = g_list_length(iface->ops), f_offs = 0;
-	LLVMTypeRef field_types[num_fields];
-	GList *cur = iface->ops;
-	while(f_offs < num_fields) {
-		assert(cur != NULL);
+	const int num_fields = g_list_length(iface->ops);
+	T field_types[num_fields];
+	for(int i=0; i<num_fields; i++) field_types[i] = NULL;
+
+	GLIST_FOREACH(cur, iface->ops) {
 		struct method_info *op = cur->data;
 		IDL_tree idl_rettyp = get_type_spec(IDL_OP_DCL(op->node).op_type_spec),
 			param_list = IDL_OP_DCL(op->node).parameter_dcls;
@@ -184,37 +176,21 @@ static LLVMTypeRef get_vtable_type(
 		bool ret_actual = false;
 		LLVMTypeRef rettyp = vtable_return_type(ctx, op->node, &ret_actual);
 		if(idl_rettyp != NULL && !ret_actual) {
-			vtable_out_param_type(ctx, arg_types, &arg_pos, idl_rettyp);
+			arg_pos += vtable_byref_param_args(ctx, &arg_types[arg_pos],
+				idl_rettyp);
 			if(find_neg_exn(op->node) != NULL) rettyp = ctx->i32t;
 			else rettyp = LLVMVoidTypeInContext(ctx->ctx);
 		}
-		for(IDL_tree p_cur = param_list;
-			p_cur != NULL;
-			p_cur = IDL_LIST(p_cur).next)
-		{
+		IDL_LIST_FOREACH(p_cur, param_list) {
 			assert(arg_pos < n_args_max);
-			IDL_tree pdecl = IDL_LIST(p_cur).data,
-				ptype = get_type_spec(IDL_PARAM_DCL(pdecl).param_type_spec);
-			switch(IDL_PARAM_DCL(pdecl).attr) {
-				case IDL_PARAM_IN:
-					vtable_in_param_type(ctx, arg_types, &arg_pos, ptype);
-					break;
-
-				/* inout parameters are passed exactly like out-parameters, but
-				 * with a value already present.
-				 */
-				case IDL_PARAM_OUT:
-				case IDL_PARAM_INOUT:
-					vtable_out_param_type(ctx, arg_types, &arg_pos, ptype);
-					break;
-			}
+			IDL_tree pdecl = IDL_LIST(p_cur).data;
+			arg_pos += vtable_param_args(ctx, &arg_types[arg_pos], pdecl);
 		}
 
-		cur = g_list_next(cur);
-		field_types[f_offs++] = LLVMPointerType(
+		T funptr = LLVMPointerType(
 			LLVMFunctionType(rettyp, arg_types, arg_pos, 0), 0);
+		field_types[op->vtab_offset] = funptr;
 	}
-	assert(cur == NULL);
 
 	return LLVMStructTypeInContext(ctx->ctx, field_types, num_fields, 0);
 }
@@ -335,8 +311,6 @@ static LLVMBasicBlockRef build_op_decode(
 			emit_out_param(ctx, &d_args[p->arg_ix], type);
 		}
 		max_arg = MAX(max_arg, p->arg_ix + nd_args - 1 + arg_offset);
-//		printf("%s: param `%s', arg_ix %d (offset %d)\n", __func__,
-//			p->name, p->arg_ix, arg_offset);
 	}
 
 	/* the decoder. */
