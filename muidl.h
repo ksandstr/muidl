@@ -639,6 +639,9 @@ extern LLVMValueRef build_encode_inline_sequence(
 extern bool is_signed(IDL_tree type);
 extern bool is_integral_type(IDL_tree type);
 
+/* returns true if param_dcl != NULL && attr == IN && is_value_type. */
+extern bool is_byval_param(IDL_tree param_dcl);
+
 extern LLVMTypeRef llvm_value_type(struct llvm_ctx *ctx, IDL_tree type);
 extern LLVMTypeRef llvm_rigid_type(struct llvm_ctx *ctx, IDL_tree type);
 

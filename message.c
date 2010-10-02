@@ -312,15 +312,6 @@ LLVMValueRef build_ipc_input_val_ix(
 }
 
 
-/* FIXME: move this out */
-static bool pass_param_by_value(IDL_tree pdecl)
-{
-	return pdecl != NULL
-		&& IDL_PARAM_DCL(pdecl).attr == IDL_PARAM_IN
-		&& is_value_type(get_type_spec(IDL_PARAM_DCL(pdecl).param_type_spec));
-}
-
-
 void build_msg_decoder(
 	struct llvm_ctx *ctx,
 	LLVMValueRef *ret_args,
@@ -355,7 +346,7 @@ void build_msg_decoder(
 		build_read_ipc_parameter(ctx, tmp, type,
 			CONST_INT(u->X.untyped.first_reg));
 		if(is_value_type(type)) {
-			if(pass_param_by_value(u->param_dcl)) args[u->arg_ix] = tmp[0];
+			if(is_byval_param(u->param_dcl)) args[u->arg_ix] = tmp[0];
 			else LLVMBuildStore(ctx->builder, tmp[0], args[u->arg_ix]);
 		} else if(tmp[0] != args[u->arg_ix]) {
 			/* storage was allocated, possibally. */

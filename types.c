@@ -190,3 +190,12 @@ LLVMTypeRef llvm_rigid_type(struct llvm_ctx *ctx, IDL_tree type)
 			}
 	}
 }
+
+
+bool is_byval_param(IDL_tree pdecl)
+{
+	return pdecl != NULL
+		&& IDL_NODE_TYPE(pdecl) == IDLN_PARAM_DCL
+		&& IDL_PARAM_DCL(pdecl).attr == IDL_PARAM_IN
+		&& is_value_type(get_type_spec(IDL_PARAM_DCL(pdecl).param_type_spec));
+}
