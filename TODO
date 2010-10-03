@@ -1,0 +1,9 @@
+
+General TODO list for µIDL.
+
+  - replace every non-const use of LLVMBuildSelect() with a
+    build_value_select() function call, which emits a pair of basic blocks and
+    a phi value when µIDL is instructed to never cause a cmov instruction to be
+    emitted. Really this is the fault of bastard LLVM 2.7, which assumes cmov
+    is part of the regular x86 instruction set while in the real world it's
+    missing from some embedded respins of older cores (K6, winchip, etc)
