@@ -553,8 +553,10 @@ LLVMValueRef build_dispatcher_function(
 	/* the entry block. */
 	/* support context & its pointer */
 	V alloc_supp_fn = get_alloc_supp_ctx_fn(ctx),
-		uint_zero = CONST_INT(0);
-	LLVMBuildCall(ctx->builder, alloc_supp_fn, &uint_zero, 1, "");
+		supp_size = LLVMBuildTruncOrBitCast(ctx->builder,
+			LLVMSizeOf(llvm_supp_ctx_type(ctx)), ctx->i32t,
+			"supp.ctx.size.int");
+	LLVMBuildCall(ctx->builder, alloc_supp_fn, &supp_size, 1, "");
 	ctx->supp_ctx_ptr = build_fetch_supp_ctx(ctx);
 	/* store xfer timeouts at point of entry, i.e. as they are given by the
 	 * caller.
