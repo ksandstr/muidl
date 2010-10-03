@@ -138,7 +138,7 @@ void end_function(struct llvm_ctx *ctx, LLVMBasicBlockRef start_bb)
 {
 	BB prev = LLVMGetInsertBlock(ctx->builder);
 	LLVMPositionBuilderAtEnd(ctx->builder, ctx->alloc_bb);
-	build_free_mallocs(ctx);
 	LLVMBuildBr(ctx->builder, start_bb);
 	LLVMPositionBuilderAtEnd(ctx->builder, prev);
+	build_free_mallocs(ctx);
 }
