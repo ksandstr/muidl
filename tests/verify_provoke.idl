@@ -20,9 +20,15 @@
 
 /* AUTOTEST: ./muidl -D __TEST__=%t -I idl -I share %n */
 
+#include "muidl.idl"
 #include "l4x2.idl"
 #include "posix-base.idl"
 
+
+#define CONSUME_TYPE(__t) \
+	void operation(in __t foo); \
+	void operation_2(out __t bar); \
+	void operation_3(inout __t oof)
 
 module MuidlVerifyProvoke
 {
@@ -168,9 +174,30 @@ interface AutoTestCases
  */
 #if __TEST__ == 15
 	native not_exist;
-	void operation(in not_exist something);
-	void operation2(out not_exist something);
-	void operation3(inout not_exist something);
+	CONSUME_TYPE(not_exist);
+#endif
+
+/* TEST 16: an unknown native type in a struct declaration
+ * expected: failure
+ */
+#if __TEST__ == 16
+	native not_exist;
+	struct invalid {
+		not_exist field;
+		long another;
+	};
+	CONSUME_TYPE(invalid);
+#endif
+
+/* TEST 17: a mapping type in a struct (non-rigid)
+ * expected: failure
+ */
+#if __TEST__ == 17
+	struct invalid {
+		muidl::mapping field;
+		long another;
+	};
+	CONSUME_TYPE(invalid);
 #endif
 
 };
