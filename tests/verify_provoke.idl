@@ -18,7 +18,7 @@
  * along with µiX.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-/* AUTOTEST: ./muidl -D __TEST__=%t -I idl %n */
+/* AUTOTEST: ./muidl -D __TEST__=%t -I idl -I share %n */
 
 #include "l4x2.idl"
 #include "posix-base.idl"
@@ -161,6 +161,16 @@ interface AutoTestCases
 	};
 
 	oneway void blah(in onion whatever);
+#endif
+
+/* TEST 15: an unknown native type in an op parameter
+ * expected: failure
+ */
+#if __TEST__ == 15
+	native not_exist;
+	void operation(in not_exist something);
+	void operation2(out not_exist something);
+	void operation3(inout not_exist something);
 #endif
 
 };

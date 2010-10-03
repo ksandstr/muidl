@@ -222,6 +222,16 @@ static gboolean supported_types_only(IDL_tree_func_data *tf, gpointer udptr)
 			break;
 		}
 
+		case IDLN_NATIVE: {
+			bool ok = IS_MAPGRANT_TYPE(node)
+				|| IS_FPAGE_TYPE(node) || IS_WORD_TYPE(node)
+				|| IS_TIME_TYPE(node) || IS_MAPPING_TYPE(node);
+			if(!ok) {
+				fail(v, "unknown native type `%s'", NATIVE_NAME(node));
+			}
+			break;
+		}
+
 		default:
 			break;
 	}
