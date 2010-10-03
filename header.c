@@ -79,8 +79,17 @@ static void print_vtable(
 	fprintf(of, "struct %s_vtable\n{\n", vtpfx);
 	g_free(vtpfx);
 
+	const int num_ops = g_list_length(iface->ops);
+	const struct method_info *vtab_ops[num_ops];
+	for(int i=0; i<num_ops; i++) vtab_ops[i] = NULL;
 	GLIST_FOREACH(cur, iface->ops) {
 		const struct method_info *op = cur->data;
+		assert(op->vtab_offset < num_ops);
+		vtab_ops[op->vtab_offset] = op;
+	}
+
+	for(int vtix = 0; vtix < num_ops; vtix++) {
+		const struct method_info *op = vtab_ops[vtix];
 
 		char *rettypstr = return_type(ns, op->node, NULL, true),
 			*name = decapsify(METHOD_NAME(op->node));
