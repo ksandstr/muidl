@@ -18,8 +18,8 @@
  * along with µiX.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef SEEN_MUIDL_H
-#define SEEN_MUIDL_H
+#ifndef SEEN_MUIDL_DEFS_H
+#define SEEN_MUIDL_DEFS_H
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -62,14 +62,13 @@
 
 
 /* predicates for word, Fpage, MapGrantItem, unsigned short types */
-#define IS_MAPGRANT_TYPE(t) (IDL_NODE_TYPE((t)) == IDLN_NATIVE \
-	&& strcmp(NATIVE_NAME((t)), "l4_mapgrantitem_t") == 0)
-#define IS_FPAGE_TYPE(t) (IDL_NODE_TYPE((t)) == IDLN_NATIVE \
-	&& strcmp(NATIVE_NAME((t)), "l4_fpage_t") == 0)
-#define IS_WORD_TYPE(t) (IDL_NODE_TYPE((t)) == IDLN_NATIVE \
-	&& strcmp(NATIVE_NAME((t)), "l4_word_t") == 0)
-#define IS_TIME_TYPE(t) (IDL_NODE_TYPE((t)) == IDLN_NATIVE \
-	&& strcmp(NATIVE_NAME((t)), "l4_time_t") == 0)
+#define NAT_IS(t, name) (IDL_NODE_TYPE((t)) == IDLN_NATIVE \
+	&& strcmp(NATIVE_NAME((t)), (name)) == 0)
+#define IS_MAPGRANT_TYPE(t) NAT_IS(t, "l4_mapgrantitem_t")
+#define IS_FPAGE_TYPE(t) NAT_IS(t, "l4_fpage_t")
+#define IS_WORD_TYPE(t) NAT_IS(t, "l4_word_t")
+#define IS_TIME_TYPE(t) NAT_IS(t, "l4_time_t")
+#define IS_MAPPING_TYPE(t) NAT_IS(t, "mapping")
 
 #define IS_USHORT_TYPE(op_type) \
 	(IDL_NODE_TYPE((op_type)) == IDLN_TYPE_INTEGER \

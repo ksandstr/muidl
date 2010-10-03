@@ -212,19 +212,8 @@ bool is_value_type(IDL_tree type)
 			return false;
 
 		case IDLN_NATIVE:
-			if(IS_WORD_TYPE(type) || IS_FPAGE_TYPE(type)
-				|| IS_TIME_TYPE(type))
-			{
-				return true;
-			} else if(IS_MAPGRANT_TYPE(type)) {
-				/* not a single-word type. */
-				return false;
-			} else {
-				/* FIXME: don't exit */
-				fprintf(stderr, "%s: unknown native type `%s'\n",
-					__FUNCTION__, NATIVE_NAME(type));
-				abort();
-			}
+			return IS_WORD_TYPE(type) || IS_FPAGE_TYPE(type)
+				|| IS_TIME_TYPE(type);
 
 		/* value types. */
 		case IDLN_TYPE_INTEGER:
