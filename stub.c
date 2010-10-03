@@ -225,6 +225,86 @@ static LLVMValueRef build_stub_receive_strings(
 }
 
 
+static void build_stub_reply_decode(
+	struct llvm_ctx *ctx,
+	LLVMValueRef *ret_args,
+	LLVMValueRef *args,
+	const struct method_info *inf,
+	LLVMValueRef ctxptr,
+	const struct stritem_info *stritems)
+{
+	V label = build_label_from_tag(ctx, ctx->tag);
+	/* TODO: get this from the target's <errno.h>; it's the value that is
+	 * returned by the stub when the return message has a label that this
+	 * cannot recognize.
+	 */
+	V ex_tag_ptr = NULL;
+	if(ctxptr != NULL) {
+		ex_tag_ptr = LLVMBuildStructGEP(ctx->builder, ctxptr, 0, "ex.tag.ptr");
+	}
+	branch_set_phi(ctx, ctx->retval_phi, CONST_INT(-EINVAL));
+	V label_sw = LLVMBuildSwitch(ctx->builder, label, ctx->exit_bb, 3);
+
+	if(find_exn(inf->node, &is_negs_exn) != NULL) {
+		/* the dreaded MSG_ERROR (the simple exception) */
+		assert(!inf->oneway);
+		BB msgerr_bb = add_sibling_block(ctx, "msgerr.match");
+		LLVMAddCase(label_sw, CONST_WORD(1), msgerr_bb);
+		LLVMPositionBuilderAtEnd(ctx->builder, msgerr_bb);
+		branch_set_phi(ctx, ctx->retval_phi,
+			LLVMBuildNeg(ctx->builder, ctx->mr1, "msgerr.val.neg"));
+		LLVMBuildBr(ctx->builder, ctx->exit_bb);
+	}
+
+	/* complex exceptions */
+	if(ctxptr != NULL) {
+		BB exn_bb = add_sibling_block(ctx, "catch.exn");
+		LLVMAddCase(label_sw, CONST_WORD(2), exn_bb);
+		LLVMPositionBuilderAtEnd(ctx->builder, exn_bb);
+		LLVMBuildStore(ctx->builder, ctx->mr1, ex_tag_ptr);
+		/* FIXME: come up with the correct return value for "unrecognized
+		 * exception status from server"!
+		 */
+		branch_set_phi(ctx, ctx->retval_phi, CONST_WORD(666));
+		V sw = LLVMBuildSwitch(ctx->builder, ctx->mr1, ctx->exit_bb,
+			inf->num_reply_msgs - 1);
+		for(int i=1; i < inf->num_reply_msgs; i++) {
+			const struct message_info *msg = inf->replies[i];
+			if(is_negs_exn(msg->node) || is_noreply_exn(msg->node)) {
+				continue;
+			}
+			BB decode = add_sibling_block(ctx, "catch.x%x", msg->sublabel);
+			LLVMAddCase(sw, CONST_WORD(msg->sublabel), decode);
+			LLVMPositionBuilderAtEnd(ctx->builder, decode);
+			build_decode_exception(ctx,
+				get_ex_from_ctx(ctx, ctxptr, msg->ctx_index),
+				msg, i, stritems);
+			/* on exception, a stub returns 0 because it's an IPC success
+			 * regardless. the caller gets to check ctxptr->tag.
+			 */
+			branch_set_phi(ctx, ctx->retval_phi, CONST_WORD(0));
+			LLVMBuildBr(ctx->builder, ctx->exit_bb);
+		}
+	}
+
+	/* regular things */
+	BB noexn_success_bb = add_sibling_block(ctx, "noexn.success");
+	LLVMAddCase(label_sw, CONST_WORD(0), noexn_success_bb);
+	LLVMPositionBuilderAtEnd(ctx->builder, noexn_success_bb);
+	const struct message_info *reply =
+		inf->num_reply_msgs > 0 ? inf->replies[0] : NULL;
+	if(reply != NULL) {
+		if(ctxptr != NULL) {
+			/* in the no-exception case, tag will be 0. */
+			LLVMBuildStore(ctx->builder, CONST_WORD(0), ex_tag_ptr);
+		}
+		build_msg_decoder(ctx, ret_args, args, reply, 0, stritems, true);
+	}
+	branch_set_phi(ctx, ctx->retval_phi, CONST_WORD(0));
+	LLVMBuildBr(ctx->builder, ctx->exit_bb);
+}
+
+
 static void build_stub_msgerr(struct llvm_ctx *ctx)
 {
 	/* this mimics a L4.X2 error status, as a code 0 in receive phase (where
@@ -355,91 +435,33 @@ static void build_ipc_stub(
 	}
 
 	/* check for IPC errors. */
-	BB err_bb = add_sibling_block(ctx, "ipcerror"),
-		noerr_bb = add_sibling_block(ctx, "ipcok");
-	V err_bit = LLVMBuildAnd(ctx->builder, ctx->tag,
-		CONST_WORD(1 << 15), "ipc.tag.e");
-	LLVMBuildCondBr(ctx->builder, LLVMBuildICmp(ctx->builder, LLVMIntEQ,
-		CONST_WORD(0), err_bit, "ipc.error.p"), noerr_bb, err_bb);
-
-	/* IPC error handler. */
-	LLVMPositionBuilderAtEnd(ctx->builder, err_bb);
 	V errcode = LLVMBuildLoad(ctx->builder,
 		UTCB_ADDR_VAL(ctx, CONST_INT(TCR_ERROR_CODE), "ec.addr"),
 		"ec.value");
-	branch_set_phi(ctx, ctx->retval_phi, errcode);
-	LLVMBuildBr(ctx->builder, ctx->exit_bb);
-
-	/* IPC success path. */
-	LLVMPositionBuilderAtEnd(ctx->builder, noerr_bb);
-	V label = build_label_from_tag(ctx, ctx->tag);
-	/* TODO: get this from the target's <errno.h>; it's the value that is
-	 * returned by the stub when the return message has a label that this
-	 * cannot recognize.
-	 */
-	V ex_tag_ptr = NULL;
-	if(ctxptr != NULL) {
-		ex_tag_ptr = LLVMBuildStructGEP(ctx->builder, ctxptr, 0, "ex.tag.ptr");
-	}
-	branch_set_phi(ctx, ctx->retval_phi, CONST_INT(-EINVAL));
-	V label_sw = LLVMBuildSwitch(ctx->builder, label, ctx->exit_bb, 3);
-
-	if(find_exn(inf->node, &is_negs_exn) != NULL) {
-		/* the dreaded MSG_ERROR (the simple exception) */
-		assert(!inf->oneway);
-		BB msgerr_bb = add_sibling_block(ctx, "msgerr.match");
-		LLVMAddCase(label_sw, CONST_WORD(1), msgerr_bb);
-		LLVMPositionBuilderAtEnd(ctx->builder, msgerr_bb);
-		branch_set_phi(ctx, ctx->retval_phi,
-			LLVMBuildNeg(ctx->builder, ctx->mr1, "msgerr.val.neg"));
+	V err_bit = LLVMBuildAnd(ctx->builder, ctx->tag,
+			CONST_WORD(1 << 15), "ipc.tag.e"),
+		err_cond = LLVMBuildICmp(ctx->builder, LLVMIntEQ, err_bit,
+			CONST_WORD(0), "ipc.tag.e.cond");
+	if(inf->oneway) {
+		V rv = LLVMBuildSelect(ctx->builder, err_cond, CONST_WORD(0),
+			errcode, "ec.or.success");
+		branch_set_phi(ctx, ctx->retval_phi, rv);
 		LLVMBuildBr(ctx->builder, ctx->exit_bb);
-	}
+	} else {
+		BB err_bb = add_sibling_block(ctx, "ipcerror"),
+			noerr_bb = add_sibling_block(ctx, "ipcok");
+		LLVMBuildCondBr(ctx->builder, err_cond, noerr_bb, err_bb);
 
-	/* complex exceptions */
-	if(ctxptr != NULL) {
-		BB exn_bb = add_sibling_block(ctx, "catch.exn");
-		LLVMAddCase(label_sw, CONST_WORD(2), exn_bb);
-		LLVMPositionBuilderAtEnd(ctx->builder, exn_bb);
-		LLVMBuildStore(ctx->builder, ctx->mr1, ex_tag_ptr);
-		/* FIXME: come up with the correct return value for "unrecognized
-		 * exception status from server"!
-		 */
-		branch_set_phi(ctx, ctx->retval_phi, CONST_WORD(666));
-		V sw = LLVMBuildSwitch(ctx->builder, ctx->mr1, ctx->exit_bb,
-			inf->num_reply_msgs - 1);
-		for(int i=1; i < inf->num_reply_msgs; i++) {
-			const struct message_info *msg = inf->replies[i];
-			if(is_negs_exn(msg->node) || is_noreply_exn(msg->node)) {
-				continue;
-			}
-			BB decode = add_sibling_block(ctx, "catch.x%x", msg->sublabel);
-			LLVMAddCase(sw, CONST_WORD(msg->sublabel), decode);
-			LLVMPositionBuilderAtEnd(ctx->builder, decode);
-			build_decode_exception(ctx,
-				get_ex_from_ctx(ctx, ctxptr, msg->ctx_index),
-				msg, i, stritems);
-			/* on exception, a stub returns 0 because it's an IPC success
-			 * regardless. the caller gets to check ctxptr->tag.
-			 */
-			branch_set_phi(ctx, ctx->retval_phi, CONST_WORD(0));
-			LLVMBuildBr(ctx->builder, ctx->exit_bb);
-		}
-	}
+		/* on IPC error just pass the msgerr. */
+		LLVMPositionBuilderAtEnd(ctx->builder, err_bb);
+		branch_set_phi(ctx, ctx->retval_phi, errcode);
+		LLVMBuildBr(ctx->builder, ctx->exit_bb);
 
-	/* regular things */
-	BB noexn_success_bb = add_sibling_block(ctx, "noexn.success");
-	LLVMAddCase(label_sw, CONST_WORD(0), noexn_success_bb);
-	LLVMPositionBuilderAtEnd(ctx->builder, noexn_success_bb);
-	if(reply != NULL) {
-		if(ctxptr != NULL) {
-			/* in the no-exception case, tag will be 0. */
-			LLVMBuildStore(ctx->builder, CONST_WORD(0), ex_tag_ptr);
-		}
-		build_msg_decoder(ctx, ret_args, &args[arg_offset], reply, 0,
-			stritems, true);
+		/* on success, decode replies. */
+		LLVMPositionBuilderAtEnd(ctx->builder, noerr_bb);
+		build_stub_reply_decode(ctx, ret_args, &args[arg_offset],
+			inf, ctxptr, stritems);
 	}
-	branch_set_phi(ctx, ctx->retval_phi, CONST_WORD(0));
-	LLVMBuildBr(ctx->builder, ctx->exit_bb);
 
 	/* cleanup and exit. */
 	end_function(ctx, start_bb);
