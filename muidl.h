@@ -271,6 +271,7 @@ struct message_info
 
 struct method_info
 {
+	bool oneway;
 	int vtab_offset;
 	const char *name;
 	IDL_tree node;

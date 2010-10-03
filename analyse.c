@@ -752,6 +752,7 @@ struct method_info *analyse_op_dcl(IDL_ns ns, IDL_tree method)
 
 	struct method_info *inf = g_malloc0(sizeof(struct method_info)
 		+ sizeof(struct message_info *) * num_replies);
+	inf->oneway = IDL_OP_DCL(method).f_oneway ? true : false;
 	inf->vtab_offset = -1;
 	inf->node = method;
 	inf->name = IDL_IDENT(IDL_OP_DCL(method).ident).str;

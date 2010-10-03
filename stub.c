@@ -277,7 +277,6 @@ static void build_ipc_stub(
 	}
 
 	/* prelude. */
-	const bool oneway = IDL_OP_DCL(inf->node).f_oneway != 0;
 	begin_function(ctx, fn);
 	ctx->build_msgerr_bb = &build_stub_msgerr;
 	if(ipc_dest == NULL) {
@@ -327,7 +326,7 @@ static void build_ipc_stub(
 			&args[arg_offset], ctxptr);
 	}
 
-	if(oneway) {
+	if(inf->oneway) {
 		/* L4_nilthread == word(0) */
 		ctx->tag = build_l4_ipc_call(ctx, ipc_dest, timeouts,
 			CONST_WORD(0), tag, NULL, NULL, NULL);
@@ -387,7 +386,7 @@ static void build_ipc_stub(
 
 	if(find_exn(inf->node, &is_negs_exn) != NULL) {
 		/* the dreaded MSG_ERROR (the simple exception) */
-		assert(!oneway);
+		assert(!inf->oneway);
 		BB msgerr_bb = add_sibling_block(ctx, "msgerr.match");
 		LLVMAddCase(label_sw, CONST_WORD(1), msgerr_bb);
 		LLVMPositionBuilderAtEnd(ctx->builder, msgerr_bb);
