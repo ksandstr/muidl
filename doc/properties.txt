@@ -41,6 +41,10 @@ inout parameters, equivalent to InMR(n), OutMR(n).)
 InMR(n), OutMR(n) -- force an in-out parameter's message words on either side
 of the transfer. TODO
 
+map -- transfer the parameter, which must have type "mapping", as typed items.
+out-mappings cause stubs to take a window parameter, and in-mappings cause the
+dispatcher to reserve address space using reserve_NP()/munmap().
+
 
 For enums:
 
