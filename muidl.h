@@ -358,21 +358,7 @@ extern char *vtable_prefix(IDL_ns ns, IDL_tree iface);
  */
 extern char *dispatcher_name(IDL_ns ns, IDL_tree iface, char **vtprefix_p);
 extern char *decapsify(const char *name);
-extern char *return_type(
-	IDL_ns ns,
-	IDL_tree opdcl,
-	bool *real_p,
-	bool for_vtable);
-extern char *in_param_type(IDL_ns ns, IDL_tree tree);
 extern char *long_name(IDL_ns ns, IDL_tree node);
-
-/* returns the C type of value types and void. */
-extern char *value_type(IDL_ns ns, IDL_tree type);
-
-/* handles the "rigid" compound types, i.e. structs, unions, and arrays.
- * return value is allocated and must be g_free()'d.
- */
-extern char *rigid_type(IDL_ns ns, IDL_tree type);
 
 /* returns what should go in between this "type-section" and the variable name
  * to satisfy arbitrary aesthetic criteria.
@@ -554,6 +540,12 @@ extern bool is_complex_exn(IDL_tree except_dcl);
 extern void print_common_header(struct print_ctx *pr);
 
 extern char *get_stub_prefix(IDL_tree opdcl);
+
+extern char *return_type(
+	IDL_ns ns,
+	IDL_tree opdcl,
+	bool *real_p,
+	bool for_vtable);
 
 
 /* from common.c */
