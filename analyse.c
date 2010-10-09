@@ -569,7 +569,7 @@ static struct message_info *build_message(
 		assert(is_rigid_type(u->type));
 		num_compound--;
 		assert(num_compound >= 0);
-		const int space = 63 - (next_u - 1) - typed_use,
+		const int space = 63 - (next_u - 1) - typed_use - (has_sublabel ? 1 : 0),
 			size = size_in_words(u->type);
 		/* first-fit. */
 		int start = has_sublabel ? 2 : 1;
