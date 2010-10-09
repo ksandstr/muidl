@@ -251,16 +251,25 @@ LLVMValueRef build_msg_encoder(
 			/* TODO: sequences, structs, unions, arrays, wide strings */
 			NOTDEFINED(t->type);
 		}
-		for(int i=0; i<2; i++) {
-			V t_addr = UTCB_ADDR_VAL(ctx, t_pos,
-				tmp_f(ctx->pr, "stritem.w%d.ptr", i));
-			LLVMBuildStore(ctx->builder, words[i], t_addr);
-			t_pos = LLVMBuildAdd(ctx->builder, t_pos, CONST_INT(1),
-				"t.pos");
-		}
+		t_pos = build_store_mrs(ctx, t_pos, words, 2);
 	}
 
-	/* FIXME: the same for msg->mapped! */
+	/* memory mappings */
+	GLIST_FOREACH(cur, msg->mapped) {
+		const struct msg_param *t = cur->data;
+		if(IS_MAPGRANT_TYPE(t->type)) {
+			V words[2];
+			fprintf(stderr, "%s: MapGrant passing not implemented\n",
+				__func__);
+			abort();
+			t_pos = build_store_mrs(ctx, t_pos, words, 2);
+		} else {
+			assert(IS_MAPPING_TYPE(t->type));
+			/* mappings are always encoded as the last item. */
+			t_pos = build_encode_mapping(ctx, t_pos, t->type,
+				args[t->arg_ix], true);
+		}
+	}
 
 	/* NOTE: when encoding out-sequences, the second argument is a pointer to
 	 * the length value and should be flattened before the call to
@@ -270,13 +279,13 @@ LLVMValueRef build_msg_encoder(
 	/* epilogue */
 	/* flags = 0, u = inline_seq_pos - 1, label = 0, t = 0 */
 	V label = LLVMBuildShl(ctx->builder, CONST_INT(msg->label),
-		CONST_INT(16), "reply.label"),
+		CONST_INT(16), "msg.label"),
 	  u_val = LLVMBuildSub(ctx->builder, ctx->inline_seq_pos,
-				CONST_INT(1), "reply.u"),
-	  t_val = LLVMBuildShl(ctx->builder, t_pos, CONST_INT(6), "reply.t");
+				CONST_INT(1), "msg.u"),
+	  t_val = LLVMBuildShl(ctx->builder, t_pos, CONST_INT(6), "msg.t");
 	V tag = LLVMBuildOr(ctx->builder, label,
-				LLVMBuildOr(ctx->builder, u_val, t_val, "reply.ut.or"),
-				"reply.tag");
+				LLVMBuildOr(ctx->builder, u_val, t_val, "msg.ut.or"),
+				"msg.tag");
 	if(msg->sublabel != NO_SUBLABEL) {
 		LLVMBuildStore(ctx->builder, CONST_WORD(msg->sublabel),
 			UTCB_ADDR_VAL(ctx, CONST_INT(1), "mr1.addr"));

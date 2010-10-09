@@ -627,6 +627,17 @@ extern LLVMValueRef build_encode_inline_sequence(
 	bool is_last);
 
 
+/* from mapping.c */
+
+/* returns the new value of t_pos. it'll no longer be constant. */
+extern LLVMValueRef build_encode_mapping(
+	struct llvm_ctx *ctx,
+	LLVMValueRef t_pos,
+	IDL_tree type,
+	LLVMValueRef mapping_ptr,
+	bool is_last);
+
+
 /* from types.c */
 
 extern bool is_signed(IDL_tree type);

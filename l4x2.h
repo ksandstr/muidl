@@ -70,6 +70,13 @@ extern void build_simple_string_item(
 	LLVMValueRef data_len,		/* in bytes */
 	LLVMValueRef cache_hint);	/* NULL = default policy */
 
+extern void build_mapgrant_item(
+	struct llvm_ctx *ctx,
+	LLVMValueRef *dest,		/* must have room for two values */
+	LLVMValueRef send_base,
+	LLVMValueRef fpage,
+	LLVMValueRef is_grant);
+
 /* return value is new tpos */
 extern LLVMValueRef build_recv_stritem_len(
 	struct llvm_ctx *ctx,
@@ -86,6 +93,14 @@ extern void build_store_received_regs(
 	int min_u,
 	LLVMValueRef mr1,
 	LLVMValueRef mr2);
+
+
+/* returns the value of pos + CONST_INT(num_words). */
+extern LLVMValueRef build_store_mrs(
+	struct llvm_ctx *ctx,
+	LLVMValueRef pos,
+	const LLVMValueRef *words,
+	int num_words);
 
 
 #endif

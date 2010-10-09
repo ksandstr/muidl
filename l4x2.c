@@ -133,6 +133,23 @@ void build_simple_string_item(
 }
 
 
+void build_mapgrant_item(
+	struct llvm_ctx *ctx,
+	LLVMValueRef *dest,
+	LLVMValueRef send_base,
+	LLVMValueRef fpage,
+	LLVMValueRef is_grant)
+{
+	V grant_cond = LLVMBuildICmp(ctx->builder, LLVMIntNE,
+		CONST_WORD(0), is_grant, "is.grant.cond");
+	dest[0] = LLVMBuildOr(ctx->builder, send_base,
+		LLVMBuildSelect(ctx->builder, grant_cond,
+			CONST_WORD(0xa), CONST_WORD(0x8), "mgitem.type.bits"),
+		"mapgrant.info.word");
+	dest[1] = fpage;
+}
+
+
 static LLVMValueRef get_stritem_len_fn(struct llvm_ctx *ctx)
 {
 	if(ctx->stritem_len_fn != NULL) return ctx->stritem_len_fn;
@@ -274,4 +291,19 @@ void build_store_received_regs(
 		LLVMBuildStore(ctx->builder, mr2,
 			UTCB_ADDR_VAL(ctx, CONST_INT(MR_OFFSET(2)), "mr2.addr"));
 	}
+}
+
+
+LLVMValueRef build_store_mrs(
+	struct llvm_ctx *ctx,
+	LLVMValueRef pos,
+	const LLVMValueRef *words,
+	int num_words)
+{
+	for(int i=0; i<num_words; i++) {
+		V t_addr = UTCB_ADDR_VAL(ctx, pos, "store.mr.ptr");
+		LLVMBuildStore(ctx->builder, words[i], t_addr);
+		pos = LLVMBuildAdd(ctx->builder, pos, CONST_INT(1), "t.pos");
+	}
+	return pos;
 }
