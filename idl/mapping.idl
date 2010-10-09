@@ -1,0 +1,15 @@
+
+#ifndef SEEN_MUIDL_IDL_MAPPING_IDL
+#define SEEN_MUIDL_IDL_MAPPING_IDL
+
+#include "posix-base.idl"
+#include "muidl.idl"
+
+
+interface MappingTest
+{
+	[Label(1)]
+	void get_memory(in long what, out muidl::mapping map);
+};
+
+#endif

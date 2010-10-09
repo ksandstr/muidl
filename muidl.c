@@ -247,62 +247,57 @@ bool is_value_type(IDL_tree type)
 char *value_type(IDL_ns ns, IDL_tree type)
 {
 	if(type == NULL) return g_strdup("void");
-	else if(!is_value_type(type)) {
-		fprintf(stderr, "%s: <%s> is not a value type\n", __FUNCTION__,
-			NODETYPESTR(type));
-		exit(EXIT_FAILURE);
-	} else {
-		switch(IDL_NODE_TYPE(type)) {
-			case IDLN_TYPE_INTEGER: {
-				static const char *ityps[] = {
-					[IDL_INTEGER_TYPE_SHORT] = "uint16_t",
-					[IDL_INTEGER_TYPE_LONG] = "uint32_t",
-					[IDL_INTEGER_TYPE_LONGLONG] = "uint64_t",
-				};
-				int t = IDL_TYPE_INTEGER(type).f_type;
-				assert(t < G_N_ELEMENTS(ityps));
-				return g_strdup(ityps[t] +
-						(IDL_TYPE_INTEGER(type).f_signed ? 1 : 0));
-			}
-
-			case IDLN_NATIVE: {
-				if(IS_WORD_TYPE(type)) return g_strdup("L4_Word_t");
-				else if(IS_FPAGE_TYPE(type)) return g_strdup("L4_Fpage_t");
-				else if(IS_TIME_TYPE(type)) return g_strdup("L4_Time_t");
-				else {
-					fprintf(stderr, "%s: native type `%s' not supported\n",
-						__FUNCTION__, NATIVE_NAME(type));
-					exit(EXIT_FAILURE);
-				}
-				break;
-			}
-
-			case IDLN_TYPE_FLOAT: {
-				static const char *ftyps[] = {
-					[IDL_FLOAT_TYPE_FLOAT] = "float",
-					[IDL_FLOAT_TYPE_DOUBLE] = "double",
-					[IDL_FLOAT_TYPE_LONGDOUBLE] = "long double",
-				};
-				int t = IDL_TYPE_FLOAT(type).f_type;
-				assert(t < G_N_ELEMENTS(ftyps));
-				return g_strdup(ftyps[t]);
-			}
-
-			case IDLN_TYPE_CHAR: return g_strdup("char");
-			case IDLN_TYPE_WIDE_CHAR: return g_strdup("wchar_t");
-			case IDLN_TYPE_BOOLEAN: return g_strdup("bool");
-			case IDLN_TYPE_OCTET: return g_strdup("uint8_t");
-
-			case IDLN_TYPE_ENUM: {
-				char *s = long_name(ns, type),
-					*ret = g_strdup_printf("enum %s", s);
-				g_free(s);
-				return ret;
-			}
-
-			default:
-				NOTDEFINED(type);
+	assert(is_value_type(type));
+	switch(IDL_NODE_TYPE(type)) {
+		case IDLN_TYPE_INTEGER: {
+			static const char *ityps[] = {
+				[IDL_INTEGER_TYPE_SHORT] = "uint16_t",
+				[IDL_INTEGER_TYPE_LONG] = "uint32_t",
+				[IDL_INTEGER_TYPE_LONGLONG] = "uint64_t",
+			};
+			int t = IDL_TYPE_INTEGER(type).f_type;
+			assert(t < G_N_ELEMENTS(ityps));
+			return g_strdup(ityps[t] +
+					(IDL_TYPE_INTEGER(type).f_signed ? 1 : 0));
 		}
+
+		case IDLN_NATIVE: {
+			if(IS_WORD_TYPE(type)) return g_strdup("L4_Word_t");
+			else if(IS_FPAGE_TYPE(type)) return g_strdup("L4_Fpage_t");
+			else if(IS_TIME_TYPE(type)) return g_strdup("L4_Time_t");
+			else {
+				fprintf(stderr, "%s: native type `%s' not supported\n",
+					__FUNCTION__, NATIVE_NAME(type));
+				exit(EXIT_FAILURE);
+			}
+			break;
+		}
+
+		case IDLN_TYPE_FLOAT: {
+			static const char *ftyps[] = {
+				[IDL_FLOAT_TYPE_FLOAT] = "float",
+				[IDL_FLOAT_TYPE_DOUBLE] = "double",
+				[IDL_FLOAT_TYPE_LONGDOUBLE] = "long double",
+			};
+			int t = IDL_TYPE_FLOAT(type).f_type;
+			assert(t < G_N_ELEMENTS(ftyps));
+			return g_strdup(ftyps[t]);
+		}
+
+		case IDLN_TYPE_CHAR: return g_strdup("char");
+		case IDLN_TYPE_WIDE_CHAR: return g_strdup("wchar_t");
+		case IDLN_TYPE_BOOLEAN: return g_strdup("bool");
+		case IDLN_TYPE_OCTET: return g_strdup("uint8_t");
+
+		case IDLN_TYPE_ENUM: {
+			char *s = long_name(ns, type),
+				*ret = g_strdup_printf("enum %s", s);
+			g_free(s);
+			return ret;
+		}
+
+		default:
+			NOTDEFINED(type);
 	}
 }
 

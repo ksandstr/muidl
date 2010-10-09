@@ -61,6 +61,8 @@ static void print_out_param(
 		 * mappings anyhow.
 		 */
 		fprintf(of, "L4_MapItem_t *%s_ptr", name);
+	} else if(IS_MAPPING_TYPE(type)) {
+		fprintf(of, "muidl_mapping_t *%s_ptr", name);
 	} else {
 		b = rigid_type(ns, type);
 		fprintf(of, "%s *%s_ptr", b, name);
@@ -347,6 +349,9 @@ static int each_stub_parameter(
 		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_WIDE_STRING) {
 			(*paramfn)(pr, pnum++, in_only ? "const wchar_t *" : "wchar_t *",
 				c_name, is_last);
+		} else if(IS_MAPPING_TYPE(type)) {
+			const char *ts = "const muidl_mapping_t *";
+			(*paramfn)(pr, pnum++, in_only ? ts : &ts[6], c_name, is_last);
 		} else {
 			/* TODO: handle structs, unions, arrays, etc */
 			NOTDEFINED(type);
