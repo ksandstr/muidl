@@ -10,6 +10,9 @@ interface MappingTest
 {
 	[Label(1)]
 	void put_memory(in long what, in muidl::mapping map);
+
+	[Label(2)]
+	void get_memory(in long what, out muidl::mapping the_thing);
 };
 
 #endif

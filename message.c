@@ -492,6 +492,24 @@ void build_msg_decoder(
 				NOTDEFINED(lp->type);
 		}
 	}
+
+	GLIST_FOREACH(cur, msg->mapped) {
+		const struct msg_param *m = cur->data;
+		if(IS_MAPPING_TYPE(m->type)) {
+			/* mapping types are always decoded last. this doesn't matter while
+			 * mapgrant items aren't implemented, but once that is the case
+			 * analyse.c should make sure that the mapping parameter occurs
+			 * last.
+			 */
+			ctx->tpos = build_decode_mapping(ctx, ctx->tpos, ctx->tmax,
+				m->type, args[m->arg_ix], true);
+		} else {
+			assert(IS_MAPGRANT_TYPE(m->type));
+			fprintf(stderr, "%s: mapgrant mapitems not supported yet\n",
+				__func__);
+			abort();
+		}
+	}
 }
 
 

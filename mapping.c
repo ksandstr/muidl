@@ -98,3 +98,84 @@ LLVMValueRef build_encode_mapping(
 	LLVMPositionBuilderAtEnd(ctx->builder, after);
 	return t_pos_new;
 }
+
+
+LLVMValueRef build_decode_mapping(
+	struct llvm_ctx *ctx,
+	LLVMValueRef t_pos,
+	LLVMValueRef t_max,
+	IDL_tree type,
+	LLVMValueRef mapping_ptr,
+	bool is_last)
+{
+	V fpages_ptr = LLVMBuildStructGEP(ctx->builder, mapping_ptr, 1,
+		"fpages.ptr");
+	V ent_count = LLVMBuildUDiv(ctx->builder,
+		LLVMBuildSub(ctx->builder, t_max, t_pos, "mapping.word.count"),
+		CONST_WORD(2), "mapping.ent.count");
+	/* use the first mapitem's sndbase, type bits */
+	V first_info = LLVMBuildLoad(ctx->builder,
+			UTCB_ADDR_VAL(ctx, t_pos, "first.info.ptr"), "first.info"),
+		first_type = LLVMBuildAnd(ctx->builder, first_info,
+			CONST_WORD(0xe), "first.type"),
+		first_sndbase = LLVMBuildAnd(ctx->builder, first_info,
+			CONST_WORD(~0x3ffull), "first.sndbase");
+	/* identify the typed item, go to msgerr if not mapitem or grantitem */
+	V is_map = LLVMBuildICmp(ctx->builder, LLVMIntEQ, first_type,
+			CONST_WORD(0x8), "is.map.cond"),
+		is_grant = LLVMBuildICmp(ctx->builder, LLVMIntEQ, first_type,
+			CONST_WORD(0xa), "is.grant.cond"),
+		is_either = LLVMBuildOr(ctx->builder, is_map, is_grant,
+			"is.map.or.grant.cond");
+	BB valid_first_item = add_sibling_block(ctx, "mapping.first.valid"),
+		msgerr_bb = get_msgerr_bb(ctx);
+	/* FIXME: what does a message decoder do when a typed item is of invalid
+	 * type? this goes for string items also. should the C bit be ignored here
+	 * like this?
+	 */
+	branch_set_phi(ctx, ctx->errval_phi, CONST_INT(-EINVAL));
+	LLVMBuildCondBr(ctx->builder, is_either, valid_first_item, msgerr_bb);
+
+	LLVMPositionBuilderAtEnd(ctx->builder, valid_first_item);
+	V type_bit = LLVMBuildSelect(ctx->builder, is_map,
+		CONST_WORD(0), CONST_WORD(1), "sndbaseword.type.bit");
+	LLVMBuildStore(ctx->builder,
+		LLVMBuildOr(ctx->builder, type_bit,
+			LLVMBuildOr(ctx->builder, first_sndbase,
+				LLVMBuildShl(ctx->builder, ent_count, CONST_WORD(1),
+					"ent.cnt.bits"),
+				"ent.cnt.sndbase.bits"),
+			"ent.cnt.sndbase.type.bits"),
+		LLVMBuildStructGEP(ctx->builder, mapping_ptr, 0, "sndbaseword.ptr"));
+
+	BB loop = add_sibling_block(ctx, "mapping.decode.loop");
+	LLVMPositionBuilderAtEnd(ctx->builder, loop);
+	V loop_ix = LLVMBuildPhi(ctx->builder, ctx->i32t, "loop.ix");
+	LLVMPositionBuilderAtEnd(ctx->builder, valid_first_item);
+	branch_set_phi(ctx, loop_ix, CONST_INT(0));
+	LLVMBuildBr(ctx->builder, loop);
+
+	LLVMPositionBuilderAtEnd(ctx->builder, loop);
+	V mr_num = LLVMBuildAdd(ctx->builder, t_pos,
+			LLVMBuildMul(ctx->builder, loop_ix, CONST_INT(2), "loop.ix.words"),
+			"loop.mr.num"),
+		fpage_num = LLVMBuildAdd(ctx->builder, mr_num, CONST_INT(1),
+			"fpage.mr.num");
+	V fpage = LLVMBuildLoad(ctx->builder,
+		UTCB_ADDR_VAL(ctx, fpage_num, "fpage.mr.ptr"), "fpage.raw");
+	V ixes[2] = { ctx->zero, loop_ix };
+	LLVMBuildStore(ctx->builder, fpage,
+		LLVMBuildGEP(ctx->builder, fpages_ptr, ixes, 2, "out.fpage.ptr"));
+
+	/* bump loop, check cond */
+	V loop_ix_next = LLVMBuildAdd(ctx->builder, loop_ix, CONST_INT(1),
+			"loop.ix.next"),
+		loop_cond = LLVMBuildICmp(ctx->builder, LLVMIntULT, loop_ix_next,
+			ent_count, "loop.cond");
+	BB after = add_sibling_block(ctx, "mapping.decode.after");
+	branch_set_phi(ctx, loop_ix, loop_ix_next);
+	LLVMBuildCondBr(ctx->builder, loop_cond, loop, after);
+
+	LLVMPositionBuilderAtEnd(ctx->builder, after);
+	return LLVMBuildAdd(ctx->builder, ent_count, t_pos, "t.pos.after");
+}
