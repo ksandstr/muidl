@@ -158,9 +158,10 @@ static LLVMValueRef build_stub_receive_strings(
 	assert(stritems != NULL);
 	assert(stritems[0].length >= 0);
 
+	/* (historical name. should be str_param_lists or something.) */
 	GList *long_lists[inf->num_reply_msgs];
 	for(int i=0; i < inf->num_reply_msgs; i++) {
-		long_lists[i] = inf->replies[i]->_long;
+		long_lists[i] = inf->replies[i]->string;
 	}
 
 	int brpos = 1;
@@ -179,7 +180,7 @@ static LLVMValueRef build_stub_receive_strings(
 			if(long_lists[j] == NULL) continue;
 			struct msg_param *p = long_lists[j]->data;
 
-			int size = max_size(p->X._long.type);
+			int size = max_size(p->type);
 			if(size >= si->length) {
 				si->reply_pos = j;
 				si->param = p;

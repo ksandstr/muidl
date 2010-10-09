@@ -47,7 +47,8 @@ void free_message_info(struct message_info *inf)
 	g_list_free(inf->params);
 	list_dispose(inf->untyped);
 	list_dispose(inf->seq);
-	list_dispose(inf->_long);
+	list_dispose(inf->string);
+	list_dispose(inf->mapped);
 	g_free(inf);
 }
 

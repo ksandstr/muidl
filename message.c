@@ -203,21 +203,21 @@ LLVMValueRef build_msg_encoder(
 	/* untyped words. */
 	GLIST_FOREACH(cur, msg->untyped) {
 		const struct msg_param *u = cur->data;
-		IDL_tree type = u->X.untyped.type;
 		const int first_reg = u->X.untyped.first_reg;
 		bool inout = u->param_dcl != NULL
 			&& IDL_PARAM_DCL(u->param_dcl).attr == IDL_PARAM_INOUT;
 		/* FIXME: does this handle arrays properly? */
-		if(is_value_type(type)) {
+		if(is_value_type(u->type)) {
 			V raw = args[u->arg_ix];
 			if(is_out_half || inout) {
 				/* flatten. */
 				raw = LLVMBuildLoad(ctx->builder, raw, "outp.flat");
 			}
-			build_write_ipc_parameter(ctx, CONST_INT(first_reg), type, &raw);
+			build_write_ipc_parameter(ctx, CONST_INT(first_reg), u->type,
+				&raw);
 		} else {
-			assert(is_rigid_type(type));
-			build_write_ipc_parameter(ctx, CONST_INT(first_reg), type,
+			assert(is_rigid_type(u->type));
+			build_write_ipc_parameter(ctx, CONST_INT(first_reg), u->type,
 				&args[u->arg_ix]);
 		}
 	}
@@ -236,23 +236,20 @@ LLVMValueRef build_msg_encoder(
 			ctx->inline_seq_pos, g_list_next(cur) == NULL);
 	}
 
-	/* long items */
+	/* parameters passed with string transfers */
 	V t_pos = ctx->inline_seq_pos;
-	GLIST_FOREACH(cur, msg->_long) {
-		struct msg_param *l = cur->data;
-		IDL_tree type = l->X._long.type;
+	GLIST_FOREACH(cur, msg->string) {
+		struct msg_param *t = cur->data;
 		V words[2];
-		if(IDL_NODE_TYPE(type) == IDLN_TYPE_STRING) {
-			V ptr = args[l->arg_ix];
+		if(IDL_NODE_TYPE(t->type) == IDLN_TYPE_STRING) {
+			V ptr = args[t->arg_ix];
 			V len = LLVMBuildCall(ctx->builder, get_strlen_fn(ctx),
-				&ptr, 1, tmp_f(ctx->pr, "strlen.%s", l->name));
-			build_simple_string_item(ctx, words, args[l->arg_ix], len,
+				&ptr, 1, tmp_f(ctx->pr, "strlen.%s", t->name));
+			build_simple_string_item(ctx, words, args[t->arg_ix], len,
 				NULL);
 		} else {
-			/* TODO: map/grant items, sequences, structs, unions, arrays, wide
-			 * strings
-			 */
-			NOTDEFINED(type);
+			/* TODO: sequences, structs, unions, arrays, wide strings */
+			NOTDEFINED(t->type);
 		}
 		for(int i=0; i<2; i++) {
 			V t_addr = UTCB_ADDR_VAL(ctx, t_pos,
@@ -262,6 +259,8 @@ LLVMValueRef build_msg_encoder(
 				"t.pos");
 		}
 	}
+
+	/* FIXME: the same for msg->mapped! */
 
 	/* NOTE: when encoding out-sequences, the second argument is a pointer to
 	 * the length value and should be flattened before the call to
@@ -274,8 +273,7 @@ LLVMValueRef build_msg_encoder(
 		CONST_INT(16), "reply.label"),
 	  u_val = LLVMBuildSub(ctx->builder, ctx->inline_seq_pos,
 				CONST_INT(1), "reply.u"),
-	  t_val = LLVMBuildShl(ctx->builder, CONST_WORD(msg->tag_t),
-				CONST_INT(6), "reply.t");
+	  t_val = LLVMBuildShl(ctx->builder, t_pos, CONST_INT(6), "reply.t");
 	V tag = LLVMBuildOr(ctx->builder, label,
 				LLVMBuildOr(ctx->builder, u_val, t_val, "reply.ut.or"),
 				"reply.tag");
@@ -341,11 +339,10 @@ void build_msg_decoder(
 
 	GLIST_FOREACH(cur, msg->untyped) {
 		struct msg_param *u = cur->data;
-		IDL_tree type = u->X.untyped.type;
 		V tmp[2] = { args[u->arg_ix], NULL };
-		build_read_ipc_parameter(ctx, tmp, type,
+		build_read_ipc_parameter(ctx, tmp, u->type,
 			CONST_INT(u->X.untyped.first_reg));
-		if(is_value_type(type)) {
+		if(is_value_type(u->type)) {
 			if(is_byval_param(u->param_dcl)) args[u->arg_ix] = tmp[0];
 			else LLVMBuildStore(ctx->builder, tmp[0], args[u->arg_ix]);
 		} else if(tmp[0] != args[u->arg_ix]) {
@@ -379,8 +376,7 @@ void build_msg_decoder(
 		ctx->inline_seq_pos = new_upos;
 	}
 
-	assert(msg->_long == NULL || stritems != NULL);
-	int lp_offset = -1;
+	assert(msg->string == NULL || stritems != NULL);
 	/* this is more safe than clever. it could be made cleverer while not
 	 * making it less safe.
 	 */
@@ -388,15 +384,16 @@ void build_msg_decoder(
 		CONST_WORD(1), "tpos");
 	ctx->tmax = LLVMBuildAdd(ctx->builder, ctx->tpos,
 		build_t_from_tag(ctx, ctx->tag), "tmax");
-	GLIST_FOREACH(cur, msg->_long) {
+	/* string items. */
+	int str_offset = -1;
+	GLIST_FOREACH(cur, msg->string) {
 		struct msg_param *lp = cur->data;
-		lp_offset++;
+		str_offset++;
 		/* every long parameter is carried in a string item. therefore there
 		 * must be at least one; make sure this is true, and fuck off into the
 		 * msgerr block if it's not. (the length function returns tpos > tmax +
 		 * 1 to indicate this.)
 		 */
-		IDL_tree type = lp->X._long.type;
 		/* TODO: get EINVAL from µiX header rather than <errno.h> */
 		LLVMValueRef einval = LLVMConstInt(ctx->i32t, -EINVAL, 0),
 			tmax_plus_one = LLVMBuildAdd(ctx->builder, ctx->tmax,
@@ -421,8 +418,8 @@ void build_msg_decoder(
 
 		/* the actual parameter decoding. */
 		LLVMPositionBuilderAtEnd(ctx->builder, cont_bb);
-		V memptr = stritems[lp_offset].memptr;
-		if(stritems[lp_offset].reply_pos != msg_index) {
+		V memptr = stritems[str_offset].memptr;
+		if(stritems[str_offset].reply_pos != msg_index) {
 			/* memcpy() strings received elsewhere into place */
 			assert(is_out_half);		/* only occurs in stub out-half. */
 			V memcpy_fn = get_memcpy_fn(ctx),
@@ -434,7 +431,7 @@ void build_msg_decoder(
 			}
 			LLVMBuildCall(ctx->builder, memcpy_fn, mc_args, 3, "memcpy.call");
 		}
-		switch(IDL_NODE_TYPE(type)) {
+		switch(IDL_NODE_TYPE(lp->type)) {
 			case IDLN_TYPE_STRING: {
 				/* terminate. */
 				memptr = LLVMBuildPointerCast(ctx->builder, memptr,
@@ -451,7 +448,7 @@ void build_msg_decoder(
 			case IDLN_TYPE_SEQUENCE: {
 				/* two arguments. */
 				IDL_tree typ = get_type_spec(
-					IDL_TYPE_SEQUENCE(type).simple_type_spec);
+					IDL_TYPE_SEQUENCE(lp->type).simple_type_spec);
 				/* TODO: use a llvm_rigid_type() instead! */
 				LLVMTypeRef itemtype = llvm_value_type(ctx, typ);
 				LLVMValueRef ptr = LLVMBuildPointerCast(ctx->builder,
@@ -479,11 +476,11 @@ void build_msg_decoder(
 			case IDLN_TYPE_ARRAY:
 				/* TODO */
 				fprintf(stderr, "%s: <%s> as l-param not implemented (yet)\n",
-					__func__, IDL_NODE_TYPE_NAME(type));
+					__func__, IDL_NODE_TYPE_NAME(lp->type));
 				abort();
 
 			default:
-				NOTDEFINED(type);
+				NOTDEFINED(lp->type);
 		}
 	}
 }
@@ -494,10 +491,9 @@ int msg_min_u(const struct message_info *msg)
 	int acc = 1000;
 	GLIST_FOREACH(cur, msg->untyped) {
 		const struct msg_param *u = cur->data;
-		IDL_tree t = u->X.untyped.type;
-		if(is_value_type(t)) continue;
-		if(IDL_NODE_TYPE(t) == IDLN_TYPE_STRUCT) {
-			const struct packed_format *fmt = packed_format_of(t);
+		if(is_value_type(u->type)) continue;
+		if(IDL_NODE_TYPE(u->type) == IDLN_TYPE_STRUCT) {
+			const struct packed_format *fmt = packed_format_of(u->type);
 			if(is_short_fmt(fmt)) continue;
 		}
 		acc = MIN(acc, u->X.untyped.first_reg);

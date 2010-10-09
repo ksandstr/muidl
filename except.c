@@ -326,7 +326,7 @@ void build_decode_exception(
 
 	GList *params = g_list_concat(
 		g_list_concat(g_list_copy(msg->untyped), g_list_copy(msg->seq)),
-		g_list_copy(msg->_long));
+		g_list_concat(g_list_copy(msg->mapped), g_list_copy(msg->string)));
 
 	int max_arg = 0;
 	GLIST_FOREACH(p_cur, params) {
@@ -339,13 +339,13 @@ void build_decode_exception(
 	for(int i=0; i < max_arg + 1; i++) args[i] = NULL;
 	GLIST_FOREACH(p_cur, params) {
 		const struct msg_param *p = p_cur->data;
-		if(p->kind == P_LONG) {
+		if(p->kind == P_STRING) {
 			V indexes[2] = { CONST_INT(0), CONST_INT(0) };
 			args[p->arg_ix + 0] = LLVMBuildGEP(ctx->builder,
 				LLVMBuildStructGEP(ctx->builder, ex_ptr,
 					p->arg_ix + 1, "ex.member.seq.data.addr"),
 				indexes, 2, "ex.member.seq.data.1stptr");
-			if(IDL_NODE_TYPE(p->X._long.type) == IDLN_TYPE_SEQUENCE) {
+			if(IDL_NODE_TYPE(p->type) == IDLN_TYPE_SEQUENCE) {
 				args[p->arg_ix + 1] = LLVMBuildStructGEP(ctx->builder, ex_ptr,
 					p->arg_ix + 2, "ex.member.seq.len.ptr");
 			}

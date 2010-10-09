@@ -195,21 +195,21 @@ struct llvm_ctx
 
 enum msg_param_kind {
 	P_UNTYPED,
-	P_SEQ,
-	P_LONG,
+	P_SEQ,		/* inline sequences */
+	P_STRING,	/* string items */
+	P_MAPPED,	/* mapping, [map] MapGrantItem */
 };
 
 
 struct msg_param
 {
 	const char *name;
-	IDL_tree param_dcl;
+	IDL_tree param_dcl, type;
 	int param_ix, arg_ix;
 	enum msg_param_kind kind;
 
 	union {
 		struct {
-			IDL_tree type;
 			int first_reg, last_reg;
 			bool reg_manual;
 		} untyped;
@@ -218,9 +218,6 @@ struct msg_param
 			int max_elems, bits_per_elem, elems_per_word;
 			int min_words, max_words;
 		} seq;
-		struct {
-			IDL_tree type;
-		} _long;
 	} X;
 };
 
@@ -232,7 +229,6 @@ struct message_info
 	uint32_t tagmask;		/* tag mask, or NO_TAGMASK if not set */
 	uint32_t sublabel;		/* MR1 label, or NO_SUBLABEL if not applicable */
 	int tag_u;				/* before inline sequences, incl. label & retval */
-	int tag_t;
 
 	IDL_tree node;			/* IDL_{EXCEPT,OP}_DCL */
 
@@ -258,10 +254,15 @@ struct message_info
 	/* sequence types that are passed inline. */
 	GList *seq;
 
-	/* other things (long sequences, long arrays, variable-length struct types)
-	 * that are passed as string items.
+	/* typed parameters are MapGrantItems with the [map] attribute, and mapping
+	 * parameters
 	 */
-	GList *_long;
+	GList *mapped;
+
+	/* other things (long sequences and arrays, strings, wide strings) are
+	 * passed as string items.
+	 */
+	GList *string;
 };
 
 #define NO_TAGMASK (~0u)
