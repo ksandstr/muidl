@@ -199,3 +199,16 @@ bool is_byval_param(IDL_tree pdecl)
 		&& IDL_PARAM_DCL(pdecl).attr == IDL_PARAM_IN
 		&& is_value_type(get_type_spec(IDL_PARAM_DCL(pdecl).param_type_spec));
 }
+
+
+LLVMTypeRef muidl_mapping_type(struct llvm_ctx *ctx)
+{
+	if(ctx->mappingt) return ctx->mappingt;
+
+	/* basically it's just a send base word, and 23 fpage words. so a scalar
+	 * and an array to be exactly like the reps of the C declaration.
+	 */
+	T types[] = { ctx->wordt, LLVMArrayType(ctx->wordt, 23) };
+	ctx->mappingt = LLVMStructTypeInContext(ctx->ctx, types, 2, 0);
+	return ctx->mappingt;
+}

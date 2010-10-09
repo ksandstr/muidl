@@ -159,7 +159,7 @@ struct llvm_ctx
 	LLVMContextRef ctx;
 	LLVMModuleRef module;
 	LLVMBuilderRef builder;
-	LLVMTypeRef wordt, i32t, voidptrt, mapgrant;
+	LLVMTypeRef wordt, i32t, voidptrt, mapgrant, mappingt;
 	LLVMValueRef zero;
 	GList *malloc_ptrs;		/* LLVM free insns emitted at fn end */
 
@@ -646,6 +646,8 @@ extern LLVMTypeRef llvm_struct_type(
 	struct llvm_ctx *ctx,
 	char ***names_p,
 	IDL_tree type);
+
+extern LLVMTypeRef muidl_mapping_type(struct llvm_ctx *ctx);
 
 
 /* from struct.c */

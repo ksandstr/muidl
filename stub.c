@@ -60,10 +60,7 @@ static LLVMTypeRef stub_fn_type(
 
 	/* parameters */
 	T *at_base = &arg_types[arg_offset];
-	for(IDL_tree cur = IDL_OP_DCL(inf->node).parameter_dcls;
-		cur != NULL;
-		cur = IDL_LIST(cur).next)
-	{
+	IDL_LIST_FOREACH(cur, IDL_OP_DCL(inf->node).parameter_dcls) {
 		IDL_tree pdecl = IDL_LIST(cur).data,
 			type = get_type_spec(IDL_PARAM_DCL(pdecl).param_type_spec);
 		enum IDL_param_attr attr = IDL_PARAM_DCL(pdecl).attr;
@@ -98,6 +95,9 @@ static LLVMTypeRef stub_fn_type(
 		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_WIDE_STRING) {
 			/* TODO: use a wchar_t from the ABI */
 			at_base[p->arg_ix] = LLVMPointerType(ctx->i32t, 0);
+		} else if(IS_MAPPING_TYPE(type)) {
+			at_base[p->arg_ix] = LLVMPointerType(
+				muidl_mapping_type(ctx), 0);
 		} else {
 			assert(is_rigid_type(type));
 			at_base[p->arg_ix] = LLVMPointerType(
