@@ -363,10 +363,6 @@ static bool is_bounded_seq(IDL_tree type)
 }
 
 
-/* FIXME: move to types.c, or a props.c */
-#define has_map_property(ident) (IDL_tree_property_get((ident), "map") != NULL)
-
-
 /* turn a parameter list into lists of untyped, inline-sequence and long types.
  * the first have fixed register assignments, inline sequences have register
  * ranges and long types appear in transmission order.

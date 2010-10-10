@@ -486,6 +486,16 @@ static int each_stub_parameter(
 	IDL_tree params = IDL_OP_DCL(op).parameter_dcls,
 		op_type = get_type_spec(IDL_OP_DCL(op).op_type_spec);
 
+	if(has_mapped_param(op)) {
+		/* computing is_last is pretty copypastey. this should be substituted
+		 * by sticking all these things in a pointer array and iterating it at
+		 * function end.
+		 */
+		(*paramfn)(pr, pnum++, "L4_Fpage_t", "_accept_range",
+			!has_pager_target(op) && tok == 0 && params == NULL
+				&& op_type == NULL && !has_ctx);
+	}
+
 	if(!has_pager_target(op)) {
 		(*paramfn)(pr, pnum++, "L4_ThreadId_t", "_service_tid",
 			tok == 0 && params == NULL && op_type == NULL && !has_ctx);
