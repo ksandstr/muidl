@@ -486,7 +486,7 @@ static int each_stub_parameter(
 	IDL_tree params = IDL_OP_DCL(op).parameter_dcls,
 		op_type = get_type_spec(IDL_OP_DCL(op).op_type_spec);
 
-	if(!has_pager_target(pr->ns, op)) {
+	if(!has_pager_target(op)) {
 		(*paramfn)(pr, pnum++, "L4_ThreadId_t", "_service_tid",
 			tok == 0 && params == NULL && op_type == NULL && !has_ctx);
 	}

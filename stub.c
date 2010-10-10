@@ -45,7 +45,7 @@ static LLVMTypeRef stub_fn_type(
 	int max_arg = -1, arg_offset = 0;
 
 	/* IPC destination parameter */
-	if(!has_pager_target(ctx->ns, inf->node)) {
+	if(!has_pager_target(inf->node)) {
 		arg_types[++max_arg] = ctx->wordt;	/* L4_ThreadId_t, peer */
 		arg_offset++;
 	}
@@ -348,7 +348,7 @@ static void build_ipc_stub(
 	LLVMGetParams(fn, args);
 
 	V ipc_dest = NULL;
-	if(!has_pager_target(ctx->ns, inf->node)) {
+	if(!has_pager_target(inf->node)) {
 		ipc_dest = args[arg_offset++];
 	}
 
@@ -361,7 +361,7 @@ static void build_ipc_stub(
 	begin_function(ctx, fn);
 	ctx->build_msgerr_bb = &build_stub_msgerr;
 	if(ipc_dest == NULL) {
-		assert(has_pager_target(ctx->ns, inf->node));
+		assert(has_pager_target(inf->node));
 		/* load the pager TCR. */
 		ipc_dest = LLVMBuildLoad(ctx->builder,
 			UTCB_ADDR_VAL(ctx, CONST_INT(TCR_PAGER), "pager.addr"),

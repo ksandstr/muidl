@@ -535,7 +535,7 @@ extern IDL_tree find_exn(IDL_tree opdcl, bool (*pred)(IDL_tree exn));
 #define find_noreply_exn(op) find_exn((op), &is_noreply_exn)
 #define has_complex_exn(op) (find_exn((op), &is_complex_exn) != NULL)
 
-extern bool has_pager_target(IDL_ns ns, IDL_tree op_dcl);
+extern bool has_pager_target(IDL_tree op_dcl);
 extern int op_timeout_kind(IDL_tree opdcl);	/* returns mask of TIMEOUT_* */
 
 

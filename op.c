@@ -38,7 +38,7 @@ IDL_tree find_exn(IDL_tree op, bool (*pred)(IDL_tree exn))
 }
 
 
-bool has_pager_target(IDL_ns ns, IDL_tree op_dcl)
+bool has_pager_target(IDL_tree op_dcl)
 {
 	assert(IDL_NODE_TYPE(op_dcl) == IDLN_OP_DCL);
 	IDL_tree prop_node = IDL_OP_DCL(op_dcl).ident;
