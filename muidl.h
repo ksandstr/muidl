@@ -637,6 +637,14 @@ extern LLVMValueRef build_encode_mapping(
 	LLVMValueRef mapping_ptr,
 	bool is_last);
 
+extern LLVMValueRef build_decode_mapping(
+	struct llvm_ctx *ctx,
+	LLVMValueRef t_pos,
+	LLVMValueRef t_max,
+	IDL_tree type,
+	LLVMValueRef mapping_ptr,
+	bool is_last);
+
 
 /* from types.c */
 
