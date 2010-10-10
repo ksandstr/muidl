@@ -139,20 +139,6 @@ char *decapsify(const char *name)
 }
 
 
-IDL_tree find_exn(IDL_tree op, bool (*pred)(IDL_tree exn))
-{
-	for(IDL_tree cur = IDL_OP_DCL(op).raises_expr;
-		cur != NULL;
-		cur = IDL_LIST(cur).next)
-	{
-		IDL_tree e = IDL_get_parent_node(IDL_LIST(cur).data,
-			IDLN_EXCEPT_DCL, NULL);
-		if((*pred)(e)) return e;
-	}
-	return NULL;
-}
-
-
 bool is_real_nre_return_type(IDL_tree typ)
 {
 	if(typ == NULL) return false;	/* "void" is not considered "real". */
