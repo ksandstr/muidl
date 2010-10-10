@@ -39,10 +39,16 @@ static LLVMTypeRef stub_fn_type(
 
 	const bool has_context = has_complex_exn(inf->node);
 	int num_params = IDL_list_length(IDL_OP_DCL(inf->node).parameter_dcls),
-		num_args = num_params * 2 + 2 + 1 + 2 + (has_context ? 1 : 0);
-	T arg_types[num_args];
-	for(int i=0; i<num_args; i++) arg_types[i] = NULL;
+		max_args = num_params * 2 + 7;
+	T arg_types[max_args];
+	for(int i=0; i<max_args; i++) arg_types[i] = NULL;
 	int max_arg = -1, arg_offset = 0;
+
+	/* memory map acceptor */
+	if(has_mapped_param(inf->node)) {
+		arg_types[++max_arg] = ctx->wordt;	/* L4_Fpage_t, range */
+		arg_offset++;
+	}
 
 	/* IPC destination parameter */
 	if(!has_pager_target(inf->node)) {
@@ -347,10 +353,11 @@ static void build_ipc_stub(
 	V *args = g_new(V, num_args);
 	LLVMGetParams(fn, args);
 
+	V accept_range = NULL;
+	if(has_mapped_param(inf->node)) accept_range = args[arg_offset++];
+
 	V ipc_dest = NULL;
-	if(!has_pager_target(inf->node)) {
-		ipc_dest = args[arg_offset++];
-	}
+	if(!has_pager_target(inf->node)) ipc_dest = args[arg_offset++];
 
 	V *ret_args = NULL;
 	if(reply != NULL && reply->ret_type != NULL) {
@@ -405,6 +412,12 @@ static void build_ipc_stub(
 	if(stritems != NULL && stritems[0].length >= 0) {
 		acceptor = build_stub_receive_strings(ctx, inf, stritems,
 			&args[arg_offset], ctxptr);
+	}
+	if(accept_range != NULL) {
+		acceptor = LLVMBuildOr(ctx->builder, acceptor,
+			LLVMBuildAnd(ctx->builder, accept_range,
+				CONST_WORD(~0xfULL), "accept.range.masked"),
+			"acc.with.maps");
 	}
 
 	if(inf->oneway) {
