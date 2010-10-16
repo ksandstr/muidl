@@ -282,7 +282,8 @@ LLVMValueRef build_msg_encoder(
 		CONST_INT(16), "msg.label"),
 	  u_val = LLVMBuildSub(ctx->builder, ctx->inline_seq_pos,
 				CONST_INT(1), "msg.u"),
-	  t_val = LLVMBuildShl(ctx->builder, t_pos, CONST_INT(6), "msg.t");
+	  t_count = LLVMBuildSub(ctx->builder, t_pos, CONST_INT(1), "t.num"),
+	  t_val = LLVMBuildShl(ctx->builder, t_count, CONST_INT(6), "msg.t");
 	V tag = LLVMBuildOr(ctx->builder, label,
 				LLVMBuildOr(ctx->builder, u_val, t_val, "msg.ut.or"),
 				"msg.tag");
