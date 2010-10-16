@@ -2,9 +2,6 @@
 #ifndef _L4X2_IDL
 #define _L4X2_IDL
 
-/* FIXME: remove this, it doesn't belong here for real */
-#include "posix-base.idl"
-
 // make-believe IDL for L4.X2 protocols
 
 
@@ -27,9 +24,10 @@ typedef l4_time_t Time;
 interface FaultHandler
 {
 	[TagMask(0xfff00000), Label(0xff40)]
-	MapGrantItem handle_fault(
+	void handle_fault(
 		[MR(1)] in word faddr,
-		[MR(2)] in word fip);
+		[MR(2)] in word fip,
+		[map] out MapGrantItem page);
 };
 
 }; // module

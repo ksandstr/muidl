@@ -259,9 +259,12 @@ LLVMValueRef build_msg_encoder(
 		const struct msg_param *t = cur->data;
 		if(IS_MAPGRANT_TYPE(t->type)) {
 			V words[2];
-			fprintf(stderr, "%s: MapGrant passing not implemented\n",
-				__func__);
-			abort();
+			for(int i=0; i<2; i++) {
+				words[i] = LLVMBuildLoad(ctx->builder,
+					LLVMBuildStructGEP(ctx->builder, args[t->arg_ix], i,
+						i == 0 ? "mapgrant.info.ptr" : "mapgrant.fpage.ptr"),
+					i == 0 ? "mapgrant.info.word" : "mapgrant.fpage.word");
+			}
 			t_pos = build_store_mrs(ctx, t_pos, words, 2);
 		} else {
 			assert(IS_MAPPING_TYPE(t->type));
@@ -506,9 +509,18 @@ void build_msg_decoder(
 				m->type, args[m->arg_ix], true);
 		} else {
 			assert(IS_MAPGRANT_TYPE(m->type));
-			fprintf(stderr, "%s: mapgrant mapitems not supported yet\n",
-				__func__);
-			abort();
+			for(int i=0; i<2; i++) {
+				V word = build_ipc_input_val_ix(ctx,
+					i == 0 ? ctx->tpos
+						: LLVMBuildAdd(ctx->builder, ctx->tpos, CONST_INT(1),
+							"tpos.plus.one"),
+					"mapgrant.word");
+				LLVMBuildStore(ctx->builder, word,
+					LLVMBuildStructGEP(ctx->builder, args[m->arg_ix],
+						i, "mapgrant.field.ptr"));
+			}
+			ctx->tpos = LLVMBuildAdd(ctx->builder, ctx->tpos, CONST_INT(2),
+				"tpos.after.mg");
 		}
 	}
 }
