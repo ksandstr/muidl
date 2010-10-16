@@ -618,7 +618,7 @@ bool do_idl_file(const char *cppopts, const char *filename)
 	if(target_mask & T_COMMON) {
 		LLVMModuleRef mod = make_llvm_module(lc, NULL, basename,
 			NULL, &iter_build_common_module);
-		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-common.S",
+		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-common.s",
 			basename));
 		LLVMDisposeModule(mod);
 	}
@@ -627,14 +627,14 @@ bool do_idl_file(const char *cppopts, const char *filename)
 			&build_dispatcher_function, NULL);
 		make_llvm_module(lc, mod, basename,
 			&build_exception_raise_fns_for_iface, NULL);
-		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-service.S",
+		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-service.s",
 			basename));
 		LLVMDisposeModule(mod);
 	}
 	if(target_mask & T_CLIENT) {
 		LLVMModuleRef mod = make_llvm_module(lc, NULL, basename,
 			&build_stubs_for_iface, NULL);
-		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-client.S",
+		compile_module_to_asm(mod, tmp_f(&print_ctx, "%s-client.s",
 			basename));
 		LLVMDisposeModule(mod);
 	}
@@ -667,11 +667,11 @@ static void parse_cmdline(int argc, char *argv[])
 		{ "defs", 0, 0, G_OPTION_ARG_NONE, &arg_make_defs,
 		  "produce `-defs.h' (default: produce all outputs)", NULL },
 		{ "client", 0, 0, G_OPTION_ARG_NONE, &arg_make_client,
-		  "produce `-client.S'", NULL },
+		  "produce `-client.s'", NULL },
 		{ "service", 0, 0, G_OPTION_ARG_NONE, &arg_make_service,
-		  "produce `-service.S'", NULL },
+		  "produce `-service.s'", NULL },
 		{ "common", 0, 0, G_OPTION_ARG_NONE, &arg_make_common,
-		  "produce `-common.S'", NULL },
+		  "produce `-common.s'", NULL },
 		{ "verbose", 'v', 0, G_OPTION_ARG_NONE, &arg_verbose,
 		  "enable verbose output", NULL },
 		{ "verbose-idl", 0, 0, G_OPTION_ARG_NONE, &arg_verbose_idl,

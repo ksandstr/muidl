@@ -23,7 +23,7 @@ clean:
 
 
 output-clean:
-	rm -f *-defs.h *-service.S *-client.S *-common.S
+	rm -f *-defs.h *-service.s *-client.s *-common.s
 
 
 distclean: clean
