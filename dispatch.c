@@ -641,7 +641,7 @@ LLVMValueRef build_dispatcher_function(
 	LLVMBuildBr(ctx->builder, exit_bb);
 
 	/* recognize interfaces that've got tag-mask dispatching. */
-	GList *tm_list = iface->tagmask_ops;
+	GList *tm_list = g_list_copy(iface->tagmask_ops);
 	LLVMBasicBlockRef tm_dispatch_bb = NULL;
 	if(tm_list != NULL) {
 		tm_dispatch_bb = LLVMAppendBasicBlockInContext(ctx->ctx,
