@@ -7,6 +7,6 @@ tags
 *-defs.h
 *-service.[cSs]
 *-client.[cSs]
-*-common.S
+*-common.[Ss]
 *.gc??
 core
