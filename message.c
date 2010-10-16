@@ -113,7 +113,7 @@ void build_read_ipc_parameter(
 	} else if(is_value_type(ctyp)) {
 		/* appropriate for all value types. */
 		dst[0] = LLVMBuildTruncOrBitCast(ctx->builder,
-			build_utcb_load(ctx, first_mr, "shortparm.mr"),
+			build_ipc_input_val_ix(ctx, first_mr, "shortparm.mr"),
 			llvm_value_type(ctx, ctyp), "shortparm");
 	} else if(IDL_NODE_TYPE(ctyp) == IDLN_TYPE_STRUCT) {
 		decode_packed_struct(ctx, &dst[0], ctyp, first_mr, CONST_INT(0));
