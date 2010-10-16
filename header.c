@@ -654,12 +654,21 @@ static char *long_exn_name(IDL_tree exn)
 
 static void print_iface_context_info(struct print_ctx *pr, IDL_tree iface)
 {
+	GList *exns = iface_exns_sorted(pr->ns, iface);
+	bool has_complex = false;
+	GLIST_FOREACH(cur, exns) {
+		IDL_tree exn = cur->data;
+		if(is_complex_exn(exn)) {
+			has_complex = true;
+			break;
+		}
+	}
+	if(!has_complex) return;
+
 	char *name = iface_context_type(pr, iface);
 	code_f(pr, "typedef union {");
 	indent(pr, 1);
 	code_f(pr, "uint32_t tag;");
-
-	GList *exns = iface_exns_sorted(pr->ns, iface);
 
 	/* give them sufficiently unique names for use in the context union. */
 	GPtrArray *exn_names = g_ptr_array_new_with_free_func(&g_free);
