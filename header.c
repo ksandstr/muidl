@@ -470,7 +470,8 @@ typedef void (*param_fn)(
 	int param_index,		/* first being 0, second 1 etc */
 	const char *c_type,
 	const char *name,
-	bool is_last);
+	bool is_last,
+	void *userdata);
 
 
 /* returns number of parameters seen */
@@ -478,7 +479,8 @@ static int each_stub_parameter(
 	struct print_ctx *pr,
 	IDL_tree op,
 	int tok,		/* timeout kind mask */
-	param_fn paramfn)
+	param_fn paramfn,
+	void *userdata)
 {
 	assert((tok & ~(TIMEOUT_SEND | TIMEOUT_RECV)) == 0);
 	const bool has_ctx = has_complex_exn(op);
@@ -493,12 +495,14 @@ static int each_stub_parameter(
 		 */
 		(*paramfn)(pr, pnum++, "L4_Fpage_t", "_accept_range",
 			!has_pager_target(op) && tok == 0 && params == NULL
-				&& op_type == NULL && !has_ctx);
+				&& op_type == NULL && !has_ctx,
+			userdata);
 	}
 
 	if(!has_pager_target(op)) {
 		(*paramfn)(pr, pnum++, "L4_ThreadId_t", "_service_tid",
-			tok == 0 && params == NULL && op_type == NULL && !has_ctx);
+			tok == 0 && params == NULL && op_type == NULL && !has_ctx,
+			userdata);
 	}
 
 	if(op_type != NULL) {
@@ -506,7 +510,7 @@ static int each_stub_parameter(
 		char *typ = rigid_type(pr->ns, op_type),
 			*ptrtyp = g_strconcat(typ, " *", NULL);
 		(*paramfn)(pr, pnum++, ptrtyp, "_retval_p",
-			tok == 0 && params == NULL && !has_ctx);
+			tok == 0 && params == NULL && !has_ctx, userdata);
 		g_free(typ);
 		g_free(ptrtyp);
 	}
@@ -527,32 +531,33 @@ static int each_stub_parameter(
 		char *tmpstr = NULL;
 		if(attr == IDL_PARAM_IN && is_value_type(type)) {
 			tmpstr = value_type(pr->ns, type);
-			(*paramfn)(pr, pnum++, tmpstr, c_name, is_last);
+			(*paramfn)(pr, pnum++, tmpstr, c_name, is_last, userdata);
 		} else if(is_rigid_type(type)) {
 			tmpstr = fixed_type(pr->ns, type);
 			(*paramfn)(pr, pnum++,
 				tmp_f(pr, "%s%s *", in_only ? "const " : "",
-					tmpstr), c_name, is_last);
+					tmpstr), c_name, is_last, userdata);
 		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
 			IDL_tree subtype = get_type_spec(
 				IDL_TYPE_SEQUENCE(type).simple_type_spec);
 			tmpstr = fixed_type(pr->ns, subtype);
 			(*paramfn)(pr, pnum++,
 				tmp_f(pr, "%s%s *", in_only ? "const " : "", tmpstr),
-				c_name, false);
+				c_name, false, userdata);
 			(*paramfn)(pr, pnum++,
 				tmp_f(pr, "unsigned int%s", !in_only ? " *" : ""),
 				tmp_f(pr, "%s_len%s", c_name, !in_only ? "_ptr" : ""),
-				is_last);
+				is_last, userdata);
 		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_STRING) {
 			(*paramfn)(pr, pnum++, in_only ? "const char *" : "char *",
-				c_name, is_last);
+				c_name, is_last, userdata);
 		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_WIDE_STRING) {
 			(*paramfn)(pr, pnum++, in_only ? "const wchar_t *" : "wchar_t *",
-				c_name, is_last);
+				c_name, is_last, userdata);
 		} else if(IS_MAPPING_TYPE(type)) {
 			const char *ts = "const muidl_mapping_t *";
-			(*paramfn)(pr, pnum++, in_only ? ts : &ts[6], c_name, is_last);
+			(*paramfn)(pr, pnum++, in_only ? ts : &ts[6], c_name, is_last,
+				userdata);
 		} else {
 			/* TODO: handle structs, unions, arrays, etc */
 			NOTDEFINED(type);
@@ -568,7 +573,7 @@ static int each_stub_parameter(
 		for(int i=0; i<2; i++) {
 			if((tok & (1 << i)) == 0) continue;
 			(*paramfn)(pr, pnum++, "L4_Time_t", to_names[i],
-				!has_ctx && tok >> (i + 1) == 0);
+				!has_ctx && tok >> (i + 1) == 0, userdata);
 		}
 	}
 
@@ -576,11 +581,37 @@ static int each_stub_parameter(
 		IDL_tree iface = IDL_get_parent_node(op, IDLN_INTERFACE, NULL);
 		assert(iface != NULL);
 		char *typ = iface_context_type(pr, iface);
-		(*paramfn)(pr, pnum++, tmp_f(pr, "%s_t *", typ), "_context_ptr", true);
+		(*paramfn)(pr, pnum++, tmp_f(pr, "%s_t *", typ), "_context_ptr", true,
+			userdata);
 		g_free(typ);
 	}
 
 	return pnum;
+}
+
+
+struct generic_stub_each_param_data {
+	char *stubhead;
+};
+
+static void generic_stub_each_param(
+	struct print_ctx *pr,
+	int param_ix,
+	const char *c_type,
+	const char *name,
+	bool is_last,
+	void *userdata)
+{
+	struct generic_stub_each_param_data *data = userdata;
+	if(param_ix == 0) {
+		code_f(pr, "%s(%s%s%s%c", data->stubhead, c_type, type_space(c_type),
+			name, is_last ? ')' : ',');
+		if(!is_last) indent(pr, 1);
+	} else {
+		code_f(pr, "%s%s%s%c", c_type, type_space(c_type), name,
+			is_last ? ')' : ',');
+		if(is_last) indent(pr, -1);
+	}
 }
 
 
@@ -590,29 +621,12 @@ static void print_generic_stub_decl(
 	IDL_tree op,
 	int tok)		/* timeout kind mask */
 {
-	char *stubhead = tmp_f(pr, "int %s", stub_name(pr, stubpfx, op, tok));
-
-	/* GCC rules teh skies */
-	void each_param(
-		struct print_ctx *pr,
-		int param_ix,
-		const char *c_type,
-		const char *name,
-		bool is_last)
-	{
-		if(param_ix == 0) {
-			code_f(pr, "%s(%s%s%s%c", stubhead, c_type, type_space(c_type),
-				name, is_last ? ')' : ',');
-			if(!is_last) indent(pr, 1);
-		} else {
-			code_f(pr, "%s%s%s%c", c_type, type_space(c_type), name,
-				is_last ? ')' : ',');
-			if(is_last) indent(pr, -1);
-		}
+	struct generic_stub_each_param_data data = {
+		.stubhead = tmp_f(pr, "int %s", stub_name(pr, stubpfx, op, tok)),
 	};
 
-	int n = each_stub_parameter(pr, op, tok, &each_param);
-	if(n == 0) code_f(pr, "%s(void)", stubhead);
+	int n = each_stub_parameter(pr, op, tok, &generic_stub_each_param, &data);
+	if(n == 0) code_f(pr, "%s(void)", data.stubhead);
 }
 
 
