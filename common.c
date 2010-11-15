@@ -27,6 +27,12 @@
 #include "l4x2.h"
 
 
+static bool is_struct_used(
+	struct llvm_ctx *ctx,
+	IDL_tree parent,
+	IDL_tree stype);
+
+
 static void build_packed_struct_decoder(struct llvm_ctx *ctx, IDL_tree styp)
 {
 	V fn = get_struct_decoder_fn(ctx, styp);
@@ -95,57 +101,74 @@ static void build_packed_struct_encoder(struct llvm_ctx *ctx, IDL_tree styp)
 }
 
 
+struct if_struct_data {
+	bool found;
+	const char *ref_id;
+	IDL_tree stype, parent;
+	struct llvm_ctx *ctx;
+};
+
 /* TODO: this could be quicker if results were memoized by stype->repo_id,
  * but meh.
  */
+static gboolean see_if_struct(IDL_tree_func_data *tf, void *ud)
+{
+	struct if_struct_data *data = ud;
+
+	if(data->found) return FALSE;
+
+	if(IDL_NODE_TYPE(tf->tree) == IDLN_TYPE_STRUCT
+		&& tf->tree != data->stype)
+	{
+		IDL_LIST_FOREACH(cur, IDL_TYPE_STRUCT(tf->tree).member_list) {
+			IDL_tree m = IDL_LIST(cur).data,
+				type = get_type_spec(IDL_MEMBER(m).type_spec);
+			if(IDL_NODE_TYPE(type) != IDLN_TYPE_STRUCT) continue;
+			const char *id = IDL_IDENT(
+				IDL_TYPE_STRUCT(type).ident).repo_id;
+			if(strcmp(data->ref_id, id) == 0) {
+				/* but this is only a hit if the other struct is used
+				 * itself.
+				 */
+				data->found = is_struct_used(data->ctx, data->parent,
+					tf->tree);
+				break;
+			}
+		}
+		return FALSE;
+	} else if(IDL_NODE_TYPE(tf->tree) == IDLN_OP_DCL) {
+		IDL_LIST_FOREACH(cur, IDL_OP_DCL(tf->tree).parameter_dcls) {
+			IDL_tree p = IDL_LIST(cur).data,
+				type = get_type_spec(IDL_PARAM_DCL(p).param_type_spec);
+			if(IDL_NODE_TYPE(type) != IDLN_TYPE_STRUCT) continue;
+			const char *id = IDL_IDENT(
+				IDL_TYPE_STRUCT(type).ident).repo_id;
+			if(strcmp(data->ref_id, id) == 0) {
+				/* found a direct consumer, yay */
+				data->found = true;
+				break;
+			}
+		}
+		return FALSE;
+	} else {
+		return TRUE;
+	}
+}
+
+
 static bool is_struct_used(
 	struct llvm_ctx *ctx,
 	IDL_tree parent,
 	IDL_tree stype)
 {
-	/* fuck clang. */
-	bool found = false;
-	const char *ref_id = IDL_IDENT(IDL_TYPE_STRUCT(stype).ident).repo_id;
-	gboolean see_if_struct(IDL_tree_func_data *tf, void *ud) {
-		if(found) return FALSE;
-		else if(IDL_NODE_TYPE(tf->tree) == IDLN_TYPE_STRUCT
-			&& tf->tree != stype)
-		{
-			IDL_LIST_FOREACH(cur, IDL_TYPE_STRUCT(tf->tree).member_list) {
-				IDL_tree m = IDL_LIST(cur).data,
-					type = get_type_spec(IDL_MEMBER(m).type_spec);
-				if(IDL_NODE_TYPE(type) != IDLN_TYPE_STRUCT) continue;
-				const char *id = IDL_IDENT(
-					IDL_TYPE_STRUCT(type).ident).repo_id;
-				if(strcmp(ref_id, id) == 0) {
-					/* but this is only a hit if the other struct is used
-					 * itself.
-					 */
-					found = is_struct_used(ctx, parent, tf->tree);
-					break;
-				}
-			}
-			return FALSE;
-		} else if(IDL_NODE_TYPE(tf->tree) == IDLN_OP_DCL) {
-			IDL_LIST_FOREACH(cur, IDL_OP_DCL(tf->tree).parameter_dcls) {
-				IDL_tree p = IDL_LIST(cur).data,
-					type = get_type_spec(IDL_PARAM_DCL(p).param_type_spec);
-				if(IDL_NODE_TYPE(type) != IDLN_TYPE_STRUCT) continue;
-				const char *id = IDL_IDENT(
-					IDL_TYPE_STRUCT(type).ident).repo_id;
-				if(strcmp(ref_id, id) == 0) {
-					/* found a direct consumer, yay */
-					found = true;
-					break;
-				}
-			}
-			return FALSE;
-		} else {
-			return TRUE;
-		}
+	struct if_struct_data ifs_data = {
+		.found = false,
+		.ref_id = IDL_IDENT(IDL_TYPE_STRUCT(stype).ident).repo_id,
+		.stype = stype, .parent = parent,
+		.ctx = ctx,
 	};
-	IDL_tree_walk_in_order(parent, &see_if_struct, NULL);
-	return found;
+	IDL_tree_walk_in_order(parent, &see_if_struct, &ifs_data);
+	return ifs_data.found;
 }
 
 
