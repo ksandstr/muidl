@@ -510,6 +510,8 @@ void build_msg_decoder(
 				m->type, args[m->arg_ix], true);
 		} else {
 			assert(IS_MAPGRANT_TYPE(m->type));
+			args[m->arg_ix] = build_local_storage(ctx, ctx->mapgrant,
+				CONST_INT(1), tmp_f(ctx->pr, "mgitem.%s.ptr", m->name));
 			for(int i=0; i<2; i++) {
 				V word = build_ipc_input_val_ix(ctx,
 					i == 0 ? ctx->tpos
