@@ -35,6 +35,16 @@
 #include <llvm-c/Core.h>
 
 
+/* this is useful for debugging missing args[] members, etc. */
+#if 0
+#define LLVMBuildStructGEP(a, b, c, d) ({ \
+		fprintf(stderr, "LLVMBuildStructGEP called from %s:%d\n", __FILE__, __LINE__); \
+		LLVMValueRef _v = LLVMBuildStructGEP((a), (b), (c), (d)); \
+		_v; \
+	})
+#endif
+
+
 /* FIXME: make this per-target, i.e. independent of the current platform. */
 #define BITS_PER_WORD 32
 
