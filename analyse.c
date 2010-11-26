@@ -977,7 +977,11 @@ static void assign_method_labels(
 		else max_label = MAX(max_label, req->label);
 	}
 
-#ifndef NDEBUG
+/* FIXME: rewrite this to ensure that ifacelabels don't clash with regular
+ * labels, and that neither of those will ever alias a tagmasked label in the
+ * same interface.
+ */
+#if !defined(NDEBUG) && 0
 	GHashTable *lab_hash = g_hash_table_new(&g_direct_hash, &g_direct_equal);
 	GLIST_FOREACH(mcur, methods) {
 		struct method_info *inf = mcur->data;
@@ -985,8 +989,8 @@ static void assign_method_labels(
 
 		int label = ifacelabel > 0 ? req->sublabel : req->label;
 		if(g_hash_table_lookup(lab_hash, GINT_TO_POINTER(label)) != NULL) {
-			fprintf(stderr, "error: duplicate op labels in `%s'\n",
-				IDL_IDENT_REPO_ID(iface_ident));
+			fprintf(stderr, "error: duplicate label %d in `%s'\n",
+				label, IDL_IDENT_REPO_ID(iface_ident));
 			exit(EXIT_FAILURE);
 		} else {
 			g_hash_table_insert(lab_hash, GINT_TO_POINTER(label), inf);
