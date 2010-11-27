@@ -54,7 +54,8 @@ LLVMValueRef build_decode_inline_sequence(
 	} else {
 		/* last sequence of word-length items; compute length from "u". */
 		LLVMValueRef u = build_u_from_tag(ctx, ctx->tag);
-		seq_words = LLVMBuildSub(ctx->builder, u, upos,
+		seq_words = LLVMBuildSub(ctx->builder, u,
+			LLVMBuildSub(ctx->builder, upos, CONST_INT(1), "upos.minus.one"),
 			"inlseq.len.implicit");
 		seq_words = LLVMBuildTruncOrBitCast(ctx->builder, seq_words,
 			ctx->i32t, "inlseq.len.int");
