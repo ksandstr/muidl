@@ -365,6 +365,7 @@ void build_msg_decoder(
 		}
 	}
 
+	V upos = CONST_INT(msg->tag_u + 1);
 	GLIST_FOREACH(cur, msg->seq) {
 		struct msg_param *seq = cur->data;
 		BB err_bb = get_msgerr_bb(ctx);
@@ -384,10 +385,9 @@ void build_msg_decoder(
 			seq_args[1] = build_local_storage(ctx, ctx->i32t,
 				NULL, "inlseq.len.ptr");
 		}
-		V new_upos = build_decode_inline_sequence(ctx,
-			seq_args, seq, ctx->inline_seq_pos,
-			g_list_next(cur) == NULL, ctx->errval_phi, err_bb);
-		ctx->inline_seq_pos = new_upos;
+		upos = build_decode_inline_sequence(ctx,
+			seq_args, seq, upos, g_list_next(cur) == NULL,
+			ctx->errval_phi, err_bb);
 	}
 
 	assert(msg->string == NULL || stritems != NULL);
