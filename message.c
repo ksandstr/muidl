@@ -527,9 +527,13 @@ void build_msg_decoder(
 }
 
 
+/* FIXME: this function is badly named and its meaning has become vague. it
+ * should be replaced with a vengeance; likewise for all its call sites and
+ * build_store_received_regs().
+ */
 int msg_min_u(const struct message_info *msg)
 {
-	int acc = 1000;
+	int acc = msg->tag_u;
 	GLIST_FOREACH(cur, msg->untyped) {
 		const struct msg_param *u = cur->data;
 		if(is_value_type(u->type)) continue;
