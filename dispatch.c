@@ -217,14 +217,7 @@ static void emit_out_param(
 		dst[0] = build_local_storage(ctx, llvm_rigid_type(ctx, ptyp),
 			NULL, "out.val.mem");
 	} else if(IDL_NODE_TYPE(ptyp) == IDLN_TYPE_SEQUENCE) {
-		IDL_tree seqtype = get_type_spec(
-			IDL_TYPE_SEQUENCE(ptyp).simple_type_spec);
-		int max_size = IDL_INTEGER(
-			IDL_TYPE_SEQUENCE(ptyp).positive_int_const).value;
-		dst[0] = build_local_storage(ctx,
-			llvm_value_type(ctx, seqtype),
-			LLVMConstInt(ctx->i32t, max_size, 0),
-			"out.seq.mem");
+		dst[0] = build_seq_param_storage(ctx, ptyp, "out.seq.mem");
 		dst[1] = build_local_storage(ctx, ctx->i32t, NULL, "out.seq.len.mem");
 	} else if(IDL_NODE_TYPE(ptyp) == IDLN_TYPE_STRING) {
 		int max_size = IDL_INTEGER(

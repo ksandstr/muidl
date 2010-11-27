@@ -376,10 +376,10 @@ void build_msg_decoder(
 			 * build_read_ipc_parameter(), where passing NULL in seq_args[]
 			 * here causes the parameter decoding function to allocate local
 			 * storage. push this part into the build_decode_inline_sequence().
+			 *
+			 * TODO: this comment is really confusing.
 			 */
-			seq_args[0] = build_local_storage(ctx,
-				llvm_rigid_type(ctx, seq->X.seq.elem_type),
-				CONST_INT(seq->X.seq.max_elems), "inlseq.mem");
+			seq_args[0] = build_seq_param_storage(ctx, seq->type, "inlseq.mem");
 			seq_args[1] = build_local_storage(ctx, ctx->i32t,
 				NULL, "inlseq.len.ptr");
 		}

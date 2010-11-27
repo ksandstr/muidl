@@ -484,6 +484,12 @@ extern LLVMValueRef build_malloc_storage(
 	LLVMValueRef count,
 	const char *name);
 
+/* selects between stack and heap depending on size. */
+extern LLVMValueRef build_seq_param_storage(
+	struct llvm_ctx *ctx,
+	IDL_tree ptyp,
+	const char *name);
+
 
 /* from analyse.c */
 

@@ -28,6 +28,7 @@
 #include <llvm-c/Core.h>
 
 #include "muidl.h"
+#include "llvmutil.h"
 
 
 static GHashTable *warn_once_hash = NULL;
@@ -211,6 +212,30 @@ LLVMValueRef build_malloc_storage(
 	LLVMDisposeBuilder(b);
 	ctx->malloc_ptrs = g_list_prepend(ctx->malloc_ptrs, ptr);
 	return ptr;
+}
+
+
+LLVMValueRef build_seq_param_storage(
+	struct llvm_ctx *ctx,
+	IDL_tree ptyp,
+	const char *name)
+{
+	IDL_tree seqtype = get_type_spec(
+		IDL_TYPE_SEQUENCE(ptyp).simple_type_spec);
+	int max_size = IDL_INTEGER(
+		IDL_TYPE_SEQUENCE(ptyp).positive_int_const).value;
+
+	/* use stack allocation only for buffers smaller than 256 bytes */
+	uint64_t max_bytes = (uint64_t)max_size * (size_in_bits(seqtype) / 8);
+	T typ = llvm_value_type(ctx, seqtype);
+	V sz = CONST_INT(max_size);
+	if(max_bytes >= 256) {
+		return build_malloc_storage(ctx, typ, sz,
+			tmp_f(ctx->pr, "%s.heap", name));
+	} else {
+		return build_local_storage(ctx, typ, sz,
+			tmp_f(ctx->pr, "%s.stk", name));
+	}
 }
 
 
