@@ -223,7 +223,7 @@ LLVMValueRef build_msg_encoder(
 	}
 
 	/* inline sequences */
-	ctx->inline_seq_pos = CONST_INT(msg->tag_u + 1);
+	V u_pos = CONST_INT(msg->tag_u + 1);	/* where the next word goes. */
 	GLIST_FOREACH(cur, msg->seq) {
 		const struct msg_param *seq = cur->data;
 		V num_items = args[seq->arg_ix + 1];
@@ -231,13 +231,13 @@ LLVMValueRef build_msg_encoder(
 			num_items = LLVMBuildLoad(ctx->builder, num_items,
 				"seq.num.items");
 		}
-		ctx->inline_seq_pos = build_encode_inline_sequence(ctx,
-			args[seq->arg_ix], num_items, seq,
-			ctx->inline_seq_pos, g_list_next(cur) == NULL);
+		u_pos = build_encode_inline_sequence(ctx,
+			args[seq->arg_ix], num_items, seq, u_pos,
+			g_list_next(cur) == NULL);
 	}
 
 	/* parameters passed with string transfers */
-	V t_pos = ctx->inline_seq_pos;
+	V t_pos = u_pos;
 	GLIST_FOREACH(cur, msg->string) {
 		struct msg_param *t = cur->data;
 		V words[2];
@@ -280,13 +280,11 @@ LLVMValueRef build_msg_encoder(
 	 */
 
 	/* epilogue */
-	/* flags = 0, u = inline_seq_pos - 1, label = 0, t = 0 */
+	/* flags = 0, u = u_pos - 1, label = 0, t = t_pos - u_pos */
 	V label = LLVMBuildShl(ctx->builder, CONST_INT(msg->label),
 		CONST_INT(16), "msg.label"),
-	  u_val = LLVMBuildSub(ctx->builder, ctx->inline_seq_pos,
-				CONST_INT(1), "msg.u"),
-	  t_count = LLVMBuildSub(ctx->builder, t_pos,
-		ctx->inline_seq_pos, "t.count"),
+	  u_val = LLVMBuildSub(ctx->builder, u_pos, CONST_INT(1), "msg.u"),
+	  t_count = LLVMBuildSub(ctx->builder, t_pos, u_pos, "t.count"),
 	  t_val = LLVMBuildShl(ctx->builder, t_count, CONST_INT(6), "msg.t");
 	V tag = LLVMBuildOr(ctx->builder, label,
 				LLVMBuildOr(ctx->builder, u_val, t_val, "msg.ut.or"),
