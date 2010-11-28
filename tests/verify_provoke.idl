@@ -275,4 +275,35 @@ interface ExplicitMRPropertyIfaceLabel
 };
 
 
+interface ExplicitMRParamSize
+{
+	void filler();
+
+/* TEST 140: sub-word parameter with explicit MR
+ * expected: success
+ */
+#if __TEST__ == 140
+	void subword_param([MR(1)] in short and_curly);
+#endif
+
+/* TEST 141: word-size parameter with explicit MR
+ * expected: success
+ */
+#if __TEST__ == 141
+	void word_param([MR(1)] in L4X2::word exact);
+#endif
+
+/* TEST 142: struct parameter with explicit MR
+ * expected: failure
+ */
+#if __TEST__ == 142
+	struct many_words {
+		long what, how, where;
+		short when;
+	};
+	void struct_param([MR(1)] in many_words thing);
+#endif
+};
+
+
 };
