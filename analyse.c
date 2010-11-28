@@ -409,6 +409,7 @@ static int classify_param_list(
 				s->arg_ix = arg_pos;
 				msg->seq = g_list_prepend(msg->seq, s);
 				msg->params = g_list_prepend(msg->params, s);
+				typed_use += 2;
 			}
 		} else {
 			nargs = 1;
@@ -446,42 +447,12 @@ static int classify_param_list(
 }
 
 
-/* turn a parameter list into lists of untyped, inline-sequence and long types.
- * the first have fixed register assignments, inline sequences have register
- * ranges and long types appear in transmission order.
- */
-static struct message_info *build_message(
-	IDL_ns ns,
-	IDL_tree op_dcl,
-	IDL_tree return_type,		/* separate because not IDL_PARAM_DCL */
-	bool has_sublabel,
-	bool is_outhalf)
+static int assign_untyped_params(
+	struct message_info *msg,
+	bool *reg_in_use,
+	int next_u,
+	int typed_use)
 {
-	/* 0'd for g_free() safety */
-	struct message_info *msg = g_new0(struct message_info, 1);
-	msg->ctx_index = -1;
-
-	IDL_tree param_list = IDL_OP_DCL(op_dcl).parameter_dcls;
-	int arg_pos = 0;
-	int typed_use = classify_param_list(msg, param_list, &arg_pos,
-		is_outhalf);
-
-	/* assign untyped words. also figure out how many typed and untyped words
-	 * we're going to use, before inline sequences are allocated.
-	 */
-	bool reg_in_use[64];
-	reg_in_use[0] = true;		/* message tag, always present */
-	for(int i=1; i<64; i++) reg_in_use[i] = false;
-	int next_u = 1;
-	if(has_sublabel) reg_in_use[next_u++] = true;
-	if(return_type != NULL && is_outhalf) {
-		assert(is_rigid_type(return_type));
-		int rt_words = size_in_words(return_type);
-		assert(next_u + rt_words <= 63);
-		for(int i=0; i<rt_words; i++) reg_in_use[next_u + i] = true;
-		next_u += rt_words;
-	}
-
 	/* those with explicit MR(%d) specs, first. */
 	GLIST_FOREACH(cur, msg->untyped) {
 		struct msg_param *u = cur->data;
@@ -545,10 +516,10 @@ static struct message_info *build_message(
 		assert(is_rigid_type(u->type));
 		num_compound--;
 		assert(num_compound >= 0);
-		const int space = 63 - (next_u - 1) - typed_use - (has_sublabel ? 1 : 0),
+		const int space = 63 - (next_u - 1) - typed_use,
 			size = size_in_words(u->type);
 		/* first-fit. */
-		int start = has_sublabel ? 2 : 1;
+		int start = MIN(next_u, 2);
 		while(start + size < space) {
 			int span = 0;
 			while(span < size && start + span < space
@@ -563,8 +534,7 @@ static struct message_info *build_message(
 			/* can't fit. make into a hat. */
 			struct msg_param *l = new_typed(P_STRING, u->name, u->type,
 				u->param_dcl, u->param_ix);
-			l->arg_ix = arg_pos;
-			arg_pos += 2;
+			l->arg_ix = u->arg_ix;
 			/* (msg->string was already reversed.) */
 			msg->string = g_list_append(msg->string, l);
 			g_free(u);
@@ -584,6 +554,49 @@ static struct message_info *build_message(
 	}
 	g_list_free(untyped_remove);
 
+	return next_u;
+}
+
+
+/* turn a parameter list into lists of untyped, inline-sequence and long types.
+ * the first have fixed register assignments, inline sequences have register
+ * ranges and long types appear in transmission order.
+ */
+static struct message_info *build_message(
+	IDL_ns ns,
+	IDL_tree op_dcl,
+	IDL_tree return_type,		/* separate because not IDL_PARAM_DCL */
+	bool has_sublabel,
+	bool is_outhalf)
+{
+	/* 0'd for g_free() safety */
+	struct message_info *msg = g_new0(struct message_info, 1);
+	msg->ctx_index = -1;
+
+	IDL_tree param_list = IDL_OP_DCL(op_dcl).parameter_dcls;
+	int arg_pos = 0;
+	int typed_use = classify_param_list(msg, param_list, &arg_pos,
+		is_outhalf);
+
+	/* build the untyped portion. put the sublabel in MR1 if present, and the
+	 * return value in an out-half after that.
+	 */
+	bool reg_in_use[64];
+	reg_in_use[0] = true;		/* message tag, always present */
+	for(int i=1; i<64; i++) reg_in_use[i] = false;
+	int next_u = 1;
+	if(has_sublabel) reg_in_use[next_u++] = true;
+	if(return_type != NULL && is_outhalf) {
+		assert(is_rigid_type(return_type));
+		int rt_words = size_in_words(return_type);
+		assert(next_u + rt_words <= 63);
+		for(int i=0; i<rt_words; i++) reg_in_use[next_u + i] = true;
+		next_u += rt_words;
+	}
+
+	next_u = assign_untyped_params(msg, reg_in_use, next_u, typed_use);
+
+	/* compute msg->tag_u. */
 	for(msg->tag_u = 63; msg->tag_u > 0; msg->tag_u--) {
 		if(reg_in_use[msg->tag_u]) break;
 	}
