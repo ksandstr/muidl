@@ -522,6 +522,18 @@ extern int size_in_words(IDL_tree type);
  */
 extern int max_size(IDL_tree type);
 
+extern bool op_has_sublabel(IDL_tree op_ident);
+
+/* returns true when a value was assigned, false when not, and exits with a
+ * complaint when the value is malformed.
+ *
+ * TODO: the error handling method could be better, i spose.
+ */
+extern bool get_ul_property(
+	unsigned long *value_p,
+	IDL_tree ident,
+	const char *name);
+
 
 /* from verify.c */
 

@@ -46,16 +46,24 @@ static void fail(struct ver_ctx *v, const char *fmt, ...)
 static void failv(struct ver_ctx *v, const char *fmt, va_list al)
 {
 	char *tmp = g_strdup_vprintf(fmt, al);
-	int len = strlen(tmp);
+	size_t len = strlen(tmp);
 	while(isblank(tmp[len - 1])) {
 		tmp[len - 1] = '\0';
 		len--;
 	}
 	assert(strlen(tmp) == len);
-	fprintf(stderr, "verify: in clause `%s':\n", v->clause_text);
-	fprintf(stderr, "verify:   %s\n", tmp);
-	g_free(tmp);
+	if(v->clause_text != NULL) {
+		fprintf(stderr, "verify: in clause `%s':\n", v->clause_text);
+	}
+	if(len > 0) {
+		fprintf(stderr, "verify: %s%s\n",
+			v->clause_text != NULL ? "  " : "", tmp);
+	}
+	if(v->clause_text == NULL && len == 0) {
+		fprintf(stderr, "verify: failed\n");
+	}
 	v->failed = true;
+	g_free(tmp);
 }
 
 
@@ -313,7 +321,108 @@ static gboolean one_mapping_per_direction(
 }
 
 
-/* true when everything's OK */
+static gboolean explicit_mr_param_size(IDL_tree_func_data *tf, gpointer udptr)
+{
+	struct ver_ctx *v = udptr;
+	switch(IDL_NODE_TYPE(tf->tree)) {
+		case IDLN_MODULE:
+		case IDLN_INTERFACE:
+		case IDLN_LIST:
+			return TRUE;
+
+		default:
+			return FALSE;
+
+		case IDLN_OP_DCL:
+			break;
+	}
+
+	IDL_LIST_FOREACH(cur, IDL_OP_DCL(tf->tree).parameter_dcls) {
+		IDL_tree pdcl = IDL_LIST(cur).data,
+			ident = IDL_PARAM_DCL(pdcl).simple_declarator;
+		if(IDL_tree_property_get(ident, "MR") == NULL) continue;
+
+		IDL_tree ptyp = get_type_spec(IDL_PARAM_DCL(pdcl).param_type_spec);
+		int sz = size_in_words(ptyp);
+		if(sz > 1) {
+			fail(v, "parameter `%s' has type <%s>, encoded as %d words",
+				IDL_IDENT(ident).str, IDL_NODE_TYPE_NAME(ptyp), sz);
+			break;
+		}
+	}
+
+	return FALSE;
+}
+
+
+static gboolean explicit_mr_no_overlap(IDL_tree_func_data *tf, gpointer udptr)
+{
+	struct ver_ctx *v = udptr;
+	switch(IDL_NODE_TYPE(tf->tree)) {
+		case IDLN_MODULE:
+		case IDLN_INTERFACE:
+		case IDLN_LIST:
+			return TRUE;
+
+		default:
+			return FALSE;
+
+		case IDLN_OP_DCL:
+			break;
+	}
+
+	bool reg_in_use[64],
+		has_sub = op_has_sublabel(IDL_OP_DCL(tf->tree).ident);
+	for(int i=0; i<64; i++) reg_in_use[i] = false;
+	reg_in_use[0] = true;		/* tag */
+	if(has_sub) reg_in_use[1] = true;	/* sublabel */
+
+	IDL_LIST_FOREACH(cur, IDL_OP_DCL(tf->tree).parameter_dcls) {
+		IDL_tree pdcl = IDL_LIST(cur).data,
+			ident = IDL_PARAM_DCL(pdcl).simple_declarator;
+		unsigned long mr = 0;
+		if(!get_ul_property(&mr, ident, "MR")) continue;
+		if(mr > 63) {
+			fail(v, "explicit MR%lu spec is out of range", mr);
+			break;
+		}
+		if(mr == 1 && has_sub) {
+			fail(v, "can't specify MR1 in IfaceLabel interface");
+			break;
+		}
+		if(mr == 0) {
+			fail(v, "can't reassign MR0 (the message tag register)");
+			break;
+		}
+		if(reg_in_use[mr]) {
+			fail(v, "property specifies unavailable MR%lu for parameter `%s'",
+				mr, IDL_IDENT(ident).str);
+#if 0
+/* spared from analyse.c . TODO: make this work in some useful way, i.e.
+ * prettyprinting of tl;dr in verify fail messages
+ */
+			if(return_type != NULL || has_sublabel) {
+				fprintf(stderr, "\t(this operation has");
+				if(return_type != NULL) fprintf(stderr, " a return type");
+				if(return_type != NULL && has_sublabel) {
+					fprintf(stderr, " and");
+				}
+				if(has_sublabel) fprintf(stderr, " a sublabel");
+				fprintf(stderr, ", occupying the first %d registers.)\n",
+					(has_sublabel ? 1 : 0) + (return_type == NULL ? 0
+						: size_in_words(return_type)));
+			}
+#endif
+			break;
+		}
+		reg_in_use[mr] = true;
+	}
+
+	return FALSE;
+}
+
+
+/* returns true when everything's OK */
 bool verify_idl_input(IDL_ns ns, IDL_tree tree)
 {
 	static const struct {
@@ -328,6 +437,11 @@ bool verify_idl_input(IDL_ns ns, IDL_tree tree)
 		  "oneway methods cannot have a StubRecvTimeout or StubTimeout attribute" },
 		{ &one_mapping_per_direction,
 		  "at most one mapping per message (op direction)" },
+
+		/* explicit MR attribute specs */
+		{ &explicit_mr_param_size,
+		  "`MR(n)' attributes can only apply to word-size and smaller parameters" },
+		{ &explicit_mr_no_overlap, NULL }
 	};
 
 	struct ver_ctx v = { .ns = ns, .tree = tree, .failed = false };

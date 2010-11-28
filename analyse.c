@@ -36,10 +36,7 @@ static int array_size_in_words(IDL_tree type_array, IDL_tree dcl);
 static int struct_size_in_words(IDL_tree type_struct);
 
 
-/* returns true when a value was assigned, false when not, and exits with a
- * complaint when the value is malformed.
- */
-static bool get_ul_property(
+bool get_ul_property(
 	unsigned long *value_p,
 	IDL_tree ident,
 	const char *name)
@@ -59,7 +56,7 @@ static bool get_ul_property(
 }
 
 
-static bool op_has_sublabel(IDL_tree prop_node)
+bool op_has_sublabel(IDL_tree prop_node)
 {
 	IDL_tree iface = IDL_get_parent_node(prop_node, IDLN_INTERFACE, NULL);
 	/* exceptions, among other things, can appear outside interfaces.
@@ -491,40 +488,11 @@ static struct message_info *build_message(
 		IDL_tree ident = IDL_PARAM_DCL(u->param_dcl).simple_declarator;
 		unsigned long mr_n = 0;
 		u->X.untyped.reg_manual = get_ul_property(&mr_n, ident, "MR");
-		if(mr_n == 0) continue;
-		/* TODO: move these three conditions into verify.c */
-		if(size_in_words(u->type) > 1) {
-			fprintf(stderr, "%s: mr spec attribute not valid for <%s> (size %d words)\n",
-				__func__, IDL_NODE_TYPE_NAME(u->type), size_in_words(u->type));
-			goto fail;
+		if(u->X.untyped.reg_manual) {
+			reg_in_use[mr_n] = true;
+			u->X.untyped.first_reg = mr_n;
+			u->X.untyped.last_reg = mr_n;
 		}
-		if(mr_n > 63) {
-			fprintf(stderr, "%s: MR(%lu) too large\n", __FUNCTION__, mr_n);
-			goto fail;
-		}
-		if(mr_n == 1 && has_sublabel) {
-			fprintf(stderr, "%s: can't specify MR(1) with sublabel\n",
-				__func__);
-			goto fail;
-		}
-		if(reg_in_use[mr_n]) {
-			fprintf(stderr, "%s: MR%lu already in use\n", __func__, mr_n);
-			if(return_type != NULL || has_sublabel) {
-				fprintf(stderr, "\t(this operation has");
-				if(return_type != NULL) fprintf(stderr, " a return type");
-				if(return_type != NULL && has_sublabel) {
-					fprintf(stderr, " and");
-				}
-				if(has_sublabel) fprintf(stderr, " a sublabel");
-				fprintf(stderr, ", occupying the first %d registers.)\n",
-					(has_sublabel ? 1 : 0) + (return_type == NULL ? 0
-						: size_in_words(return_type)));
-			}
-			goto fail;
-		}
-		reg_in_use[mr_n] = true;
-		u->X.untyped.first_reg = mr_n;
-		u->X.untyped.last_reg = mr_n;
 	}
 	/* then the non-compound types (since there is no alternative encoding for
 	 * them)
@@ -627,10 +595,6 @@ static struct message_info *build_message(
 				&& !is_real_nre_return_type(return_type)));
 
 	return msg;
-
-fail:
-	free_message_info(msg);
-	return NULL;
 }
 
 
@@ -786,7 +750,6 @@ struct method_info *analyse_op_dcl(IDL_ns ns, IDL_tree method)
 	/* build the request. */
 	inf->request = build_message(ns, method, return_type,
 		op_has_sublabel(method), false);
-	if(inf->request == NULL) goto fail;
 	inf->request->node = method;
 	if(!get_msg_label(inf->request, IDL_OP_DCL(method).ident)) {
 		IDL_tree iface = IDL_get_parent_node(method, IDLN_INTERFACE, NULL);
