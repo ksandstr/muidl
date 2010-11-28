@@ -374,22 +374,19 @@ static struct message_info *build_message(
 	bool has_sublabel,
 	bool is_outhalf)
 {
-	struct message_info *inf = NULL;
-	/* of <struct msg_param *>, freed by "params" */
-	GList *params = NULL, *untyped = NULL, *seq = NULL, *string = NULL,
-		*mapped = NULL;
+	/* 0'd for g_free() safety */
+	struct message_info *msg = g_new0(struct message_info, 1);
+	msg->ctx_index = -1;
 
 	IDL_tree param_list = IDL_OP_DCL(op_dcl).parameter_dcls;
 
 	/* classify parameters and construct msg_param structures for them. also
-	 * compute how much space typed parameters' encodings take up in the worst
-	 * case, so that inline sequences can be assigned or rejected accordingly.
+	 * compute how many registers it will take to encode typed items if none of
+	 * them are inlined, so that inline sequences can be assigned or rejected
+	 * accordingly.
 	 */
 	int arg_pos = 0, param_ix = 0, typed_use = 0;
-	for(IDL_tree cur = param_list;
-		cur != NULL;
-		cur = IDL_LIST(cur).next, param_ix++)
-	{
+	IDL_LIST_FOREACH(cur, param_list) {
 		IDL_tree p = IDL_LIST(cur).data,
 			type = get_type_spec(IDL_PARAM_DCL(p).param_type_spec),
 			ident = IDL_PARAM_DCL(p).simple_declarator;
@@ -408,8 +405,8 @@ static struct message_info *build_message(
 				/* this may include overlong items. */
 				struct msg_param *u = new_untyped(name, type, p, param_ix);
 				u->arg_ix = arg_pos;
-				untyped = g_list_prepend(untyped, u);
-				params = g_list_prepend(params, u);
+				msg->untyped = g_list_prepend(msg->untyped, u);
+				msg->params = g_list_prepend(msg->params, u);
 			}
 		} else if(is_bounded_seq(type)) {
 			nargs = 2;
@@ -421,8 +418,8 @@ static struct message_info *build_message(
 				struct msg_param *s = new_inline_seq(name, type, subtype, p,
 					param_ix);
 				s->arg_ix = arg_pos;
-				seq = g_list_prepend(seq, s);
-				params = g_list_prepend(params, s);
+				msg->seq = g_list_prepend(msg->seq, s);
+				msg->params = g_list_prepend(msg->params, s);
 			}
 		} else {
 			nargs = 1;
@@ -431,9 +428,9 @@ static struct message_info *build_message(
 				struct msg_param *l = new_typed(is_mapped ? P_MAPPED : P_STRING,
 					name, type, p, param_ix);
 				l->arg_ix = arg_pos;
-				if(is_mapped) mapped = g_list_prepend(mapped, l);
-				else string = g_list_prepend(string, l);
-				params = g_list_prepend(params, l);
+				GList **t_list = is_mapped ? &msg->mapped : &msg->string;
+				*t_list = g_list_prepend(*t_list, l);
+				msg->params = g_list_prepend(msg->params, l);
 				if(IS_MAPGRANT_TYPE(type) && has_map_property(ident)) {
 					assert(is_mapped);
 					typed_use += 2;		/* a single map/grant item */
@@ -447,12 +444,13 @@ static struct message_info *build_message(
 			}
 		}
 		arg_pos += nargs;
+		param_ix++;
 	}
-	untyped = g_list_reverse(untyped);
-	seq = g_list_reverse(seq);
-	mapped = g_list_reverse(mapped);
-	string = g_list_reverse(string);
-	params = g_list_reverse(params);
+	msg->untyped = g_list_reverse(msg->untyped);
+	msg->seq = g_list_reverse(msg->seq);
+	msg->mapped = g_list_reverse(msg->mapped);
+	msg->string = g_list_reverse(msg->string);
+	msg->params = g_list_reverse(msg->params);
 
 	/* assign untyped words. also figure out how many typed and untyped words
 	 * we're going to use, before inline sequences are allocated.
@@ -471,7 +469,7 @@ static struct message_info *build_message(
 	}
 
 	/* those with explicit MR(%d) specs, first. */
-	GLIST_FOREACH(cur, untyped) {
+	GLIST_FOREACH(cur, msg->untyped) {
 		struct msg_param *u = cur->data;
 		IDL_tree ident = IDL_PARAM_DCL(u->param_dcl).simple_declarator;
 		unsigned long mr_n = 0;
@@ -515,7 +513,7 @@ static struct message_info *build_message(
 	 * them)
 	 */
 	int num_compound = 0;
-	GLIST_FOREACH(cur, untyped) {
+	GLIST_FOREACH(cur, msg->untyped) {
 		struct msg_param *u = cur->data;
 		if(u->X.untyped.reg_manual) continue;
 		if(!is_value_type(u->type)) {
@@ -550,16 +548,13 @@ static struct message_info *build_message(
 			reg_in_use[i] = true;
 		}
 	}
+
 	/* finally those parameters of compound type that we can squeeze in. this
 	 * algorithm is simple for repeatability's sake; a solution to the knapsack
 	 * problem would have to be proven optimal to fit as well. (v2 todo?)
 	 */
-	inf = g_new0(struct message_info, 1);		/* 0'd for g_free() safety */
-	inf->ctx_index = -1;
-	inf->params = params;
-
 	GList *untyped_remove = NULL;
-	GLIST_FOREACH(cur, untyped) {
+	GLIST_FOREACH(cur, msg->untyped) {
 		struct msg_param *u = cur->data;
 		if(u->X.untyped.reg_manual || is_value_type(u->type)) continue;
 		assert(is_rigid_type(u->type));
@@ -585,7 +580,8 @@ static struct message_info *build_message(
 				u->param_dcl, u->param_ix);
 			l->arg_ix = arg_pos;
 			arg_pos += 2;
-			string = g_list_append(string, l);	/* already reversed. */
+			/* (msg->string was already reversed.) */
+			msg->string = g_list_append(msg->string, l);
 			g_free(u);
 			untyped_remove = g_list_prepend(untyped_remove, cur);
 		} else {
@@ -599,30 +595,24 @@ static struct message_info *build_message(
 		}
 	}
 	GLIST_FOREACH(c, untyped_remove) {
-		untyped = g_list_delete_link(untyped, c->data);
+		msg->untyped = g_list_delete_link(msg->untyped, c->data);
 	}
-	if(untyped_remove != NULL) g_list_free(untyped_remove);
+	g_list_free(untyped_remove);
 
-	inf->untyped = untyped;
-	inf->seq = seq;
-	inf->mapped = mapped;
-	inf->string = string;
-
-	inf->tag_u = 0;
-	for(int i = 1; i < 64; i++) {
-		if(reg_in_use[i]) inf->tag_u = i;
+	for(msg->tag_u = 63; msg->tag_u > 0; msg->tag_u--) {
+		if(reg_in_use[msg->tag_u]) break;
 	}
 
-	inf->ret_type = is_outhalf ? return_type : NULL;
-	inf->ret_by_ref = return_type != NULL
+	msg->ret_type = is_outhalf ? return_type : NULL;
+	msg->ret_by_ref = return_type != NULL
 		&& (!is_value_type(return_type)
 			|| (find_exn(op_dcl, &is_negs_exn) != NULL
 				&& !is_real_nre_return_type(return_type)));
 
-	return inf;
+	return msg;
 
 fail:
-	free_message_info(inf);
+	free_message_info(msg);
 	return NULL;
 }
 
