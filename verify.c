@@ -380,10 +380,11 @@ static gboolean explicit_mr_no_overlap(IDL_tree_func_data *tf, gpointer udptr)
 	IDL_LIST_FOREACH(cur, IDL_OP_DCL(tf->tree).parameter_dcls) {
 		IDL_tree pdcl = IDL_LIST(cur).data,
 			ident = IDL_PARAM_DCL(pdcl).simple_declarator;
-		unsigned long mr = 0;
-		if(!get_ul_property(&mr, ident, "MR")) continue;
-		if(mr > 63) {
-			fail(v, "explicit MR%lu spec is out of range", mr);
+		unsigned long mrval = 0;
+		if(!get_ul_property(&mrval, ident, "MR")) continue;
+		long mr = (long)mrval;
+		if(mr < 0 || mr > 63) {
+			fail(v, "explicit MR%ld spec is out of range", mr);
 			break;
 		}
 		if(mr == 1 && has_sub) {
