@@ -196,7 +196,7 @@ sub run_tests {
 		} elsif($t->{expect} =~ /^abort/ && $signum == $signo{ABRT}) {
 			# abort case, i.e. exited with SIGABRT
 			pass($testname);
-		} elsif($t->{expect} =~ /^succe/ && $retcode == 0) {
+		} elsif($t->{expect} =~ /^succe/ && $signum == 0 && $retcode == 0) {
 			# success (ignore survivor guilt)
 			pass($testname);
 		} else {
