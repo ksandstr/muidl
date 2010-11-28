@@ -363,29 +363,21 @@ static bool is_bounded_seq(IDL_tree type)
 }
 
 
-/* turn a parameter list into lists of untyped, inline-sequence and long types.
- * the first have fixed register assignments, inline sequences have register
- * ranges and long types appear in transmission order.
+/* classifies parameters and constructs msg_param structures for them.
+ *
+ * also computes how many message registers it will take to encode typed items
+ * if none of them are inlined, so that inline sequences can be assigned or
+ * rejected accordingly in evict_long_sequences() or something like that.
+ * return value is the maximum number of MRs taken up by string-encoded params
+ * in this message.
  */
-static struct message_info *build_message(
-	IDL_ns ns,
-	IDL_tree op_dcl,
-	IDL_tree return_type,		/* separate because not IDL_PARAM_DCL */
-	bool has_sublabel,
+static int classify_param_list(
+	struct message_info *msg,
+	IDL_tree param_list,
+	int *arg_pos_p,
 	bool is_outhalf)
 {
-	/* 0'd for g_free() safety */
-	struct message_info *msg = g_new0(struct message_info, 1);
-	msg->ctx_index = -1;
-
-	IDL_tree param_list = IDL_OP_DCL(op_dcl).parameter_dcls;
-
-	/* classify parameters and construct msg_param structures for them. also
-	 * compute how many registers it will take to encode typed items if none of
-	 * them are inlined, so that inline sequences can be assigned or rejected
-	 * accordingly.
-	 */
-	int arg_pos = 0, param_ix = 0, typed_use = 0;
+	int arg_pos = *arg_pos_p, param_ix = 0, typed_use = 0;
 	IDL_LIST_FOREACH(cur, param_list) {
 		IDL_tree p = IDL_LIST(cur).data,
 			type = get_type_spec(IDL_PARAM_DCL(p).param_type_spec),
@@ -451,6 +443,31 @@ static struct message_info *build_message(
 	msg->mapped = g_list_reverse(msg->mapped);
 	msg->string = g_list_reverse(msg->string);
 	msg->params = g_list_reverse(msg->params);
+
+	*arg_pos_p = arg_pos;
+	return typed_use;
+}
+
+
+/* turn a parameter list into lists of untyped, inline-sequence and long types.
+ * the first have fixed register assignments, inline sequences have register
+ * ranges and long types appear in transmission order.
+ */
+static struct message_info *build_message(
+	IDL_ns ns,
+	IDL_tree op_dcl,
+	IDL_tree return_type,		/* separate because not IDL_PARAM_DCL */
+	bool has_sublabel,
+	bool is_outhalf)
+{
+	/* 0'd for g_free() safety */
+	struct message_info *msg = g_new0(struct message_info, 1);
+	msg->ctx_index = -1;
+
+	IDL_tree param_list = IDL_OP_DCL(op_dcl).parameter_dcls;
+	int arg_pos = 0;
+	int typed_use = classify_param_list(msg, param_list, &arg_pos,
+		is_outhalf);
 
 	/* assign untyped words. also figure out how many typed and untyped words
 	 * we're going to use, before inline sequences are allocated.
