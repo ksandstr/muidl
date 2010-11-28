@@ -33,7 +33,7 @@ distclean: clean
 
 
 check:
-	./autotest.pl $(AUTOTEST_FILES)
+	tests/run_all.pl
 	+make output-clean
 
 

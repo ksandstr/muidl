@@ -4,6 +4,8 @@ use feature "switch";	# from 5.10 on
 
 use File::Temp qw/tempfile tempdir/;
 use Fcntl qw/SEEK_SET/;
+use Test::More;
+
 
 # get signal names for ease of programming.
 use Config;
@@ -76,8 +78,7 @@ sub parse_tests {
 				}
 				default {
 					if($t{id} && !($_ =~ /^\s+$/)) {
-						# TODO: use something else to print warnings
-						print STDERR "warning: `$_' line in test spec ignored\n"
+						diag("warning: `$_' line in test spec ignored");
 					}
 				}
 			}
@@ -138,7 +139,7 @@ sub fancy_system {
 }
 
 
-sub autotest {
+sub read_test_input {
 	my $filename = shift;
 	open(FILE, "< $filename")
 		or die "can't open `$filename' for reading: $!";
@@ -153,16 +154,27 @@ sub autotest {
 			last;
 		}
 	}
-	if(!$hdr) { die "no AUTOTEST comment found" }
+	die "no AUTOTEST comment found" unless $hdr;
 	$hdr =~ s/%n/$filename/eg;
-	print STDERR "command template is `$hdr'\n";
+	note("command template for `$filename' is: $hdr");
 
-	my $tests = parse_tests(get_comment_sections(\@lines));
+	return ($hdr, parse_tests(get_comment_sections(\@lines)));
+}
+
+
+sub run_tests {
+	my $hdr = shift;
+	my $tests = shift;
+	my $filename = shift;
+
 	foreach(@$tests) {
 		my $t = $_;
+		my $test_id = "$filename:$t->{lineno}" . '[' . $t->{id} . ']';
+		my $testname = $t->{desc};
+		$testname .= " <ex: $t->{expect}>" if $t->{expect} !~ /^succe/;
 		my $cmd = $hdr;
 		$cmd =~ s/%t/$t->{id}/eg;
-		print STDERR "running `$cmd' for lineno $t->{lineno}\n";
+		note("running `$cmd' lineno $t->{lineno}");
 		my $res = fancy_system($cmd);
 		my $status = $res->{status};
 		die "Can't execute `$cmd': $!" if $status == -1;
@@ -180,24 +192,26 @@ sub autotest {
 		if($t->{expect} =~ /^fail/ && $signum == 0 && $retcode != 0) {
 			# "failure", "failed" etc -- ordinary exit with non-zero return code
 			# indicating test failure. so the expect clause succeeds.
+			pass($testname);
 		} elsif($t->{expect} =~ /^abort/ && $signum == $signo{ABRT}) {
 			# abort case, i.e. exited with SIGABRT
+			pass($testname);
 		} elsif($t->{expect} =~ /^succe/ && $retcode == 0) {
 			# success (ignore survivor guilt)
+			pass($testname);
 		} else {
-			# TODO: report somewhere more proper
-			print STDERR "Test ID $t->{id} failed: expected `$t->{expect}',"
-				. " but return code is $retcode";
+			diag("$test_id failed: expected `$t->{expect}',"
+				. " but retval is $retcode");
 			if($signum > 0) {
-				print STDERR ", exit signal $signum ($signame[$signum])";
+				diag("  exit signal $signum ($signame[$signum])");
 			}
-			print "\n";
 			if($res->{stdout}) {
-				print STDERR "stdout follows:\n$res->{stdout}\n";
+				diag("stdout follows:\n$res->{stdout}");
 			}
 			if($res->{stderr}) {
-				print STDERR "stderr follows:\n$res->{stderr}\n";
+				diag("stderr follows:\n$res->{stderr}");
 			}
+			fail($testname);
 		}
 	}
 
@@ -206,14 +220,19 @@ sub autotest {
 
 
 my $status = 0;
+my @pairs = ();
 foreach(@ARGV) {
-	my $fn = $_;
-	eval {
-		autotest $_;
-	};
-	if($@) {
-		print STDERR "error: $@";
-		$status = 1;
-	}
+	my @t = read_test_input($_);
+	push @t, $_;	# add filename.
+	push @pairs, \@t;
 }
-exit $status;
+my $plan_total = 0;
+foreach(@pairs) {
+	$plan_total += @{$_->[1]};
+}
+
+# the real test starts from here.
+plan tests => $plan_total;
+foreach(@pairs) {
+	run_tests(@$_);
+}
