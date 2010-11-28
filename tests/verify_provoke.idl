@@ -35,7 +35,6 @@ module MuidlVerifyProvoke
 
 interface AutoTestCases
 {
-
 /* TEST 0: succeed
  * expected: success
  */
@@ -221,5 +220,59 @@ interface AutoTestCases
 #endif
 
 };
+
+
+interface ExplicitMRPropertyNoIfaceLabel
+{
+	void filler();
+
+/* TEST 100: explicit MR spec over the tag register
+ * expected: failure
+ */
+#if __TEST__ == 100
+	void ex_mrspec_over_tag(
+		[MR(0)] in long something);
+#endif
+
+/* TEST 101: explicit mr spec over another
+ * expected: failure
+ */
+#if __TEST__ == 101
+	void ex_mrspec_over_self(
+		[MR(1)] in long something,
+		[MR(2)] in short whatever,
+		[MR(1)] in octet corn_flakes_zor);
+#endif
+
+/* TEST 102: explicit mr spec out of range (positive)
+ * expected: failure
+ */
+#if __TEST__ == 102
+	void ex_mrspec_range_pos([MR(64)] in long somewhat);
+#endif
+
+/* TEST 103: explicit mr spec out of range (negative)
+ * expected: failure
+ */
+#if __TEST__ == 103
+	void ex_mrspec_range_neg([MR(-2)] in long somewhat);
+#endif
+
+};
+
+
+[IfaceLabel(0xc0de)]
+interface ExplicitMRPropertyIfaceLabel
+{
+	void filler();
+
+/* TEST 120: explicit mr spec over the sublabel
+ * expected: failure
+ */
+#if __TEST__ == 120
+	void ex_mrspec_over_sublabel([MR(1)] in long teh_teh);
+#endif
+};
+
 
 };
