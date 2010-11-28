@@ -35,6 +35,7 @@ struct ver_ctx
 	IDL_ns ns;
 	IDL_tree tree;
 	bool failed;
+	const char *clause_text;
 };
 
 
@@ -51,7 +52,8 @@ static void failv(struct ver_ctx *v, const char *fmt, va_list al)
 		len--;
 	}
 	assert(strlen(tmp) == len);
-	fprintf(stderr, "%s\n", tmp);
+	fprintf(stderr, "verify: in clause `%s':\n", v->clause_text);
+	fprintf(stderr, "verify:   %s\n", tmp);
 	g_free(tmp);
 	v->failed = true;
 }
@@ -314,31 +316,26 @@ static gboolean one_mapping_per_direction(
 /* true when everything's OK */
 bool verify_idl_input(IDL_ns ns, IDL_tree tree)
 {
+	static const struct {
+		IDL_tree_func fn;
+		const char *name;
+	} clauses[] = {
+		{ &no_reserved_idents,
+		  "no identifiers which are C reserved words in lowercase" },
+		{ &supported_types_only,
+		  "only supported forms of IDL types (no references or unbounded types)" },
+		{ &no_recv_timeout_in_oneway,
+		  "oneway methods cannot have a StubRecvTimeout or StubTimeout attribute" },
+		{ &one_mapping_per_direction,
+		  "at most one mapping per message (op direction)" },
+	};
+
 	struct ver_ctx v = { .ns = ns, .tree = tree, .failed = false };
-
-	/* can't have identifiers which, when changed to lower case, are reserved
-	 * words in C.
-	 */
-	IDL_tree_walk_in_order(tree, &no_reserved_idents, &v);
-	if(v.failed) return false;
-
-	/* fail on invalid types (unbounded sequences, unbounded strings,
-	 * multidimensional arrays, unions, any types, and references)
-	 */
-	IDL_tree_walk_in_order(tree, &supported_types_only, &v);
-	if(v.failed) return false;
-
-	/* fail when an oneway opdcl has the StubRecvTimeout or StubTimeouts
-	 * attribute.
-	 */
-	IDL_tree_walk_in_order(tree, &no_recv_timeout_in_oneway, &v);
-	if(v.failed) return false;
-
-	/* fail when an op declaration has more than a single mapping transfer per
-	 * direction.
-	 */
-	IDL_tree_walk_in_order(tree, &one_mapping_per_direction, &v);
-	if(v.failed) return false;
+	for(int i=0; i < G_N_ELEMENTS(clauses); i++) {
+		v.clause_text = clauses[i].name;
+		IDL_tree_walk_in_order(tree, clauses[i].fn, &v);
+		if(v.failed) return false;
+	}
 
 	/* succeed */
 	return true;
