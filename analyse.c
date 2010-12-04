@@ -558,6 +558,42 @@ static int assign_untyped_params(
 }
 
 
+/* this algorithm is equivalent to first-fit. better algorithms, and inline
+ * sequence hint properties, could be used for other results.
+ */
+static void assign_seq_params(
+	struct message_info *msg,
+	bool *reg_in_use,
+	int next_u,
+	int *typed_use_p)
+{
+	GList *seq_remove = NULL; /* links in msg->seq that didn't make the cut */
+	/* 64 regs, minus current use, minus typed use less two for not encoding
+	 * the current sequence as a string transfer)
+	 */
+	int room = 64 - next_u - (*typed_use_p - 2);
+	GLIST_FOREACH(cur, msg->seq) {
+		struct msg_param *seq = cur->data;
+		assert(seq->kind == P_SEQ);
+		if(seq->X.seq.max_words <= room) {
+			/* fits. adjust for non-string transfer also. */
+			room = room - seq->X.seq.max_words + 2;
+		} else {
+			/* doesn't fit. */
+			seq_remove = g_list_prepend(seq_remove, cur);
+		}
+	}
+	GLIST_FOREACH(rem, seq_remove) {
+		GList *val = rem->data;
+		struct msg_param *p = val->data;
+		msg->seq = g_list_delete_link(msg->seq, val);
+		p->kind = P_STRING;
+		msg->string = g_list_prepend(msg->string, p);
+	}
+	g_list_free(seq_remove);
+}
+
+
 /* turn a parameter list into lists of untyped, inline-sequence and long types.
  * the first have fixed register assignments, inline sequences have register
  * ranges and long types appear in transmission order.
@@ -595,6 +631,7 @@ static struct message_info *build_message(
 	}
 
 	next_u = assign_untyped_params(msg, reg_in_use, next_u, typed_use);
+	assign_seq_params(msg, reg_in_use, next_u, &typed_use);
 
 	/* compute msg->tag_u. */
 	for(msg->tag_u = 63; msg->tag_u > 0; msg->tag_u--) {
