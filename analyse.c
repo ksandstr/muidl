@@ -197,9 +197,6 @@ static int struct_size_in_words(IDL_tree type)
 		abort();
 	}
 
-	fprintf(stderr, "%s: total size of `%s' is %d words (%d bits).\n",
-		__func__, IDL_IDENT(IDL_TYPE_STRUCT(type).ident).repo_id,
-		fmt->num_words, fmt->num_bits);
 	return fmt->num_words;
 }
 
