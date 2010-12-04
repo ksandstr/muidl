@@ -91,7 +91,6 @@ uint32_t exn_hash(IDL_tree exn)
 		str->len > 0 ? " " : "",
 		IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL(exn).ident), words_total);
 	uint32_t ret = djb2_hash(str->str);
-	printf("`%s' hashes to %#lx\n", str->str, (unsigned long)ret);
 	g_string_free(str, TRUE);
 	return ret;
 }
