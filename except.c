@@ -30,23 +30,6 @@
 #include "l4x2.h"
 
 
-/* FIXME: this should go in util.c . */
-static uint32_t djb2_hash(const char *key)
-{
-	/* djb2 (k=33).
-	 * from http://www.cse.yorku.ca/~oz/hash.html
-	 */
-	uint32_t hash = 5381;
-	const uint8_t *s = (const uint8_t *)key;
-	int len = strlen(key);
-	for(int i=0; i<len; i++) {
-		hash = (hash << 5) + hash + s[i];
-	}
-	return hash;
-}
-
-
-/* this is expensive. */
 uint32_t exn_hash(IDL_tree exn)
 {
 	GString *str = g_string_sized_new(256);

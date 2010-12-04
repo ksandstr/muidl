@@ -291,3 +291,18 @@ struct member_item *expand_member_list(IDL_tree list)
 	g_array_append_val(items, term);
 	return (struct member_item *)g_array_free(items, FALSE);
 }
+
+
+uint32_t djb2_hash(const char *key)
+{
+	/* djb2 (k=33).
+	 * from http://www.cse.yorku.ca/~oz/hash.html
+	 */
+	uint32_t hash = 5381;
+	const uint8_t *s = (const uint8_t *)key;
+	int len = strlen(key);
+	for(int i=0; i<len; i++) {
+		hash = (hash << 5) + hash + s[i];
+	}
+	return hash;
+}
