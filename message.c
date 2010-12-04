@@ -245,10 +245,18 @@ LLVMValueRef build_msg_encoder(
 			V ptr = args[t->arg_ix];
 			V len = LLVMBuildCall(ctx->builder, get_strlen_fn(ctx),
 				&ptr, 1, tmp_f(ctx->pr, "strlen.%s", t->name));
-			build_simple_string_item(ctx, words, args[t->arg_ix], len,
-				NULL);
+			build_simple_string_item(ctx, words, ptr, len, NULL);
+		} else if(IDL_NODE_TYPE(t->type) == IDLN_TYPE_SEQUENCE) {
+			IDL_tree subtype = get_type_spec(
+				IDL_TYPE_SEQUENCE(t->type).simple_type_spec);
+			T styp = llvm_rigid_type(ctx, subtype);
+			V ptr = args[t->arg_ix];
+			V len = LLVMBuildMul(ctx->builder,
+				WORD(LLVMSizeOf(styp)), WORD(args[t->arg_ix + 1]),
+				tmp_f(ctx->pr, "bytelen.%s", t->name));
+			build_simple_string_item(ctx, words, ptr, len, NULL);
 		} else {
-			/* TODO: sequences, structs, unions, arrays, wide strings */
+			/* TODO: structs, unions, arrays, wide strings */
 			NOTDEFINED(t->type);
 		}
 		t_pos = build_store_mrs(ctx, t_pos, words, 2);
