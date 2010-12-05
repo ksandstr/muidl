@@ -240,17 +240,14 @@ LLVMValueRef build_msg_encoder(
 	V t_pos = u_pos;
 	GLIST_FOREACH(cur, msg->string) {
 		struct msg_param *t = cur->data;
-		V words[2];
+		V ptr = args[t->arg_ix], len = NULL, si_flags = NULL;
 		if(IDL_NODE_TYPE(t->type) == IDLN_TYPE_STRING) {
-			V ptr = args[t->arg_ix];
-			V len = LLVMBuildCall(ctx->builder, get_strlen_fn(ctx),
+			len = LLVMBuildCall(ctx->builder, get_strlen_fn(ctx),
 				&ptr, 1, tmp_f(ctx->pr, "%s.strlen", t->name));
-			build_simple_string_item(ctx, words, ptr, len, NULL);
 		} else if(IDL_NODE_TYPE(t->type) == IDLN_TYPE_SEQUENCE) {
 			IDL_tree subtype = get_type_spec(
 				IDL_TYPE_SEQUENCE(t->type).simple_type_spec);
 			T styp = llvm_rigid_type(ctx, subtype);
-			V ptr = args[t->arg_ix];
 			V elemlen;
 			if(is_out_half) {
 				elemlen = LLVMBuildLoad(ctx->builder, args[t->arg_ix + 1],
@@ -258,14 +255,15 @@ LLVMValueRef build_msg_encoder(
 			} else {
 				elemlen = args[t->arg_ix + 1];
 			}
-			V len = LLVMBuildMul(ctx->builder,
+			len = LLVMBuildMul(ctx->builder,
 				WORD(LLVMSizeOf(styp)), WORD(elemlen),
 				tmp_f(ctx->pr, "%s.bytelen", t->name));
-			build_simple_string_item(ctx, words, ptr, len, NULL);
 		} else {
 			/* TODO: structs, unions, arrays, wide strings */
 			NOTDEFINED(t->type);
 		}
+		V words[2];
+		build_simple_string_item(ctx, words, ptr, len, si_flags);
 		t_pos = build_store_mrs(ctx, t_pos, words, 2);
 	}
 
