@@ -257,9 +257,10 @@ int max_size(IDL_tree type)
 	if(is_value_type(type)) return (size_in_bits(type) + 7) / 8;
 	switch(IDL_NODE_TYPE(type)) {
 		case IDLN_TYPE_SEQUENCE: {
+			assert(is_bounded_seq(type));	/* enforced by verify.c */
 			IDL_tree bound = IDL_TYPE_SEQUENCE(type).positive_int_const,
 				elem = IDL_TYPE_SEQUENCE(type).simple_type_spec;
-			if(bound == NULL) return -1;
+			assert(bound != NULL);	/* implied by is_bounded_seq() */
 			return max_size(elem) * IDL_INTEGER(bound).value;
 		}
 
