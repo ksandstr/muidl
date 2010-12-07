@@ -94,7 +94,11 @@ static bool get_msg_label(struct message_info *inf, IDL_tree prop_node)
 			assert(!op_has_sublabel(prop_node));
 			inf->sublabel = NO_SUBLABEL;
 		}
-		/* TODO: disallow tagmasks alongside ifacelabels. */
+		/* TODO: come up with a reasonable mechanism for confirming that
+		 * tagmask dispatching doesn't conflict with ifacelabels, such as in
+		 * interfaces that inherit something with one and something else with
+		 * another.
+		 */
 	}
 
 	return true;
@@ -192,6 +196,7 @@ static int struct_size_in_words(IDL_tree type)
 	const struct packed_format *fmt = packed_format_of(type);
 	if(fmt == NULL) {
 		/* TODO: return -1 once packed_format_of() returns NULL for them */
+		/* TODO: specify struct non-packability */
 		fprintf(stderr, "%s: not implemented for non-packable structs\n",
 			__func__);
 		abort();
@@ -478,7 +483,7 @@ static int assign_untyped_params(
 			next_u++;
 		}
 		if(next_u == 64) {
-			/* TODO: come up with a better error message. this occurred in the
+			/* FIXME: come up with a better error message. this occurred in the
 			 * fixed part of the message, and therefore is an user error which
 			 * should be explained.
 			 */
@@ -764,10 +769,7 @@ struct message_info *build_exception_message(IDL_tree exn)
 }
 
 
-/* TODO: get the number and max dimensions of the string buffers we'll
- * send/receive once long types are implemented.
- *
- * this function keeps label == 0 || (tagmask set && sublabel == 0) as
+/* this function keeps label == 0 || (tagmask set && sublabel == 0) as
  * indication that the label has not been set.
  */
 struct method_info *analyse_op_dcl(IDL_ns ns, IDL_tree method)
