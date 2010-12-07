@@ -348,15 +348,6 @@ static struct msg_param *new_typed(
 }
 
 
-/* FIXME: move to types.c */
-static bool is_bounded_seq(IDL_tree type)
-{
-	return IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE
-		&& IDL_TYPE_SEQUENCE(type).positive_int_const != NULL
-		&& IDL_INTEGER(IDL_TYPE_SEQUENCE(type).positive_int_const).value > 0;
-}
-
-
 /* classifies parameters and constructs msg_param structures for them.
  *
  * also computes how many message registers it will take to encode typed items

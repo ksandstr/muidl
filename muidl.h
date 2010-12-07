@@ -688,6 +688,7 @@ extern LLVMValueRef build_decode_mapping(
 
 extern bool is_signed(IDL_tree type);
 extern bool is_integral_type(IDL_tree type);
+extern bool is_bounded_seq(IDL_tree type);
 
 /* returns true if param_dcl != NULL && attr == IN && is_value_type. */
 extern bool is_byval_param(IDL_tree param_dcl);
