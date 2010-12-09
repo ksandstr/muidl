@@ -87,10 +87,8 @@ static LLVMTypeRef stub_fn_type(
 			if(out) typ = LLVMPointerType(typ, 0);
 			at_base[p->arg_ix] = typ;
 		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
-			IDL_tree subtype = get_type_spec(
-				IDL_TYPE_SEQUENCE(type).simple_type_spec);
 			at_base[p->arg_ix + 0] = LLVMPointerType(
-				llvm_rigid_type(ctx, subtype), 0);
+				llvm_rigid_type(ctx, SEQ_SUBTYPE(type)), 0);
 			T cttyp = ctx->i32t;
 			if(out) cttyp = LLVMPointerType(cttyp, 0);
 			at_base[p->arg_ix + 1] = cttyp;

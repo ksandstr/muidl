@@ -245,8 +245,7 @@ LLVMValueRef build_msg_encoder(
 			len = LLVMBuildCall(ctx->builder, get_strlen_fn(ctx),
 				&ptr, 1, tmp_f(ctx->pr, "%s.strlen", t->name));
 		} else if(IDL_NODE_TYPE(t->type) == IDLN_TYPE_SEQUENCE) {
-			IDL_tree subtype = get_type_spec(
-				IDL_TYPE_SEQUENCE(t->type).simple_type_spec);
+			IDL_tree subtype = SEQ_SUBTYPE(t->type);
 			T styp = llvm_rigid_type(ctx, subtype);
 			V elemlen;
 			if(is_out_half) {
@@ -472,8 +471,7 @@ void build_msg_decoder(
 
 			case IDLN_TYPE_SEQUENCE: {
 				/* two arguments. */
-				IDL_tree typ = get_type_spec(
-					IDL_TYPE_SEQUENCE(lp->type).simple_type_spec);
+				IDL_tree typ = SEQ_SUBTYPE(lp->type);
 				/* TODO: use a llvm_rigid_type() instead! */
 				LLVMTypeRef itemtype = llvm_value_type(ctx, typ);
 				LLVMValueRef ptr = LLVMBuildPointerCast(ctx->builder,

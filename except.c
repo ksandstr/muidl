@@ -129,9 +129,8 @@ static LLVMTypeRef exn_raise_fn_type(struct llvm_ctx *ctx, IDL_tree node)
 				mt = ctx->i32t;
 			} else if(IDL_NODE_TYPE(m->type) == IDLN_TYPE_SEQUENCE) {
 				mt = NULL;
-				T subtype = llvm_rigid_type(ctx, get_type_spec(
-						IDL_TYPE_SEQUENCE(m->type).simple_type_spec));
-				g_ptr_array_add(types, LLVMPointerType(subtype, 0));
+				g_ptr_array_add(types, LLVMPointerType(
+					llvm_rigid_type(ctx, SEQ_SUBTYPE(m->type)), 0));
 				g_ptr_array_add(types, ctx->i32t);	/* length parameter */
 			} else {
 				NOTDEFINED(m->type);
@@ -271,8 +270,7 @@ LLVMTypeRef context_type_of_iface(struct llvm_ctx *ctx, IDL_tree iface)
 				assert(IDL_NODE_TYPE(mi->type) == IDLN_TYPE_SEQUENCE);
 				int len = IDL_INTEGER(
 					IDL_TYPE_SEQUENCE(mi->type).positive_int_const).value;
-				T subtype = llvm_rigid_type(ctx, get_type_spec(
-						IDL_TYPE_SEQUENCE(mi->type).simple_type_spec));
+				T subtype = llvm_rigid_type(ctx, SEQ_SUBTYPE(mi->type));
 				g_ptr_array_add(e_types, LLVMArrayType(subtype, len));
 				g_ptr_array_add(e_types, ctx->i32t);
 				m = NULL;

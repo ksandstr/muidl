@@ -100,9 +100,8 @@ static int vtable_byref_param_args(
 		dst[0] = LLVMPointerType(ctx->i32t, 0);
 	} else {
 		assert(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE);
-		IDL_tree seqtype = get_type_spec(
-			IDL_TYPE_SEQUENCE(type).simple_type_spec);
-		dst[0] = LLVMPointerType(llvm_rigid_type(ctx, seqtype), 0);
+		dst[0] = LLVMPointerType(
+			llvm_rigid_type(ctx, SEQ_SUBTYPE(type)), 0);
 		dst[1] = LLVMPointerType(ctx->i32t, 0);
 		count = 2;
 	}
@@ -126,9 +125,8 @@ static int vtable_param_args(
 	} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE
 		&& IDL_PARAM_DCL(pdecl).attr == IDL_PARAM_IN)
 	{
-		IDL_tree seqtype = get_type_spec(
-			IDL_TYPE_SEQUENCE(type).simple_type_spec);
-		dst[0] = LLVMPointerType(llvm_rigid_type(ctx, seqtype), 0);
+		dst[0] = LLVMPointerType(
+			llvm_rigid_type(ctx, SEQ_SUBTYPE(type)), 0);
 		dst[1] = ctx->i32t;
 		return 2;
 	} else {

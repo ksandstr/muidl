@@ -220,14 +220,12 @@ LLVMValueRef build_seq_param_storage(
 	IDL_tree ptyp,
 	const char *name)
 {
-	IDL_tree seqtype = get_type_spec(
-		IDL_TYPE_SEQUENCE(ptyp).simple_type_spec);
-	int max_size = IDL_INTEGER(
-		IDL_TYPE_SEQUENCE(ptyp).positive_int_const).value;
+	IDL_tree subtype = SEQ_SUBTYPE(ptyp);
+	uint64_t max_size = SEQ_BOUND_VAL(ptyp);
 
 	/* use stack allocation only for buffers smaller than 256 bytes */
-	uint64_t max_bytes = (uint64_t)max_size * (size_in_bits(seqtype) / 8);
-	T typ = llvm_value_type(ctx, seqtype);
+	uint64_t max_bytes = max_size * (size_in_bits(subtype) / 8);
+	T typ = llvm_value_type(ctx, subtype);
 	V sz = CONST_INT(max_size);
 	if(max_bytes >= 256) {
 		return build_malloc_storage(ctx, typ, sz,

@@ -235,9 +235,7 @@ static void print_out_param(
 {
 	char *b = NULL;
 	if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
-		IDL_tree elemtyp = get_type_spec(
-			IDL_TYPE_SEQUENCE(type).simple_type_spec);
-		b = in_param_type(ns, elemtyp);
+		b = in_param_type(ns, SEQ_SUBTYPE(type));
 		fprintf(of, "%s *%s_buf, unsigned *%s_len_p", b, name, name);
 	} else if(is_value_type(type)) {
 		b = value_type(ns, type);
@@ -312,9 +310,7 @@ static void print_vtable(
 				case IDL_PARAM_IN: {
 					char *typestr;
 					if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
-						IDL_tree subtype = get_type_spec(
-							IDL_TYPE_SEQUENCE(type).simple_type_spec);
-						typestr = in_param_type(ns, subtype);
+						typestr = in_param_type(ns, SEQ_SUBTYPE(type));
 						fprintf(of, "const %s%s*%s%s, ",
 							typestr, type_space(typestr),
 							is_reserved_word(name) ? "_" : "", name);
@@ -538,9 +534,7 @@ static int each_stub_parameter(
 				tmp_f(pr, "%s%s *", in_only ? "const " : "",
 					tmpstr), c_name, is_last, userdata);
 		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
-			IDL_tree subtype = get_type_spec(
-				IDL_TYPE_SEQUENCE(type).simple_type_spec);
-			tmpstr = fixed_type(pr->ns, subtype);
+			tmpstr = fixed_type(pr->ns, SEQ_SUBTYPE(type));
 			(*paramfn)(pr, pnum++,
 				tmp_f(pr, "%s%s *", in_only ? "const " : "", tmpstr),
 				c_name, false, userdata);
@@ -750,8 +744,8 @@ static void print_iface_context_info(struct print_ctx *pr, IDL_tree iface)
 					} else if(IDL_NODE_TYPE(mtype) == IDLN_TYPE_SEQUENCE) {
 						int len = IDL_INTEGER(
 							IDL_TYPE_SEQUENCE(mtype).positive_int_const).value;
-						char *subtypestr = fixed_type(pr->ns, get_type_spec(
-								IDL_TYPE_SEQUENCE(mtype).simple_type_spec));
+						char *subtypestr = fixed_type(pr->ns,
+							SEQ_SUBTYPE(mtype));
 						code_f(pr, "%s %s[%d];", subtypestr, mname, len);
 						code_f(pr, "uint32_t %s_len;", mname);
 						g_free(subtypestr);
