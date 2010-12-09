@@ -45,14 +45,6 @@ bool is_integral_type(IDL_tree typ)
 }
 
 
-bool is_bounded_seq(IDL_tree type)
-{
-	return IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE
-		&& IDL_TYPE_SEQUENCE(type).positive_int_const != NULL
-		&& IDL_INTEGER(IDL_TYPE_SEQUENCE(type).positive_int_const).value > 0;
-}
-
-
 #if 0
 bool is_signed(IDL_tree typ)
 {

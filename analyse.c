@@ -262,10 +262,9 @@ int max_size(IDL_tree type)
 	if(is_value_type(type)) return (size_in_bits(type) + 7) / 8;
 	switch(IDL_NODE_TYPE(type)) {
 		case IDLN_TYPE_SEQUENCE: {
-			assert(is_bounded_seq(type));	/* enforced by verify.c */
 			IDL_tree bound = IDL_TYPE_SEQUENCE(type).positive_int_const,
 				elem = IDL_TYPE_SEQUENCE(type).simple_type_spec;
-			assert(bound != NULL);	/* implied by is_bounded_seq() */
+			assert(bound != NULL);	/* enforced by verify.c */
 			return max_size(elem) * IDL_INTEGER(bound).value;
 		}
 
@@ -391,7 +390,7 @@ static int classify_param_list(
 				msg->untyped = g_list_prepend(msg->untyped, u);
 				msg->params = g_list_prepend(msg->params, u);
 			}
-		} else if(is_bounded_seq(type)) {
+		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
 			nargs = 2;
 			if(accept) {
 				IDL_tree subtype = get_type_spec(
