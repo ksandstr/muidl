@@ -70,6 +70,12 @@
 #define ARRAY_TYPE_LENGTH(n) (IDL_INTEGER(IDL_LIST( \
 	IDL_TYPE_ARRAY((n)).size_list).data).value)
 
+#define SEQ_SUBTYPE(seq) (get_type_spec( \
+	IDL_TYPE_SEQUENCE((seq)).simple_type_spec))
+#define SEQ_BOUND_VAL(seq) (IDL_INTEGER( \
+	IDL_TYPE_SEQUENCE((seq)).positive_int_const).value)
+
+
 
 /* predicates for word, Fpage, MapGrantItem, unsigned short types */
 #define NAT_IS(t, name) (IDL_NODE_TYPE((t)) == IDLN_NATIVE \
@@ -90,8 +96,8 @@
 #define IS_LONGDOUBLE_TYPE(t) (IDL_NODE_TYPE((t)) == IDLN_TYPE_FLOAT \
 	&& IDL_TYPE_FLOAT((t)).f_type == IDL_FLOAT_TYPE_LONGDOUBLE)
 
+/* LLVM predicate macros */
 #define IS_VOID_TYPEREF(t) (LLVMGetTypeKind((t)) == LLVMVoidTypeKind)
-
 
 /* is a <struct message_info *> a pointer to an exception message? */
 #define IS_EXN_MSG(msg) (IDL_NODE_TYPE((msg)->node) == IDLN_EXCEPT_DCL)

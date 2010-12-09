@@ -261,12 +261,8 @@ int max_size(IDL_tree type)
 {
 	if(is_value_type(type)) return (size_in_bits(type) + 7) / 8;
 	switch(IDL_NODE_TYPE(type)) {
-		case IDLN_TYPE_SEQUENCE: {
-			IDL_tree bound = IDL_TYPE_SEQUENCE(type).positive_int_const,
-				elem = IDL_TYPE_SEQUENCE(type).simple_type_spec;
-			assert(bound != NULL);	/* enforced by verify.c */
-			return max_size(elem) * IDL_INTEGER(bound).value;
-		}
+		case IDLN_TYPE_SEQUENCE:
+			return max_size(SEQ_SUBTYPE(type)) * SEQ_BOUND_VAL(type);
 
 		case IDLN_TYPE_STRING: {
 			IDL_tree bound = IDL_TYPE_STRING(type).positive_int_const;
@@ -311,12 +307,10 @@ static struct msg_param *new_inline_seq(
 	IDL_tree param,
 	int param_ix)
 {
-	IDL_tree bound = IDL_TYPE_SEQUENCE(type).positive_int_const;
-	assert(bound != NULL);
-	int bpe = size_in_bits(subtype);
+	int bpe = size_in_bits(subtype), bound = SEQ_BOUND_VAL(type);
 	assert(bpe > 0);
 	int epw = BITS_PER_WORD / bpe,
-		max_words = (IDL_INTEGER(bound).value + epw - 1) / epw;
+		max_words = (bound + epw - 1) / epw;
 	struct msg_param *s = g_new0(struct msg_param, 1);
 	s->kind = P_SEQ;
 	s->type = type;
@@ -324,7 +318,7 @@ static struct msg_param *new_inline_seq(
 	s->param_dcl = param;
 	s->param_ix = param_ix;
 	s->arg_ix = -1;
-	s->X.seq.max_elems = IDL_INTEGER(bound).value;
+	s->X.seq.max_elems = bound;
 	s->X.seq.elem_type = subtype;
 	s->X.seq.bits_per_elem = bpe;
 	s->X.seq.elems_per_word = epw;
@@ -393,8 +387,7 @@ static int classify_param_list(
 		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
 			nargs = 2;
 			if(accept) {
-				IDL_tree subtype = get_type_spec(
-					IDL_TYPE_SEQUENCE(type).simple_type_spec);
+				IDL_tree subtype = SEQ_SUBTYPE(type);
 				assert(is_rigid_type(subtype));
 				/* this, too, will include overlong items. */
 				struct msg_param *s = new_inline_seq(name, type, subtype, p,
