@@ -75,6 +75,9 @@
 #define SEQ_BOUND_VAL(seq) (IDL_INTEGER( \
 	IDL_TYPE_SEQUENCE((seq)).positive_int_const).value)
 
+#define STR_BOUND_VAL(str) (IDL_INTEGER( \
+	IDL_TYPE_STRING((str)).positive_int_const).value)
+
 
 
 /* predicates for word, Fpage, MapGrantItem, unsigned short types */

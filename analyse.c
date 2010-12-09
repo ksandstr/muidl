@@ -264,11 +264,8 @@ int max_size(IDL_tree type)
 		case IDLN_TYPE_SEQUENCE:
 			return max_size(SEQ_SUBTYPE(type)) * SEQ_BOUND_VAL(type);
 
-		case IDLN_TYPE_STRING: {
-			IDL_tree bound = IDL_TYPE_STRING(type).positive_int_const;
-			if(bound == NULL) return -1;
-			return IDL_INTEGER(bound).value;
-		}
+		/* the unit is one 8-bit character, so... */
+		case IDLN_TYPE_STRING: return STR_BOUND_VAL(type);
 
 		case IDLN_TYPE_WIDE_STRING:
 		case IDLN_TYPE_ARRAY:
