@@ -673,6 +673,13 @@ extern LLVMValueRef build_encode_inline_sequence(
 	LLVMValueRef upos,
 	bool is_last);
 
+extern void build_encode_array(
+	struct llvm_ctx *ctx,
+	LLVMValueRef mr_pos,
+	IDL_tree type,
+	int size,
+	const LLVMValueRef *val);
+
 
 /* from mapping.c */
 

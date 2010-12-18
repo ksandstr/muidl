@@ -63,6 +63,11 @@ void build_write_ipc_parameter(
 		}
 	} else if(IDL_NODE_TYPE(ctyp) == IDLN_TYPE_STRUCT) {
 		encode_packed_struct(ctx, ixval, NULL, ctyp, val[0]);
+	} else if(IDL_NODE_TYPE(ctyp) == IDLN_TYPE_ARRAY) {
+		IDL_tree size_list = IDL_TYPE_ARRAY(ctyp).size_list;
+		assert(IDL_list_length(size_list) == 1);
+		int size = IDL_INTEGER(IDL_LIST(size_list).data).value;
+		build_encode_array(ctx, ixval, get_array_type(ctyp), size, val);
 	} else if(is_value_type(ctyp)) {
 		/* the other value types */
 		LLVMValueRef reg;
@@ -206,7 +211,6 @@ LLVMValueRef build_msg_encoder(
 		const int first_reg = u->X.untyped.first_reg;
 		bool inout = u->param_dcl != NULL
 			&& IDL_PARAM_DCL(u->param_dcl).attr == IDL_PARAM_INOUT;
-		/* FIXME: does this handle arrays properly? */
 		if(is_value_type(u->type)) {
 			V raw = args[u->arg_ix];
 			if(is_out_half || inout) {
