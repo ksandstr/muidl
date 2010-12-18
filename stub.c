@@ -99,11 +99,13 @@ static LLVMTypeRef stub_fn_type(
 		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_WIDE_STRING) {
 			/* TODO: use a wchar_t from the ABI */
 			at_base[p->arg_ix] = LLVMPointerType(ctx->i32t, 0);
+		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_ARRAY) {
+			at_base[p->arg_ix] = LLVMPointerType(
+				llvm_rigid_type(ctx, get_array_type(type)), 0);
 		} else if(IS_MAPPING_TYPE(type)) {
 			at_base[p->arg_ix] = LLVMPointerType(
 				muidl_mapping_type(ctx), 0);
 		} else {
-			assert(is_rigid_type(type));
 			at_base[p->arg_ix] = LLVMPointerType(
 				llvm_rigid_type(ctx, type), 0);
 		}
