@@ -125,8 +125,10 @@ void build_read_ipc_parameter(
 	} else if(IDL_NODE_TYPE(ctyp) == IDLN_TYPE_UNION) {
 		NOTDEFINED(ctyp);
 	} else if(IDL_NODE_TYPE(ctyp) == IDLN_TYPE_ARRAY) {
-		/* FIXME: FAAAAAKE */
-		dst[0] = ctx->zero;
+		IDL_tree size_list = IDL_TYPE_ARRAY(ctyp).size_list;
+		assert(IDL_list_length(size_list) == 1);
+		int size = IDL_INTEGER(IDL_LIST(size_list).data).value;
+		build_decode_array(ctx, dst, first_mr, get_array_type(ctyp), size);
 	} else if(IS_MAPGRANT_TYPE(ctyp)) {
 		if(dst[0] == NULL) {
 			dst[0] = build_local_storage(ctx, ctx->mapgrant, NULL,

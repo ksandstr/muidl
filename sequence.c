@@ -409,3 +409,49 @@ void build_encode_array(
 
 	LLVMPositionBuilderAtEnd(ctx->builder, after_bb);
 }
+
+
+/* NOTE: this function is virtually copypasta'd from build_encode_array(). a
+ * common portion should be separated once epw > 1 and string transfer cases
+ * are implemented.
+ */
+void build_decode_array(
+	struct llvm_ctx *ctx,
+	LLVMValueRef *dst,
+	LLVMValueRef first_mr,
+	IDL_tree type,
+	int size)
+{
+	/* bits per elem, elems per word */
+	int bpe = size_in_bits(type), epw = BITS_PER_WORD / bpe;
+	if(epw > 1) NOTDEFINED(type);	/* FIXME */
+
+	BB from_bb = LLVMGetInsertBlock(ctx->builder),
+		loop_bb = add_sibling_block(ctx, "array.decode.loop"),
+		after_bb = add_sibling_block(ctx, "array.decode.after");
+	LLVMBuildBr(ctx->builder, loop_bb);
+
+	LLVMPositionBuilderAtEnd(ctx->builder, loop_bb);
+	V mr_pos_phi = LLVMBuildPhi(ctx->builder, ctx->i32t, "mr.pos.phi"),
+		counter_phi = LLVMBuildPhi(ctx->builder, ctx->i32t, "ctr.phi");
+	LLVMAddIncoming(mr_pos_phi, &first_mr, &from_bb, 1);
+	LLVMAddIncoming(counter_phi, &ctx->zero, &from_bb, 1);
+
+	V tmp[2] = { NULL, NULL };
+	build_read_ipc_parameter(ctx, tmp, type, mr_pos_phi);
+	V addr = LLVMBuildGEP(ctx->builder, dst[0], &counter_phi, 1,
+		"array.elem.ptr");
+	LLVMBuildStore(ctx->builder, tmp[0], addr);
+
+	V mr_bump = LLVMBuildAdd(ctx->builder, mr_pos_phi, CONST_INT(1),
+			"mr.pos.bump"),
+		ctr_bump = LLVMBuildAdd(ctx->builder, counter_phi, CONST_INT(1),
+			"ctr.bump"),
+		cond = LLVMBuildICmp(ctx->builder, LLVMIntULT, ctr_bump,
+			CONST_INT(size / epw), "array.decode.loop.cond");
+	branch_set_phi(ctx, mr_pos_phi, mr_bump);
+	branch_set_phi(ctx, counter_phi, ctr_bump);
+	LLVMBuildCondBr(ctx->builder, cond, loop_bb, after_bb);
+
+	LLVMPositionBuilderAtEnd(ctx->builder, after_bb);
+}

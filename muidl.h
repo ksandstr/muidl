@@ -680,6 +680,13 @@ extern void build_encode_array(
 	int size,
 	const LLVMValueRef *val);
 
+void build_decode_array(
+	struct llvm_ctx *ctx,
+	LLVMValueRef *dst,
+	LLVMValueRef first_mr,
+	IDL_tree type,
+	int size);
+
 
 /* from mapping.c */
 
