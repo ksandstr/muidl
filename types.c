@@ -162,6 +162,9 @@ LLVMTypeRef llvm_struct_type(
 }
 
 
+/* arrays, while rigid according to is_rigid_type(), don't have a distinct LLVM
+ * representation.
+ */
 LLVMTypeRef llvm_rigid_type(struct llvm_ctx *ctx, IDL_tree type)
 {
 	if(type == NULL) return LLVMVoidTypeInContext(ctx->ctx);
@@ -169,22 +172,13 @@ LLVMTypeRef llvm_rigid_type(struct llvm_ctx *ctx, IDL_tree type)
 		case IDLN_TYPE_STRUCT:
 			return llvm_struct_type(ctx, NULL, type);
 
-		case IDLN_TYPE_ARRAY: {
-			/* FIXME: root all these use cases out properly */
-			fprintf(stderr, "WARNING: use of llvm_rigid_type with arrays is suspect!\n");
-			IDL_tree mt = get_array_type(type);
-			return LLVMArrayType(llvm_rigid_type(ctx, mt),
-				ARRAY_TYPE_LENGTH(type));
-		}
-
-#if 0
 		case IDLN_TYPE_UNION:
 			/* TODO */
-#endif
 
 		case IDLN_NATIVE:
 			if(IS_MAPGRANT_TYPE(type)) return ctx->mapgrant;
 			/* FALL THRU */
+		case IDLN_TYPE_ARRAY:
 		default:
 			if(is_value_type(type)) return llvm_value_type(ctx, type);
 			else {
