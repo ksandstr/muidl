@@ -426,6 +426,12 @@ void build_decode_array(
 	int bpe = size_in_bits(type), epw = BITS_PER_WORD / bpe;
 	if(epw > 1) NOTDEFINED(type);	/* FIXME */
 
+	if(dst[0] == NULL) {
+		dst[0] = build_local_storage(ctx,
+			llvm_rigid_type(ctx, type), CONST_INT(size),
+			"array.decode.mem");
+	}
+
 	BB from_bb = LLVMGetInsertBlock(ctx->builder),
 		loop_bb = add_sibling_block(ctx, "array.decode.loop"),
 		after_bb = add_sibling_block(ctx, "array.decode.after");
@@ -441,6 +447,7 @@ void build_decode_array(
 	build_read_ipc_parameter(ctx, tmp, type, mr_pos_phi);
 	V addr = LLVMBuildGEP(ctx->builder, dst[0], &counter_phi, 1,
 		"array.elem.ptr");
+	assert(tmp[0] != NULL);
 	LLVMBuildStore(ctx->builder, tmp[0], addr);
 
 	V mr_bump = LLVMBuildAdd(ctx->builder, mr_pos_phi, CONST_INT(1),
