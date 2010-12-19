@@ -91,7 +91,10 @@ static int vtable_byref_param_args(
 	IDL_tree type)
 {
 	int count = 1;
-	if(is_rigid_type(type)) {
+	if(IDL_NODE_TYPE(type) == IDLN_TYPE_ARRAY) {
+		dst[0] = LLVMPointerType(
+			llvm_rigid_type(ctx, get_array_type(type)), 0);
+	} else if(is_rigid_type(type)) {
 		dst[0] = LLVMPointerType(llvm_rigid_type(ctx, type), 0);
 	} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_STRING) {
 		dst[0] = LLVMPointerType(LLVMInt8TypeInContext(ctx->ctx), 0);
@@ -150,6 +153,8 @@ static LLVMTypeRef vtable_return_type(
 	if(strcmp(ctyp, "int") == 0) t = ctx->i32t;
 	else if(strcmp(ctyp, "void") == 0) t = LLVMVoidTypeInContext(ctx->ctx);
 	else if(is_rigid_type(ret_type)) {
+		/* TODO: enforce this in verify.c */
+		assert(IDL_NODE_TYPE(ret_type) != IDLN_TYPE_ARRAY);
 		t = llvm_rigid_type(ctx, ret_type);
 	} else {
 		NOTDEFINED(ret_type);
@@ -211,6 +216,13 @@ static void emit_out_param(
 		/* this is just a pointer to a struct of 2 words. */
 		dst[0] = build_local_storage(ctx, ctx->mapgrant, NULL,
 			"out.mapgrant.mem");
+	} else if(IDL_NODE_TYPE(ptyp) == IDLN_TYPE_ARRAY) {
+		IDL_tree size_list = IDL_TYPE_ARRAY(ptyp).size_list;
+		assert(IDL_list_length(size_list) == 1);
+		int size = IDL_INTEGER(IDL_LIST(size_list).data).value;
+		dst[0] = build_local_storage(ctx,
+			llvm_rigid_type(ctx, get_array_type(ptyp)),
+			CONST_INT(size), "out.array.mem");
 	} else if(is_rigid_type(ptyp)) {
 		dst[0] = build_local_storage(ctx, llvm_rigid_type(ctx, ptyp),
 			NULL, "out.val.mem");
