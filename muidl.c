@@ -611,6 +611,7 @@ bool do_idl_file(const char *cppopts, const char *filename)
 	};
 
 	struct llvm_ctx *lc = create_llvm_ctx(&print_ctx);
+	dispose_llvm_ctx(replace_llvm_ctx(lc));
 
 	if(target_mask & T_DEFS) {
 		print_into(commonname, &print_common_header, &print_ctx);
@@ -644,7 +645,7 @@ bool do_idl_file(const char *cppopts, const char *filename)
 	g_list_free(ifaces);
 	g_free(commonname);
 
-	dispose_llvm_ctx(lc);
+	dispose_llvm_ctx(replace_llvm_ctx(NULL));
 
 	IDL_ns_free(ns);
 	IDL_tree_free(tree);

@@ -24,6 +24,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <pthread.h>
 #include <ctype.h>
 #include <llvm-c/Core.h>
 
@@ -32,6 +33,9 @@
 
 
 static GHashTable *warn_once_hash = NULL;
+static pthread_key_t llvm_ctx_key;
+static bool keys_done = false;
+static pthread_once_t key_once = PTHREAD_ONCE_INIT;
 
 
 void list_dispose(GList *list)
@@ -303,4 +307,25 @@ uint32_t djb2_hash(const char *key)
 		hash = (hash << 5) + hash + s[i];
 	}
 	return hash;
+}
+
+
+static void make_keys(void)
+{
+	pthread_key_create(&llvm_ctx_key, NULL);
+	keys_done = true;
+}
+
+
+struct llvm_ctx *get_llvm_ctx(void) {
+	return keys_done ? pthread_getspecific(llvm_ctx_key) : NULL;
+}
+
+
+struct llvm_ctx *replace_llvm_ctx(struct llvm_ctx *ctx)
+{
+	pthread_once(&key_once, &make_keys);
+	struct llvm_ctx *old = pthread_getspecific(llvm_ctx_key);
+	pthread_setspecific(llvm_ctx_key, ctx);
+	return old;
 }

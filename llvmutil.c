@@ -113,6 +113,7 @@ struct llvm_ctx *create_llvm_ctx(struct print_ctx *pr)
 
 void dispose_llvm_ctx(struct llvm_ctx *ctx)
 {
+	if(ctx == NULL) return;
 	g_hash_table_destroy(ctx->struct_decoder_fns);
 	LLVMContextDispose(ctx->ctx);
 	g_free(ctx);

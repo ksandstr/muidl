@@ -425,6 +425,14 @@ extern void print_decode_inline_seqs(
 
 /* from util.c */
 
+/* access to the thread-global llvm_ctx, where defined. (when NULL, caller
+ * should invoke NOTDEFINED().)
+ */
+extern struct llvm_ctx *get_llvm_ctx(void);
+extern struct llvm_ctx *replace_llvm_ctx(struct llvm_ctx *ctx);
+
+#define GET_CONTEXT() (get_llvm_ctx())
+
 /* g_free()s every element, then g_list_free()s the list */
 extern void list_dispose(GList *list);
 extern void free_message_info(struct message_info *inf);
