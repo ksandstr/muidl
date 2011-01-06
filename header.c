@@ -235,7 +235,17 @@ static void print_out_param(
 {
 	char *b = NULL;
 	if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
-		b = in_param_type(ns, SEQ_SUBTYPE(type));
+		IDL_tree sub = SEQ_SUBTYPE(type);
+		/* TODO: are there other rigid types that are already passed by
+		 * reference? unions?
+		 */
+		if(IDL_NODE_TYPE(sub) != IDLN_TYPE_STRUCT) {
+			b = in_param_type(ns, sub);
+		} else {
+			char *sname = long_name(ns, sub);
+			b = g_strdup_printf("struct %s", sname);
+			g_free(sname);
+		}
 		fprintf(of, "%s *%s_buf, unsigned *%s_len_p", b, name, name);
 	} else if(is_value_type(type)) {
 		b = value_type(ns, type);
