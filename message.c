@@ -478,8 +478,7 @@ void build_msg_decoder(
 			case IDLN_TYPE_SEQUENCE: {
 				/* two arguments. */
 				IDL_tree typ = SEQ_SUBTYPE(lp->type);
-				/* TODO: use a llvm_rigid_type() instead! */
-				LLVMTypeRef itemtype = llvm_value_type(ctx, typ);
+				LLVMTypeRef itemtype = llvm_rigid_type(ctx, typ);
 				LLVMValueRef ptr = LLVMBuildPointerCast(ctx->builder,
 					memptr, LLVMPointerType(itemtype, 0), "seq.ptr");
 				LLVMValueRef len = LLVMBuildUDiv(ctx->builder,

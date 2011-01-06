@@ -267,9 +267,17 @@ int max_size(IDL_tree type)
 		/* the unit is one 8-bit character, so... */
 		case IDLN_TYPE_STRING: return STR_BOUND_VAL(type);
 
+		case IDLN_TYPE_STRUCT: {
+			struct llvm_ctx *ctx = GET_CONTEXT();
+			if(ctx != NULL) {
+				return LLVMConstIntGetSExtValue(
+					LLVMSizeOf(llvm_struct_type(ctx, NULL, type)));
+			}
+			/* FALL THRU to NOTDEFINED */
+		}
+
 		case IDLN_TYPE_WIDE_STRING:
 		case IDLN_TYPE_ARRAY:
-		case IDLN_TYPE_STRUCT:
 		case IDLN_TYPE_UNION:
 		case IDLN_TYPE_ENUM:
 		default:
@@ -306,6 +314,7 @@ static struct msg_param *new_inline_seq(
 {
 	int bpe = size_in_bits(subtype), bound = SEQ_BOUND_VAL(type);
 	assert(bpe > 0);
+	assert(bpe <= BITS_PER_WORD);
 	int epw = BITS_PER_WORD / bpe,
 		max_words = (bound + epw - 1) / epw;
 	struct msg_param *s = g_new0(struct msg_param, 1);
@@ -375,7 +384,10 @@ static int classify_param_list(
 		{
 			nargs = 1;
 			if(accept) {
-				/* this may include overlong items. */
+				/* this may include items that end up making the message too
+				 * long to fit in 63 untyped words. those parts will be recast
+				 * as typed items later.
+				 */
 				struct msg_param *u = new_untyped(name, type, p, param_ix);
 				u->arg_ix = arg_pos;
 				msg->untyped = g_list_prepend(msg->untyped, u);
@@ -383,15 +395,30 @@ static int classify_param_list(
 			}
 		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
 			nargs = 2;
-			if(accept) {
-				IDL_tree subtype = SEQ_SUBTYPE(type);
-				assert(is_rigid_type(subtype));
-				/* this, too, will include overlong items. */
+			IDL_tree subtype = SEQ_SUBTYPE(type);
+			assert(is_rigid_type(subtype));
+			if(accept && size_in_bits(subtype) <= BITS_PER_WORD) {
+				/* this, too, will include overlong items; but not ones that
+				 * couldn't be encoded as inline sequences in the first place.
+				 */
 				struct msg_param *s = new_inline_seq(name, type, subtype, p,
 					param_ix);
 				s->arg_ix = arg_pos;
 				msg->seq = g_list_prepend(msg->seq, s);
 				msg->params = g_list_prepend(msg->params, s);
+				typed_use += 2;
+			} else if(accept) {
+				/* only sequences where the subtype is at most the length of
+				 * one word are encoded inline in v0.
+				 *
+				 * TODO: lift this restriction; multiword-item inline sequences
+				 * are plainly a good idea.
+				 */
+				struct msg_param *t = new_typed(P_STRING, name, type,
+					p, param_ix);
+				t->arg_ix = arg_pos;
+				msg->string = g_list_prepend(msg->string, t);
+				msg->params = g_list_prepend(msg->params, t);
 				typed_use += 2;
 			}
 		} else {

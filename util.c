@@ -229,7 +229,7 @@ LLVMValueRef build_seq_param_storage(
 
 	/* use stack allocation only for buffers smaller than 256 bytes */
 	uint64_t max_bytes = max_size * (size_in_bits(subtype) / 8);
-	T typ = llvm_value_type(ctx, subtype);
+	T typ = llvm_rigid_type(ctx, subtype);
 	V sz = CONST_INT(max_size);
 	if(max_bytes >= 256) {
 		return build_malloc_storage(ctx, typ, sz,
