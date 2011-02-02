@@ -218,10 +218,6 @@ int size_in_words(IDL_tree type)
 				return 1;
 			}
 
-		case IDLN_TYPE_FLOAT:
-			/* FIXME */
-			NOTDEFINED(type);
-
 		case IDLN_TYPE_BOOLEAN:
 		case IDLN_TYPE_OCTET:
 		case IDLN_TYPE_CHAR:
@@ -246,6 +242,7 @@ int size_in_words(IDL_tree type)
 		case IDLN_TYPE_ARRAY:
 			return array_size_in_words(get_array_type(type), type);
 
+		case IDLN_TYPE_FLOAT:
 		case IDLN_TYPE_UNION:
 			/* TODO */
 			NOTDEFINED(type);
