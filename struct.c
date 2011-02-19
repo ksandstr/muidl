@@ -460,9 +460,11 @@ LLVMValueRef encode_packed_struct_inline(
 	assert(LLVMCountStructElementTypes(s_type) == names_len);
 	T types[names_len];
 	LLVMGetStructElementTypes(s_type, types);
-	int cur_word = 0;
 	V wordval = CONST_WORD(0);
+	int cur_word = 0, wordval_fill = 0;
 	for(int i=0; i<fmt->num_items; i++) {
+		assert(wordval_fill <= BITS_PER_WORD);
+
 		const struct packed_item *pi = fmt->items[i];
 		assert(bit_offset == NULL || pi->word == 0);
 		int field_ix = strv_lookup(names, pi->name);
@@ -479,11 +481,13 @@ LLVMValueRef encode_packed_struct_inline(
 
 		/* flush previous word? */
 		if(bit_offset == NULL && cur_word != pi->word) {
+			assert(wordval_fill > 0);
 			V mr_ix = LLVMBuildAdd(ctx->builder, first_mr_word,
 				CONST_INT(cur_word), tmp_f(ctx->pr, "flush.w%d.ix", cur_word));
 			LLVMBuildStore(ctx->builder, wordval, UTCB_ADDR_VAL(ctx, mr_ix,
 				tmp_f(ctx->pr, "flush.w%d.addr", cur_word)));
 			wordval = CONST_WORD(0);
+			wordval_fill = 0;
 			cur_word = pi->word;
 		}
 
@@ -498,6 +502,7 @@ LLVMValueRef encode_packed_struct_inline(
 			if(pi->len < BITS_PER_WORD) {
 				wordval = encode_packed_struct(ctx, wordval,
 					CONST_INT(pi->bit), pi->type, valptr);
+				wordval_fill = (wordval_fill + pi->len) % BITS_PER_WORD;
 			} else {
 				encode_packed_struct(ctx, start_mr, NULL, pi->type, valptr);
 			}
@@ -507,6 +512,7 @@ LLVMValueRef encode_packed_struct_inline(
 			abort();
 		} else if(IS_LONGLONG_TYPE(pi->type)) {
 			assert(bit_offset == NULL);
+			assert(pi->bit == 0 && wordval_fill == 0);
 			V val = LLVMBuildLoad(ctx->builder, valptr, "longlong.fld");
 			build_write_ipc_parameter(ctx, start_mr, pi->type, &val);
 		} else if(is_value_type(pi->type)) {
@@ -520,23 +526,24 @@ LLVMValueRef encode_packed_struct_inline(
 				tmp_f(ctx->pr, "fld.%s.shifted", pi->name));
 			wordval = LLVMBuildOr(ctx->builder, shifted, wordval,
 				tmp_f(ctx->pr, "word%d.%s.merged", cur_word, pi->name));
+			wordval_fill += pi->len;
 		} else if(IS_MAPGRANT_TYPE(pi->type)) {
-			assert(pi->bit == 0);
 			assert(bit_offset == NULL);
+			assert(pi->bit == 0 && wordval_fill == 0);
 			build_write_ipc_parameter(ctx, start_mr, pi->type, &valptr);
 		} else {
 			NOTDEFINED(pi->type);
 		}
 	}
 
-	if(bit_offset == NULL) {
-		/* flush final word */
+	if(bit_offset == NULL && wordval_fill > 0) {
+		/* flush final partial word if the last item was sub-word */
 		V mr_ix = LLVMBuildAdd(ctx->builder, first_mr_word,
 			CONST_INT(cur_word), tmp_f(ctx->pr, "flush.w%d.ix", cur_word));
 		LLVMBuildStore(ctx->builder, wordval, UTCB_ADDR_VAL(ctx, mr_ix,
 			tmp_f(ctx->pr, "flush.w%d.addr", cur_word)));
 		wordval = NULL;
-	} else {
+	} else if(bit_offset != NULL) {
 		/* shift and merge */
 		wordval = LLVMBuildOr(ctx->builder, first_mr_word,
 			LLVMBuildShl(ctx->builder, wordval, bit_offset, "short.shifted"),
