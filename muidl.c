@@ -1,6 +1,6 @@
 /*
  * muidl.c -- IDL compiler for µiX
- * Copyright 2009, 2010  Kalle A. Sandström <ksandstr@iki.fi>
+ * Copyright 2009, 2010, 2011  Kalle A. Sandström <ksandstr@iki.fi>
  *
  * This file is part of µiX.
  *
@@ -703,7 +703,7 @@ static void parse_cmdline(int argc, char *argv[])
 	if(arg_dest_path != NULL
 		&& !g_file_test(arg_dest_path, G_FILE_TEST_IS_DIR))
 	{
-		fprintf(stderr, "destination `%s' doesn't look like a directory",
+		fprintf(stderr, "destination `%s' doesn't look like a directory\n",
 			arg_dest_path);
 		exit(EXIT_FAILURE);
 	}
