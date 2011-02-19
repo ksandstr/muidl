@@ -1,6 +1,6 @@
 /*
  * struct.c -- handling of struct and union types
- * Copyright 2010  Kalle A. Sandström <ksandstr@iki.fi>
+ * Copyright 2010, 2011  Kalle A. Sandström <ksandstr@iki.fi>
  *
  * This file is part of µiX.
  *
@@ -275,6 +275,15 @@ const struct packed_format *packed_format_of(IDL_tree stype)
 }
 
 
+static int strv_lookup(char *const *haystack, const char *needle)
+{
+	for(int i=0; haystack[i] != NULL; i++) {
+		if(strcmp(haystack[i], needle) == 0) return i;
+	}
+	return -1;
+}
+
+
 /* struct decoding. */
 
 void decode_packed_struct_inline(
@@ -298,13 +307,8 @@ void decode_packed_struct_inline(
 	V wordval = NULL;
 	for(int i=0; i<fmt->num_items; i++) {
 		const struct packed_item *pi = fmt->items[i];
-		int field_ix = 0;
-		while(names[field_ix] != NULL
-			&& strcmp(names[field_ix], pi->name) != 0)
-		{
-			field_ix++;
-		}
-		if(names[field_ix] == NULL) {
+		int field_ix = strv_lookup(names, pi->name);
+		if(field_ix < 0) {
 			fprintf(stderr, "%s: not the way to go.\n", __func__);
 			abort();
 		}
@@ -461,13 +465,8 @@ LLVMValueRef encode_packed_struct_inline(
 	for(int i=0; i<fmt->num_items; i++) {
 		const struct packed_item *pi = fmt->items[i];
 		assert(bit_offset == NULL || pi->word == 0);
-		int field_ix = 0;
-		while(names[field_ix] != NULL
-			&& strcmp(names[field_ix], pi->name) != 0)
-		{
-			field_ix++;
-		}
-		if(names[field_ix] == NULL) {
+		int field_ix = strv_lookup(names, pi->name);
+		if(field_ix < 0) {
 			fprintf(stderr, "%s: not the way to go.\n", __func__);
 			abort();
 		}
