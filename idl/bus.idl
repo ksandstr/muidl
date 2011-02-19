@@ -19,7 +19,7 @@ interface Bus
 		BUS_PCI
 	};
 
-	[NoPacked]
+	[Packed]
 	struct item
 	{
 		octet bus_type, bus_id;

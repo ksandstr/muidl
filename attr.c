@@ -1,6 +1,6 @@
 /*
  * attr.c -- functions for working with IDL attributes
- * Copyright 2010  Kalle A. Sandström <ksandstr@iki.fi>
+ * Copyright 2010, 2011  Kalle A. Sandström <ksandstr@iki.fi>
  *
  * This file is part of µiX.
  *
@@ -54,5 +54,5 @@ bool is_packed(IDL_tree struct_type)
 {
 	assert(IDL_NODE_TYPE(struct_type) == IDLN_TYPE_STRUCT);
 	IDL_tree prop_node = IDL_TYPE_STRUCT(struct_type).ident;
-	return IDL_tree_property_get(prop_node, "NoPacked") == NULL;
+	return IDL_tree_property_get(prop_node, "Packed") != NULL;
 }

@@ -54,7 +54,9 @@ NoValuePrefix -- instead of [mod_][iface_]enumname_valuename, put just
 
 For structs and unions:
 
-NoPacked -- don't pack the structure definition.
+Packed -- pack the in-memory structure definition. useful for structs passed
+in string transfers, and for those of which huge numbers are stored by user
+code, but otherwise just slows things down.
 
 
 For exceptions (libIDL doesn't recognize properties on exceptions yet!):
