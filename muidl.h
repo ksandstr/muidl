@@ -1,6 +1,6 @@
 /*
  * muidl.h -- extern definitions for µidl
- * Copyright 2009, 2010  Kalle A. Sandström <ksandstr@iki.fi>
+ * Copyright 2009, 2010, 2011  Kalle A. Sandström <ksandstr@iki.fi>
  *
  * This file is part of µiX.
  *
@@ -864,5 +864,12 @@ extern void build_write_ipc_parameter(
 	LLVMValueRef first_mr,
 	IDL_tree ctyp,
 	const LLVMValueRef *val);
+
+
+/* from stringfn.c */
+
+extern LLVMValueRef get_strlen_fn(struct llvm_ctx *ctx);
+extern LLVMValueRef get_memcpy_fn(struct llvm_ctx *ctx);
+
 
 #endif

@@ -149,36 +149,6 @@ void build_read_ipc_parameter(
 }
 
 
-/* FIXME: move these two into another file */
-static LLVMValueRef get_strlen_fn(struct llvm_ctx *ctx)
-{
-	V fn = LLVMGetNamedFunction(ctx->module, "strlen");
-	if(fn != NULL) return fn;
-
-	T charptr = LLVMPointerType(LLVMInt8TypeInContext(ctx->ctx), 0),
-		sizet = ctx->wordt;		/* FIXME: get from ABI; should be size_t */
-	T fntype = LLVMFunctionType(sizet, &charptr, 1, 0);
-	fn = LLVMAddFunction(ctx->module, "strlen", fntype);
-
-	return fn;
-}
-
-
-static LLVMValueRef get_memcpy_fn(struct llvm_ctx *ctx)
-{
-	V fn = LLVMGetNamedFunction(ctx->module, "memcpy");
-	if(fn != NULL) return fn;
-
-	/* TODO: get size_t from ABI? */
-	T voidptr = ctx->voidptrt, sizet = ctx->wordt;
-	T argtypes[] = { voidptr, voidptr, sizet },
-		fntype = LLVMFunctionType(voidptr, argtypes, 3, 0);
-	fn = LLVMAddFunction(ctx->module, "memcpy", fntype);
-
-	return fn;
-}
-
-
 LLVMValueRef build_msg_encoder(
 	struct llvm_ctx *ctx,
 	const struct message_info *msg,

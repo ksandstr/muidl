@@ -40,7 +40,8 @@ check:
 
 muidl: muidl.o util.o analyse.o verify.o llvmutil.o attr.o l4x2.o \
 		message.o sequence.o types.o struct.o header.o common.o \
-		dispatch.o stub.o except.o iface.o mapping.o op.o
+		dispatch.o stub.o except.o iface.o mapping.o op.o \
+		stringfn.o
 	$(CXX) -o $@ $^ $(CFLAGS) $(LDFLAGS) $(LIBS)
 
 
