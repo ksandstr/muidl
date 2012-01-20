@@ -287,6 +287,10 @@ static void print_vtable(
 
 	for(int vtix = 0; vtix < num_ops; vtix++) {
 		const struct method_info *op = vtab_ops[vtix];
+		if(op == NULL) {
+			g_error("%s:%d: vtab_ops[%d] not assigned by iface->ops",
+				__func__, __LINE__, vtix);
+		}
 
 		char *rettypstr = return_type(ns, op->node, NULL, true),
 			*name = decapsify(METHOD_NAME(op->node));
