@@ -610,12 +610,10 @@ LLVMValueRef build_dispatcher_function(
 		LLVMBuildStore(ctx->builder, stored_timeouts, xfer_timeouts_addr);
 		build_store_br(ctx, acceptor, 0);
 		if(have_stringbufs) build_set_strbufs(ctx, stritems);
-		/* TODO: these magic constants are actually L4_Timeouts(L4_Never,
-		 * L4_Never), and L4_anythread. replace them with something that has a
-		 * proper name.
-		 */
+		/* ~0 is L4_anythread. (it could also be a symbolic constant.) */
+		uint32_t replywait_tos = (0x4000 << 16) | 0;	/* zerotime, never */
 		ipc_tag = build_l4_ipc_call(ctx,
-			ctx->from, CONST_WORD(0), LLVMConstNot(CONST_WORD(0)),
+			ctx->from, CONST_WORD(replywait_tos), LLVMConstNot(CONST_WORD(0)),
 			ctx->reply_tag, &ipc_from, &ipc_mr1, &ipc_mr2);
 		build_store_received_regs(ctx, min_u, ipc_mr1, ipc_mr2);
 		LLVMAddIncoming(ctx->from, &ipc_from, &ctx->reply_bb, 1);
