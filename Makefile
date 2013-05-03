@@ -1,7 +1,7 @@
 
 PKG=libIDL-2.0 glib-2.0
 PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib/pkgconfig
-LLVM_CONFIG=llvm-config-2.7
+LLVM_CONFIG=llvm-config
 LLVM_BITS=backend bitwriter
 CFLAGS:=-std=gnu99 -Wall -g -O2 -pthread \
 	$(shell pkg-config --cflags $(PKG)) \
@@ -42,7 +42,8 @@ muidl: muidl.o util.o analyse.o verify.o llvmutil.o attr.o l4x2.o \
 		message.o sequence.o types.o struct.o header.o common.o \
 		dispatch.o stub.o except.o iface.o mapping.o op.o \
 		stringfn.o
-	$(CXX) -o $@ $^ $(CFLAGS) $(LDFLAGS) $(LIBS)
+	@echo "  LD $@"
+	@$(CXX) -o $@ $^ $(CFLAGS) $(LDFLAGS) $(LIBS)
 
 
 tags: $(wildcard *.[ch])
@@ -54,7 +55,8 @@ tags: $(wildcard *.[ch])
 
 
 %.o: %.c
-	$(CC) -c -o $@ $< -MMD $(CFLAGS)
+	@echo "  CC $@"
+	@$(CC) -c -o $@ $< -MMD $(CFLAGS)
 	@test -d .deps || mkdir -p .deps
 	@mv $(<:.c=.d) .deps/
 

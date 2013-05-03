@@ -234,64 +234,58 @@ LLVMValueRef build_exception_raise_fns_for_iface(
 
 
 /* TODO: memoize the typeref on the iface name under a hash in ctx */
-LLVMTypeRef context_type_of_iface(struct llvm_ctx *ctx, IDL_tree iface)
+LLVMTypeRef context_type_of_iface(
+	struct llvm_ctx *ctx,
+	IDL_tree iface,
+	int nth_exn)
 {
 	assert(IDL_NODE_TYPE(iface) == IDLN_INTERFACE);
 
 	GList *exn_list = iface_exns_sorted(ctx->ns, iface);
 	if(exn_list == NULL) return NULL;
 
-	GPtrArray *u_types = g_ptr_array_new(),
-		*e_types = g_ptr_array_new();
-	/* the tag is the exception hash. */
-	g_ptr_array_add(u_types, ctx->i32t);
+	IDL_tree exn = g_list_nth_data(exn_list, nth_exn);
+	if(exn == NULL) return NULL;
+	assert(IDL_NODE_TYPE(exn) == IDLN_EXCEPT_DCL);
 
-	GLIST_FOREACH(e_cur, exn_list) {
-		IDL_tree exn = e_cur->data;
-
-		g_ptr_array_set_size(e_types, 0);
-		g_ptr_array_add(e_types, ctx->i32t);
-		struct member_item *members = expand_member_list(
-			IDL_EXCEPT_DCL(exn).members);
-		for(int i=0; members[i].type != NULL; i++) {
-			struct member_item *mi = &members[i];
-			T m;
-			if(mi->dim > 0) {
-				assert(is_rigid_type(mi->type));
-				m = LLVMArrayType(llvm_rigid_type(ctx, mi->type), mi->dim);
-			} else if(is_rigid_type(mi->type)) {
-				m = llvm_rigid_type(ctx, mi->type);
-			} else if(IDL_NODE_TYPE(mi->type) == IDLN_TYPE_STRING) {
-				int len = IDL_INTEGER(
-					IDL_TYPE_STRING(mi->type).positive_int_const).value;
-				m = LLVMArrayType(LLVMInt8TypeInContext(ctx->ctx), len + 1);
-				/* (TODO: wide strings) */
-			} else {
-				assert(IDL_NODE_TYPE(mi->type) == IDLN_TYPE_SEQUENCE);
-				int len = IDL_INTEGER(
-					IDL_TYPE_SEQUENCE(mi->type).positive_int_const).value;
-				T subtype = llvm_rigid_type(ctx, SEQ_SUBTYPE(mi->type));
-				g_ptr_array_add(e_types, LLVMArrayType(subtype, len));
-				g_ptr_array_add(e_types, ctx->i32t);
-				m = NULL;
-			}
-
-			if(m != NULL) g_ptr_array_add(e_types, m);
+	GPtrArray *e_types = g_ptr_array_new();
+	/* tag. (exception hash) */
+	g_ptr_array_add(e_types, ctx->wordt);
+	struct member_item *members = expand_member_list(
+		IDL_EXCEPT_DCL(exn).members);
+	for(int i=0; members[i].type != NULL; i++) {
+		struct member_item *mi = &members[i];
+		T m;
+		if(mi->dim > 0) {
+			assert(is_rigid_type(mi->type));
+			m = LLVMArrayType(llvm_rigid_type(ctx, mi->type), mi->dim);
+		} else if(is_rigid_type(mi->type)) {
+			m = llvm_rigid_type(ctx, mi->type);
+		} else if(IDL_NODE_TYPE(mi->type) == IDLN_TYPE_STRING) {
+			int len = IDL_INTEGER(
+				IDL_TYPE_STRING(mi->type).positive_int_const).value;
+			m = LLVMArrayType(LLVMInt8TypeInContext(ctx->ctx), len + 1);
+			/* (TODO: wide strings) */
+		} else {
+			assert(IDL_NODE_TYPE(mi->type) == IDLN_TYPE_SEQUENCE);
+			int len = IDL_INTEGER(
+				IDL_TYPE_SEQUENCE(mi->type).positive_int_const).value;
+			T subtype = llvm_rigid_type(ctx, SEQ_SUBTYPE(mi->type));
+			g_ptr_array_add(e_types, LLVMArrayType(subtype, len));
+			g_ptr_array_add(e_types, ctx->i32t);	/* length field */
+			m = NULL;
 		}
-		g_free(members);
-		T st = LLVMStructTypeInContext(ctx->ctx, (T *)e_types->pdata,
-			e_types->len, 0);
-		g_ptr_array_add(u_types, st);
-	}
 
-	T ctx_type = LLVMUnionTypeInContext(ctx->ctx, (T *)u_types->pdata,
-		u_types->len);
+		if(m != NULL) g_ptr_array_add(e_types, m);
+	}
+	g_free(members);
+	T st = LLVMStructTypeInContext(ctx->ctx, (T *)e_types->pdata,
+		e_types->len, 0);
 
 	g_ptr_array_free(e_types, TRUE);
-	g_ptr_array_free(u_types, TRUE);
 	g_list_free(exn_list);
 
-	return ctx_type;
+	return st;
 }
 
 

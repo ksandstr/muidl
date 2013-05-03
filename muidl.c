@@ -539,12 +539,12 @@ static void compile_module_to_asm(LLVMModuleRef mod, const char *filename)
 	char *path;
 	if(arg_dest_path == NULL) path = g_strdup(filename);
 	else path = g_build_path("/", arg_dest_path, filename, NULL);
-	char *cmd = g_strdup_printf("llc-2.7 -O2 -filetype=asm -o %s", path);
+	char *cmd = g_strdup_printf("llc -O2 -filetype=asm -o %s", path);
 	g_free(path);
 	FILE *p = popen(cmd, "w");
 	g_free(cmd);
 	if(p == NULL) {
-		fprintf(stderr, "can't open pipe to llc-2.7: %s\n", strerror(errno));
+		fprintf(stderr, "can't open pipe to llc: %s\n", strerror(errno));
 		exit(EXIT_FAILURE);
 	}
 

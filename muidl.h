@@ -648,9 +648,11 @@ extern LLVMValueRef build_exception_raise_fns_for_iface(
 	struct llvm_ctx *ctx,
 	const struct iface_info *iface);
 
+/* (returns NULL when nth is past the end. [horrible, yes.]) */
 extern LLVMTypeRef context_type_of_iface(
 	struct llvm_ctx *ctx,
-	IDL_tree iface);
+	IDL_tree iface,
+	int nth);
 
 extern void build_decode_exception(
 	struct llvm_ctx *ctx,

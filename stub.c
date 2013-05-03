@@ -116,8 +116,9 @@ static LLVMTypeRef stub_fn_type(
 	if(has_context) {
 		IDL_tree iface = IDL_get_parent_node(inf->node, IDLN_INTERFACE, NULL);
 		assert(iface != NULL);
+		/* (union types aren't explicitly supported by LLVM any more.) */
 		arg_types[++max_arg] = LLVMPointerType(
-			context_type_of_iface(ctx, iface), 0);
+			LLVMVoidTypeInContext(ctx->ctx), 0);
 	}
 
 	T l4_time_t = LLVMInt16TypeInContext(ctx->ctx);
@@ -132,24 +133,22 @@ static LLVMTypeRef stub_fn_type(
 }
 
 
-/* hack around the LLVM brain damage wrt GEP and union pointers
- * TODO: check if the cleaner way works with LLVM >= 2.8
+/* NOTE: "ix" is given as "exception number, plus one"; the tag-only field is
+ * index zero.
  */
 static LLVMValueRef get_ex_from_ctx(
 	struct llvm_ctx *ctx,
+	IDL_tree iface,
 	LLVMValueRef ctxptr,
 	int ix)
 {
-#if 1
-	T cp_type = LLVMGetElementType(LLVMTypeOf(ctxptr)),
-		u_types[LLVMCountUnionElementTypes(cp_type)];
-	LLVMGetUnionElementTypes(cp_type, u_types);
-	return LLVMBuildPointerCast(ctx->builder, ctxptr,
-		LLVMPointerType(u_types[ix], 0), "ex.ptr");
-#else
-	return LLVMBuildStructGEP(ctx->builder, ctxptr, ix, "ex.ptr");
-#endif
+	assert(iface != NULL);
+	assert(ix > 0);
 
+	T ext = context_type_of_iface(ctx, iface, ix - 1);
+	assert(ext != NULL);
+	return LLVMBuildPointerCast(ctx->builder, ctxptr,
+		LLVMPointerType(ext, 0), "ex.ptr");
 }
 
 
@@ -170,6 +169,7 @@ static LLVMValueRef build_stub_receive_strings(
 		long_lists[i] = inf->replies[i]->string;
 	}
 
+	IDL_tree iface = IDL_get_parent_node(inf->node, IDLN_INTERFACE, NULL);
 	int brpos = 1;
 	for(int i=0; stritems[i].length >= 0; i++) {
 		struct stritem_info *si = &stritems[i];
@@ -192,8 +192,8 @@ static LLVMValueRef build_stub_receive_strings(
 				si->param = p;
 				if(IS_EXN_MSG(inf->replies[j])) {
 					V indexes[2] = { CONST_INT(0), CONST_INT(0) },
-						exptr = get_ex_from_ctx(ctx, ctxptr,
-							inf->replies[j]->ctx_index);
+						exptr = get_ex_from_ctx(ctx, iface,
+							ctxptr, inf->replies[j]->ctx_index);
 					si->memptr = LLVMBuildGEP(ctx->builder,
 						LLVMBuildStructGEP(ctx->builder, exptr,
 							p->arg_ix + 1, "ex.lp.mem.ptr"),
@@ -247,7 +247,8 @@ static void build_stub_reply_decode(
 	 */
 	V ex_tag_ptr = NULL;
 	if(ctxptr != NULL) {
-		ex_tag_ptr = LLVMBuildStructGEP(ctx->builder, ctxptr, 0, "ex.tag.ptr");
+		ex_tag_ptr = LLVMBuildPointerCast(ctx->builder, ctxptr,
+			LLVMPointerType(ctx->wordt, 0), "ex.tag.ptr");
 	}
 	branch_set_phi(ctx, ctx->retval_phi, CONST_INT(-EINVAL));
 	V label_sw = LLVMBuildSwitch(ctx->builder, label, ctx->exit_bb, 3);
@@ -275,6 +276,8 @@ static void build_stub_reply_decode(
 		branch_set_phi(ctx, ctx->retval_phi, CONST_WORD(666));
 		V sw = LLVMBuildSwitch(ctx->builder, ctx->mr1, ctx->exit_bb,
 			inf->num_reply_msgs - 1);
+		IDL_tree iface = IDL_get_parent_node(inf->node,
+			IDLN_INTERFACE, NULL);
 		for(int i=1; i < inf->num_reply_msgs; i++) {
 			const struct message_info *msg = inf->replies[i];
 			if(is_negs_exn(msg->node) || is_noreply_exn(msg->node)) {
@@ -284,7 +287,7 @@ static void build_stub_reply_decode(
 			LLVMAddCase(sw, CONST_WORD(msg->sublabel), decode);
 			LLVMPositionBuilderAtEnd(ctx->builder, decode);
 			build_decode_exception(ctx,
-				get_ex_from_ctx(ctx, ctxptr, msg->ctx_index),
+				get_ex_from_ctx(ctx, iface, ctxptr, msg->ctx_index),
 				msg, i, stritems);
 			/* on exception, a stub returns 0 because it's an IPC success
 			 * regardless. the caller gets to check ctxptr->tag.
