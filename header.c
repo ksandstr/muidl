@@ -1026,7 +1026,6 @@ void print_common_header(struct print_ctx *pr)
 	static const char *hdrfiles[] = {
 		"stdint.h",
 		"stdbool.h",
-		"kernel/types.h",
 		"l4/types.h",
 	};
 	print_headers(pr, hdrfiles, G_N_ELEMENTS(hdrfiles));
