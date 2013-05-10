@@ -33,7 +33,7 @@ distclean: clean
 	@rm -rf .deps
 
 
-check:
+check: muidl
 	tests/run_all.pl
 	+make output-clean
 
