@@ -25,7 +25,6 @@ all: tags $(LIBIDL_LIBS) muidl
 
 clean:
 	rm -f *.o
-	+make -C libIDL clean
 	+make output-clean
 
 
@@ -45,7 +44,7 @@ check: muidl
 	+make output-clean
 
 
-.NOTPARALLEL libIDL/.libs/libIDL-2.a libIDL/include/libIDL/IDL.h: $(wildcard libIDL/*.[chyl])
+.NOTPARALLEL libIDL/.libs/libIDL-2.a libIDL/include/libIDL/IDL.h:
 	cd libIDL; ./autogen.sh
 	+make -C libIDL
 
