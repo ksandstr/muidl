@@ -30,4 +30,14 @@ Once you've got these, say
 like there's ass in your pants.
 
 
+Health warning
+--------------
+
+The code is an unwholesomely Lovecraftian mess. This is caused by a lack of
+formal testing and specification throughout development, a.k.a. early prototype
+disease.
+
+You have been warned.
+
+
   -- Kalle A. Sandström <ksandstr@iki.fi>
