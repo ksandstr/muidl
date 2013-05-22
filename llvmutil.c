@@ -105,7 +105,6 @@ struct llvm_ctx *create_llvm_ctx(struct print_ctx *pr)
 	ctx->voidptrt = LLVMPointerType(LLVMInt8TypeInContext(ctx->ctx), 0);
 	ctx->zero = LLVMConstInt(ctx->i32t, 0, 0);
 	ctx->mapgrant = llvm_mapgrant_type(ctx);
-	ctx->mappingt = NULL;
 
 	return ctx;
 }

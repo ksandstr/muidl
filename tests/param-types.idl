@@ -117,23 +117,4 @@ interface NativeTypes
 #endif
 };
 
-interface MappingTypes
-{
-	void filler();
-
-/* TEST 102: mapping received by the service
- * expected: success
- */
-#if __TEST__ == 102
-	void send_mapping([map] in muidl::mapping memory);
-#endif
-
-/* TEST 103: mapping received by the client
- * expected: success
- */
-#if __TEST__ == 103
-	void get_mapping([map] out muidl::mapping memory);
-#endif
-};
-
 };

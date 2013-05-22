@@ -70,7 +70,6 @@ bool has_mapped_param(IDL_tree opdcl)
 	IDL_LIST_FOREACH(cur, IDL_OP_DCL(opdcl).parameter_dcls) {
 		IDL_tree p = IDL_LIST(cur).data,
 			ptype = get_type_spec(IDL_PARAM_DCL(p).param_type_spec);
-		if(IS_MAPPING_TYPE(ptype)) return true;
 		IDL_tree ident = IDL_PARAM_DCL(p).simple_declarator;
 		if(IDL_NODE_TYPE(ident) != IDLN_IDENT) {
 			ident = IDL_TYPE_ARRAY(ident).ident;

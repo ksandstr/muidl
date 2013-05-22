@@ -235,7 +235,7 @@ static gboolean supported_types_only(IDL_tree_func_data *tf, gpointer udptr)
 		case IDLN_NATIVE: {
 			bool ok = IS_MAPGRANT_TYPE(node)
 				|| IS_FPAGE_TYPE(node) || IS_WORD_TYPE(node)
-				|| IS_TIME_TYPE(node) || IS_MAPPING_TYPE(node);
+				|| IS_TIME_TYPE(node);
 			if(!ok) {
 				fail(v, "unknown native type `%s'", NATIVE_NAME(node));
 			}
@@ -271,49 +271,6 @@ static gboolean no_recv_timeout_in_oneway(
 					IDL_IDENT(IDL_OP_DCL(tf->tree).ident).repo_id);
 			}
 			return FALSE;
-
-		default:
-			return FALSE;
-	}
-}
-
-
-static gboolean one_mapping_per_direction(
-	IDL_tree_func_data *tf,
-	gpointer udptr)
-{
-	struct ver_ctx *v = udptr;
-
-	switch(IDL_NODE_TYPE(tf->tree)) {
-		case IDLN_MODULE:
-		case IDLN_INTERFACE:
-		case IDLN_LIST:
-			return TRUE;
-
-		case IDLN_OP_DCL: {
-			/* TODO: get a module::interface::opname kind of name, here */
-			const char *name = METHOD_NAME(tf->tree);
-			bool have_in = false, have_out = false;
-			IDL_LIST_FOREACH(cur, IDL_OP_DCL(tf->tree).parameter_dcls) {
-				IDL_tree param = IDL_LIST(cur).data,
-					ptype = get_type_spec(IDL_PARAM_DCL(param).param_type_spec);
-				if(!IS_MAPPING_TYPE(ptype)) continue;
-				enum IDL_param_attr attr = IDL_PARAM_DCL(param).attr;
-				if(attr == IDL_PARAM_IN || attr == IDL_PARAM_INOUT) {
-					if(have_in) {
-						fail(v, "`%s' already has an in-mapping", name);
-					}
-					have_in = true;
-				}
-				if(attr == IDL_PARAM_OUT || attr == IDL_PARAM_INOUT) {
-					if(have_out) {
-						fail(v, "`%s' already has an out-mapping", name);
-					}
-					have_out = true;
-				}
-			}
-			return FALSE;
-		}
 
 		default:
 			return FALSE;
@@ -436,8 +393,6 @@ bool verify_idl_input(IDL_ns ns, IDL_tree tree)
 		  "only supported forms of IDL types (no references or unbounded types)" },
 		{ &no_recv_timeout_in_oneway,
 		  "oneway methods cannot have a StubRecvTimeout or StubTimeout attribute" },
-		{ &one_mapping_per_direction,
-		  "at most one mapping per message (op direction)" },
 
 		/* explicit MR attribute specs */
 		{ &explicit_mr_param_size,

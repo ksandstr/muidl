@@ -51,7 +51,7 @@ check: muidl
 
 muidl: muidl.o util.o analyse.o verify.o llvmutil.o attr.o l4x2.o \
 		message.o sequence.o types.o struct.o header.o common.o \
-		dispatch.o stub.o except.o iface.o mapping.o op.o \
+		dispatch.o stub.o except.o iface.o op.o \
 		stringfn.o $(LIBIDL_LIBS)
 	@echo "  LD $@"
 	@$(CXX) -o $@ $^ $(CFLAGS) $(LDFLAGS) $(LIBS)

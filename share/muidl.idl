@@ -31,12 +31,6 @@ exception NoReply {
 	 */
 };
 
-
-/* parameters that should be actually transferred as typed items must be marked
- * with the [map] property.
- */
-native mapping;
-
 };
 
 #endif

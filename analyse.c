@@ -377,8 +377,7 @@ static int classify_param_list(
 		int nargs = 0;
 		const bool accept = (is_outhalf && attr != IDL_PARAM_IN)
 				|| (!is_outhalf && attr != IDL_PARAM_OUT),
-			is_mapped = IS_MAPPING_TYPE(type) || (IS_MAPGRANT_TYPE(type)
-					&& has_map_property(ident));
+			is_mapped = IS_MAPGRANT_TYPE(type) && has_map_property(ident);
 		if(is_rigid_type(type) && (!IS_MAPGRANT_TYPE(type)
 				|| !has_map_property(ident)))
 		{
@@ -434,9 +433,6 @@ static int classify_param_list(
 				if(IS_MAPGRANT_TYPE(type) && has_map_property(ident)) {
 					assert(is_mapped);
 					typed_use += 2;		/* a single map/grant item */
-				} else if(IS_MAPPING_TYPE(type)) {
-					assert(is_mapped);
-					typed_use += 46;	/* up to 23 map/grant items */
 				} else {
 					assert(!is_mapped);
 					typed_use += 2;		/* a simple string item */

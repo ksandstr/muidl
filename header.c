@@ -213,8 +213,6 @@ char *in_param_type(IDL_ns ns, IDL_tree tree)
 		case IDLN_NATIVE:
 			if(IS_MAPGRANT_TYPE(tree)) {
 				return g_strdup("L4_MapItem_t *");
-			} else if(IS_MAPPING_TYPE(tree)) {
-				return g_strdup("const muidl_mapping_t *");
 			}
 			/* FALL THRU */
 
@@ -260,8 +258,6 @@ static void print_out_param(
 		 * mappings anyhow.
 		 */
 		fprintf(of, "L4_MapItem_t *%s_ptr", name);
-	} else if(IS_MAPPING_TYPE(type)) {
-		fprintf(of, "muidl_mapping_t *%s_ptr", name);
 	} else {
 		b = rigid_type(ns, type);
 		fprintf(of, "%s *%s_ptr", b, name);
@@ -558,10 +554,6 @@ static int each_stub_parameter(
 		} else if(IDL_NODE_TYPE(type) == IDLN_TYPE_WIDE_STRING) {
 			(*paramfn)(pr, pnum++, in_only ? "const wchar_t *" : "wchar_t *",
 				c_name, is_last, userdata);
-		} else if(IS_MAPPING_TYPE(type)) {
-			const char *ts = "const muidl_mapping_t *";
-			(*paramfn)(pr, pnum++, in_only ? ts : &ts[6], c_name, is_last,
-				userdata);
 		} else {
 			/* TODO: handle structs, unions, arrays, etc */
 			NOTDEFINED(type);

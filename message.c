@@ -245,21 +245,15 @@ LLVMValueRef build_msg_encoder(
 	/* memory mappings */
 	GLIST_FOREACH(cur, msg->mapped) {
 		const struct msg_param *t = cur->data;
-		if(IS_MAPGRANT_TYPE(t->type)) {
-			V words[2];
-			for(int i=0; i<2; i++) {
-				words[i] = LLVMBuildLoad(ctx->builder,
-					LLVMBuildStructGEP(ctx->builder, args[t->arg_ix], i,
-						i == 0 ? "mapgrant.info.ptr" : "mapgrant.fpage.ptr"),
-					i == 0 ? "mapgrant.info.word" : "mapgrant.fpage.word");
-			}
-			t_pos = build_store_mrs(ctx, t_pos, words, 2);
-		} else {
-			assert(IS_MAPPING_TYPE(t->type));
-			/* mappings are always encoded as the last item. */
-			t_pos = build_encode_mapping(ctx, t_pos, t->type,
-				args[t->arg_ix], true);
+		assert(IS_MAPGRANT_TYPE(t->type));
+		V words[2];
+		for(int i=0; i<2; i++) {
+			words[i] = LLVMBuildLoad(ctx->builder,
+				LLVMBuildStructGEP(ctx->builder, args[t->arg_ix], i,
+					i == 0 ? "mapgrant.info.ptr" : "mapgrant.fpage.ptr"),
+				i == 0 ? "mapgrant.info.word" : "mapgrant.fpage.word");
 		}
+		t_pos = build_store_mrs(ctx, t_pos, words, 2);
 	}
 
 	/* NOTE: when encoding out-sequences, the second argument is a pointer to
@@ -484,31 +478,21 @@ void build_msg_decoder(
 
 	GLIST_FOREACH(cur, msg->mapped) {
 		const struct msg_param *m = cur->data;
-		if(IS_MAPPING_TYPE(m->type)) {
-			/* mapping types are always decoded last. this doesn't matter while
-			 * mapgrant items aren't implemented, but once that is the case
-			 * analyse.c should make sure that the mapping parameter occurs
-			 * last.
-			 */
-			ctx->tpos = build_decode_mapping(ctx, ctx->tpos, ctx->tmax,
-				m->type, args[m->arg_ix], true);
-		} else {
-			assert(IS_MAPGRANT_TYPE(m->type));
-			args[m->arg_ix] = build_local_storage(ctx, ctx->mapgrant,
-				CONST_INT(1), tmp_f(ctx->pr, "mgitem.%s.ptr", m->name));
-			for(int i=0; i<2; i++) {
-				V word = build_ipc_input_val_ix(ctx,
-					i == 0 ? ctx->tpos
-						: LLVMBuildAdd(ctx->builder, ctx->tpos, CONST_INT(1),
-							"tpos.plus.one"),
-					"mapgrant.word");
-				LLVMBuildStore(ctx->builder, word,
-					LLVMBuildStructGEP(ctx->builder, args[m->arg_ix],
-						i, "mapgrant.field.ptr"));
-			}
-			ctx->tpos = LLVMBuildAdd(ctx->builder, ctx->tpos, CONST_INT(2),
-				"tpos.after.mg");
+		assert(IS_MAPGRANT_TYPE(m->type));
+		args[m->arg_ix] = build_local_storage(ctx, ctx->mapgrant,
+			CONST_INT(1), tmp_f(ctx->pr, "mgitem.%s.ptr", m->name));
+		for(int i=0; i<2; i++) {
+			V word = build_ipc_input_val_ix(ctx,
+				i == 0 ? ctx->tpos
+					: LLVMBuildAdd(ctx->builder, ctx->tpos, CONST_INT(1),
+						"tpos.plus.one"),
+				"mapgrant.word");
+			LLVMBuildStore(ctx->builder, word,
+				LLVMBuildStructGEP(ctx->builder, args[m->arg_ix],
+					i, "mapgrant.field.ptr"));
 		}
+		ctx->tpos = LLVMBuildAdd(ctx->builder, ctx->tpos, CONST_INT(2),
+			"tpos.after.mg");
 	}
 }
 

@@ -87,7 +87,6 @@
 #define IS_FPAGE_TYPE(t) NAT_IS(t, "l4_fpage_t")
 #define IS_WORD_TYPE(t) NAT_IS(t, "l4_word_t")
 #define IS_TIME_TYPE(t) NAT_IS(t, "l4_time_t")
-#define IS_MAPPING_TYPE(t) NAT_IS(t, "mapping")
 
 #define IS_USHORT_TYPE(op_type) \
 	(IDL_NODE_TYPE((op_type)) == IDLN_TYPE_INTEGER \
@@ -178,7 +177,7 @@ struct llvm_ctx
 	LLVMContextRef ctx;
 	LLVMModuleRef module;
 	LLVMBuilderRef builder;
-	LLVMTypeRef wordt, i32t, voidptrt, mapgrant, mappingt;
+	LLVMTypeRef wordt, i32t, voidptrt, mapgrant;
 	LLVMValueRef zero;
 	GList *malloc_ptrs;		/* LLVM free insns emitted at fn end */
 
@@ -216,7 +215,7 @@ enum msg_param_kind {
 	P_UNTYPED,
 	P_SEQ,		/* inline sequences */
 	P_STRING,	/* string items */
-	P_MAPPED,	/* mapping, [map] MapGrantItem */
+	P_MAPPED,	/* [map] MapGrantItem */
 };
 
 
@@ -273,9 +272,7 @@ struct message_info
 	/* sequence types that are passed inline. */
 	GList *seq;
 
-	/* typed parameters are MapGrantItems with the [map] attribute, and mapping
-	 * parameters
-	 */
+	/* typed parameters are MapGrantItems with the [map] attribute */
 	GList *mapped;
 
 	/* other things (long sequences and arrays, strings, wide strings) are
@@ -698,25 +695,6 @@ void build_decode_array(
 	int size);
 
 
-/* from mapping.c */
-
-/* returns the new value of t_pos. it'll no longer be constant. */
-extern LLVMValueRef build_encode_mapping(
-	struct llvm_ctx *ctx,
-	LLVMValueRef t_pos,
-	IDL_tree type,
-	LLVMValueRef mapping_ptr,
-	bool is_last);
-
-extern LLVMValueRef build_decode_mapping(
-	struct llvm_ctx *ctx,
-	LLVMValueRef t_pos,
-	LLVMValueRef t_max,
-	IDL_tree type,
-	LLVMValueRef mapping_ptr,
-	bool is_last);
-
-
 /* from types.c */
 
 extern bool is_signed(IDL_tree type);
@@ -736,8 +714,6 @@ extern LLVMTypeRef llvm_struct_type(
 	struct llvm_ctx *ctx,
 	char ***names_p,
 	IDL_tree type);
-
-extern LLVMTypeRef muidl_mapping_type(struct llvm_ctx *ctx);
 
 
 /* from struct.c */

@@ -188,37 +188,6 @@ interface AutoTestCases
 	CONSUME_TYPE(invalid);
 #endif
 
-/* TEST 17: a mapping type in a struct (non-rigid)
- * expected: failure
- */
-#if __TEST__ == 17
-	struct invalid {
-		muidl::mapping field;
-		long another;
-	};
-	CONSUME_TYPE(invalid);
-#endif
-
-/* TEST 18: an op decl with two in-mappings
- * expected: failure
- */
-#if __TEST__ == 18
-	oneway void thingie(
-		in muidl::mapping foo,
-		in long bar,
-		in muidl::mapping poit);
-#endif
-
-/* TEST 19: an op decl with two out-mappings
- * expected: failure
- */
-#if __TEST__ == 19
-	void whatsit(
-		out muidl::mapping foo,
-		in long bar,
-		inout muidl::mapping poit);
-#endif
-
 };
 
 
