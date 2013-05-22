@@ -480,8 +480,8 @@ LLVMValueRef encode_packed_struct_inline(
 		}
 
 		/* flush previous word? */
-		if(bit_offset == NULL && cur_word != pi->word) {
-			assert(wordval_fill > 0);
+		if(wordval_fill > 0 && cur_word != pi->word) {
+			assert(bit_offset == NULL);
 			V mr_ix = LLVMBuildAdd(ctx->builder, first_mr_word,
 				CONST_INT(cur_word), tmp_f(ctx->pr, "flush.w%d.ix", cur_word));
 			LLVMBuildStore(ctx->builder, wordval, UTCB_ADDR_VAL(ctx, mr_ix,
