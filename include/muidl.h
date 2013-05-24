@@ -24,30 +24,53 @@
 #include <stdint.h>
 
 
-/* if one of the low 3 bits is nonzero, this is a L4 IPC errorcode from the
+/* status returned by dispatch function. 0 for "OK".
+ *
+ * if one of the low 4 bits is nonzero, this is a L4 IPC errorcode from the
  * dispatch loop's receive phase. mostly useful for telling e.g. buffer
  * overruns apart from IPC aborts, such as used for exiting the loop.
  *
- * when the low 3 bits are zero, it's a µIDL status code. these are defined
+ * when the low 4 bits are zero, it's a µIDL status code. these are defined
  * below.
  */
-#define MUIDL_IS_L4_ERROR(word) (((uintptr_t)(word) & 0xe) != 0)
+#define MUIDL_IS_L4_ERROR(word) (((uintptr_t)(word) & 0xf) != 0)
 
 
 /* constants returned by the dispatcher for non-L4 error conditions. */
 #define MUIDL_UNKNOWN_LABEL (1 << 4)
 
 
+/* the section below is for L4.X2 programs (µIDL consumers) only. */
+
 #ifndef IN_MUIDL_IMPL
-/* functions that manipulate a per-thread pointer variable. no destructors.
- * the pointer should remain valid and constant within the call to the
- * dispatch function.
- *
- * implementations for these should be provided by the linker, or its runtime.
+#include <l4/types.h>
+
+/* per-thread context & accessors. */
+
+struct muidl_context
+{
+	L4_ThreadId_t last_sender;
+	L4_MsgTag_t last_tag;
+	L4_MsgTag_t exn_tag;
+};
+
+
+/* no destructors. the pointer should remain valid and constant within the
+ * call to the dispatch function. implementations for these two should be
+ * provided by the application or its runtime.
  */
 extern void muidl_supp_alloc_context(size_t length);
 extern void *muidl_supp_get_context(void);
-#endif
 
+
+static inline L4_ThreadId_t muidl_get_sender(void) {
+	return ((struct muidl_context *)muidl_supp_get_context())->last_sender;
+}
+
+static inline L4_MsgTag_t muidl_get_tag() {
+	return ((struct muidl_context *)muidl_supp_get_context())->last_tag;
+}
+
+#endif	/* !IN_MUIDL_IMPL */
 
 #endif
