@@ -23,7 +23,7 @@
 #include <glib.h>
 #include <libIDL/IDL.h>
 
-#include "muidl.h"
+#include "defs.h"
 
 
 static bool collect_methods(

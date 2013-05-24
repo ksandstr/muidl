@@ -38,7 +38,7 @@
 #include <llvm-c/Analysis.h>
 #include <llvm-c/BitWriter.h>
 
-#include "muidl.h"
+#include "defs.h"
 #include "llvmutil.h"
 
 

@@ -22,7 +22,7 @@
 #include <assert.h>
 #include <libIDL/IDL.h>
 
-#include "muidl.h"
+#include "defs.h"
 
 
 bool is_negs_exn(IDL_tree exn)

@@ -23,7 +23,7 @@
 #include <libIDL/IDL.h>
 #include <llvm-c/Core.h>
 
-#include "muidl.h"
+#include "defs.h"
 #include "l4x2.h"
 #include "llvmutil.h"
 

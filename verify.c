@@ -27,7 +27,7 @@
 #include <ctype.h>
 #include <libIDL/IDL.h>
 
-#include "muidl.h"
+#include "defs.h"
 
 
 struct ver_ctx

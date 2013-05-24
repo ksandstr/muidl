@@ -27,7 +27,7 @@
 #include <assert.h>
 #include <libIDL/IDL.h>
 
-#include "muidl.h"
+#include "defs.h"
 #include "llvmutil.h"
 #include "l4x2.h"
 

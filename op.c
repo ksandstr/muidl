@@ -22,7 +22,7 @@
 #include <assert.h>
 #include <libIDL/IDL.h>
 
-#include "muidl.h"
+#include "defs.h"
 
 
 IDL_tree find_exn(IDL_tree op, bool (*pred)(IDL_tree exn))

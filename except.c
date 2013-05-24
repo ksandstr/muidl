@@ -25,7 +25,7 @@
 #include <libIDL/IDL.h>
 #include <llvm-c/Core.h>
 
-#include "muidl.h"
+#include "defs.h"
 #include "llvmutil.h"
 #include "l4x2.h"
 
@@ -182,7 +182,7 @@ static LLVMValueRef build_exn_raise_fn(
 
 	/* store the tag to indicate a raised exception. */
 	/* FIXME: "2" is external knowledge; it's defined as SUPP_EXN_TAG_IX in
-	 * dispatch.c, and should be moved into muidl.h .
+	 * dispatch.c, and should be moved into defs.h .
 	 */
 	LLVMBuildStore(ctx->builder, tag,
 		LLVMBuildStructGEP(ctx->builder, supp_ptr, 2,

@@ -18,7 +18,7 @@
  * along with µiX.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "muidl.h"
+#include "defs.h"
 #include "llvmutil.h"
 
 

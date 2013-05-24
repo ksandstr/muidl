@@ -7,7 +7,7 @@ LLVM_BITS=backend bitwriter
 LIBIDL_CFLAGS=-I libIDL/include
 LIBIDL_LIBS=libIDL/.libs/libIDL-2.a
 
-CFLAGS:=-std=gnu99 -Wall -g -O2 -pthread \
+CFLAGS:=-std=gnu99 -Wall -g -O2 -pthread -I include \
 	$(LIBIDL_CFLAGS) \
 	$(shell pkg-config --cflags $(PKG)) \
 	$(shell $(LLVM_CONFIG) --cflags $(LLVM_BITS)|./remove-unwanted-opts.pl)

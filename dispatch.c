@@ -26,9 +26,12 @@
 #include <llvm-c/Core.h>
 #include <libIDL/IDL.h>
 
-#include "muidl.h"
+#include "defs.h"
 #include "llvmutil.h"
 #include "l4x2.h"
+
+#define IN_MUIDL_IMPL
+#include "muidl.h"
 
 
 /* FIXME: move these three into support.c or some such */
@@ -694,7 +697,8 @@ LLVMValueRef build_dispatcher_function(
 		LLVMPositionBuilderAtEnd(ctx->builder, tm_dispatch_bb);
 	}
 	LLVMBasicBlockRef current = LLVMGetInsertBlock(ctx->builder);
-	LLVMValueRef unknownlabel = LLVMConstInt(ctx->wordt, 42666, 0);
+	LLVMValueRef unknownlabel = LLVMConstInt(ctx->wordt,
+		MUIDL_UNKNOWN_LABEL, 0);
 	LLVMAddIncoming(retval, &unknownlabel, &current, 1);
 	if(tm_dispatch_bb != NULL) {
 		/* must branch explicitly. the non-bb path exits from the switch

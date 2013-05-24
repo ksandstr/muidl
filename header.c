@@ -26,7 +26,7 @@
 #include <assert.h>
 #include <libIDL/IDL.h>
 
-#include "muidl.h"
+#include "defs.h"
 
 
 static void print_generic_stub_decl(

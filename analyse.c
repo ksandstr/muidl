@@ -26,7 +26,7 @@
 #include <stdbool.h>
 #include <libIDL/IDL.h>
 
-#include "muidl.h"
+#include "defs.h"
 
 
 /* the size of a type's encoding in words, when encoded as a single

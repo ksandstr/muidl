@@ -23,7 +23,7 @@
 
 #include <llvm-c/Core.h>
 
-#include "muidl.h"
+#include "defs.h"
 
 
 /* shorthand for LLVM types.

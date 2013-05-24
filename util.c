@@ -28,7 +28,7 @@
 #include <ctype.h>
 #include <llvm-c/Core.h>
 
-#include "muidl.h"
+#include "defs.h"
 #include "llvmutil.h"
 
 
