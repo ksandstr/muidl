@@ -1062,6 +1062,7 @@ void print_common_header(struct print_ctx *pr)
 		code_f(pr, "#if defined(%s%s%s_IMPL_SOURCE) || defined(MUIDL_SOURCE)",
 			modpfx == NULL ? " " : modpfx, mod == NULL ? "" : "_",
 			ifpfx);
+		code_f(pr, "#include <l4/types.h>");
 		g_free(modpfx);
 		g_free(ifpfx);
 
