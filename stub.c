@@ -496,6 +496,17 @@ LLVMValueRef build_stubs_for_iface(
 {
 	GLIST_FOREACH(cur, iface->ops) {
 		struct method_info *inf = cur->data;
+
+		IDL_tree parent = IDL_get_parent_node(inf->node,
+			IDLN_INTERFACE, NULL);
+		assert(parent != NULL);
+		if(parent != iface->node) {
+			/* don't generate stubs for inherited interfaces. the common
+			 * example is L4X2::FaultHandler.
+			 */
+			continue;
+		}
+
 		/* (TODO: don't build the timeoutless variant if given an
 		 * attribute not to do so. see header.c for details.)
 		 */
