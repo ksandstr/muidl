@@ -44,6 +44,7 @@
 
 #ifndef IN_MUIDL_IMPL
 #include <l4/types.h>
+#include <l4/message.h>
 
 /* per-thread context & accessors. */
 
