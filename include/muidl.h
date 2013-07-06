@@ -68,9 +68,18 @@ static inline L4_ThreadId_t muidl_get_sender(void) {
 	return ((struct muidl_context *)muidl_supp_get_context())->last_sender;
 }
 
-static inline L4_MsgTag_t muidl_get_tag() {
+static inline L4_MsgTag_t muidl_get_tag(void) {
 	return ((struct muidl_context *)muidl_supp_get_context())->last_tag;
 }
+
+/* returns the previous tag. */
+static inline L4_MsgTag_t muidl_set_tag(L4_MsgTag_t new_tag)
+{
+	L4_MsgTag_t old = muidl_get_tag();
+	((struct muidl_context *)muidl_supp_get_context())->last_tag = new_tag;
+	return old;
+}
+
 
 #endif	/* !IN_MUIDL_IMPL */
 
