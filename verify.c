@@ -328,15 +328,19 @@ static gboolean explicit_mr_no_overlap(IDL_tree_func_data *tf, gpointer udptr)
 			break;
 	}
 
-	bool reg_in_use[64],
+	bool reg_in[64], reg_out[64],
 		has_sub = op_has_sublabel(IDL_OP_DCL(tf->tree).ident);
-	for(int i=0; i<64; i++) reg_in_use[i] = false;
-	reg_in_use[0] = true;		/* tag */
-	if(has_sub) reg_in_use[1] = true;	/* sublabel */
+	for(int i=0; i<64; i++) {
+		reg_in[i] = false;
+		reg_out[i] = false;
+	}
+	reg_in[0] = reg_out[0] = true;	/* tag */
+	if(has_sub) reg_in[1] = true;	/* sublabel (send only) */
 
 	IDL_LIST_FOREACH(cur, IDL_OP_DCL(tf->tree).parameter_dcls) {
 		IDL_tree pdcl = IDL_LIST(cur).data,
 			ident = IDL_PARAM_DCL(pdcl).simple_declarator;
+		enum IDL_param_attr direction = IDL_PARAM_DCL(pdcl).attr;
 		unsigned long mrval = 0;
 		if(!get_ul_property(&mrval, ident, "MR")) continue;
 		long mr = (long)mrval;
@@ -344,7 +348,7 @@ static gboolean explicit_mr_no_overlap(IDL_tree_func_data *tf, gpointer udptr)
 			fail(v, "explicit MR%ld spec is out of range", mr);
 			break;
 		}
-		if(mr == 1 && has_sub) {
+		if(mr == 1 && has_sub && direction != IDL_PARAM_OUT) {
 			fail(v, "can't specify MR1 in IfaceLabel interface");
 			break;
 		}
@@ -352,9 +356,12 @@ static gboolean explicit_mr_no_overlap(IDL_tree_func_data *tf, gpointer udptr)
 			fail(v, "can't reassign MR0 (the message tag register)");
 			break;
 		}
-		if(reg_in_use[mr]) {
-			fail(v, "property specifies unavailable MR%lu for parameter `%s'",
-				mr, IDL_IDENT(ident).str);
+		if((reg_in[mr] && direction != IDL_PARAM_OUT)
+			|| (reg_out[mr] && direction != IDL_PARAM_IN))
+		{
+			fail(v, "property MR%lu for parameter `%s',"
+				" which is already in use", mr,
+				IDL_IDENT(ident).str);
 #if 0
 /* spared from analyse.c . TODO: make this work in some useful way, i.e.
  * prettyprinting of tl;dr in verify fail messages
@@ -373,7 +380,8 @@ static gboolean explicit_mr_no_overlap(IDL_tree_func_data *tf, gpointer udptr)
 #endif
 			break;
 		}
-		reg_in_use[mr] = true;
+		if(direction != IDL_PARAM_OUT) reg_in[mr] = true;
+		if(direction != IDL_PARAM_IN) reg_out[mr] = true;
 	}
 
 	return FALSE;
