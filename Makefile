@@ -1,8 +1,8 @@
 
 PKG=glib-2.0
 PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib/pkgconfig
-LLVM_CONFIG=llvm-config-3.0
-LLVM_BITS=backend bitwriter
+LLVM_CONFIG=llvm-config
+LLVM_BITS=all
 
 LIBIDL_CFLAGS=-I libIDL/include
 LIBIDL_LIBS=libIDL/.libs/libIDL-2.a
@@ -11,7 +11,7 @@ CFLAGS:=-std=gnu99 -Wall -g -O2 -pthread -I include \
 	$(LIBIDL_CFLAGS) \
 	$(shell pkg-config --cflags $(PKG)) \
 	$(shell $(LLVM_CONFIG) --cflags $(LLVM_BITS)|./remove-unwanted-opts.pl)
-LDFLAGS:=-Wl,--as-needed
+LDFLAGS:=-Wl,--as-needed $(shell $(LLVM_CONFIG) --ldflags $(LLVM_BITS))
 LIBS:=$(shell pkg-config --libs $(PKG)) \
 	$(shell $(LLVM_CONFIG) --libs $(LLVM_BITS)) -lm -ldl
 

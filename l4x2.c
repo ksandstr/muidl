@@ -54,8 +54,16 @@ LLVMValueRef build_l4_ipc_call(
 	LLVMTypeRef ipc_type = LLVMFunctionType(ipc_result_type,
 		params, 5, 0);
 	LLVMValueRef fn = LLVMConstInlineAsm(ipc_type,
-		"call __L4_Ipc\n",
-		"={ax},={si},={bx},={bp},{ax},{cx},{dx},{si},{di},~{dirflag},~{fpsr},~{flags}",
+		/* NOTE: this compensates against LLVM 3.3's inability to save %ebp
+		 * over an asm statement. clearly a bug, but w/e.
+		 *
+		 * it's been around since at least LLVM 3.2.
+		 */
+		"  pushl %ebp\n"
+		"\tcall __L4_Ipc\n"
+		"\tmovl %ebp, %ecx\n"
+		"\tpopl %ebp\n",
+		"={ax},={si},={bx},={cx},{ax},{cx},{dx},{si},{di},~{dirflag},~{fpsr},~{flags}",
 		1, 0);
 	LLVMValueRef args[5] = {
 		arg_to, arg_timeouts, arg_fromspec, arg_mr0,
