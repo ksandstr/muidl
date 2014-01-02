@@ -10,8 +10,8 @@ LIBIDL_LIBS=libIDL/.libs/libIDL-2.a
 CFLAGS:=-std=gnu99 -Wall -g -O2 -pthread -I include \
 	$(LIBIDL_CFLAGS) \
 	$(shell pkg-config --cflags $(PKG)) \
-	$(shell $(LLVM_CONFIG) --cflags $(LLVM_BITS)|./remove-unwanted-opts.pl)
-LDFLAGS:=-Wl,--as-needed $(shell $(LLVM_CONFIG) --ldflags $(LLVM_BITS))
+	$(shell $(LLVM_CONFIG) --cflags | ./remove-unwanted-opts.pl)
+LDFLAGS:=-Wl,--as-needed $(shell $(LLVM_CONFIG) --ldflags)
 LIBS:=$(shell pkg-config --libs $(PKG)) \
 	$(shell $(LLVM_CONFIG) --libs $(LLVM_BITS)) -lm -ldl
 
