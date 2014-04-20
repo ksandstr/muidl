@@ -24,15 +24,17 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <errno.h>
 #include <pthread.h>
 #include <ctype.h>
 #include <llvm-c/Core.h>
+#include <ccan/strset/strset.h>
 
 #include "defs.h"
 #include "llvmutil.h"
 
 
-static GHashTable *warn_once_hash = NULL;
+static struct strset warn_once_set;
 static pthread_key_t llvm_ctx_key;
 static bool keys_done = false;
 static pthread_once_t key_once = PTHREAD_ONCE_INIT;
@@ -84,9 +86,10 @@ void free_iface_info(struct iface_info *inf)
 
 bool warn_once(const char *fmt, ...)
 {
-	if(warn_once_hash == NULL) {
-		warn_once_hash = g_hash_table_new_full(&g_str_hash,
-			&g_str_equal, &g_free, NULL);
+	static bool first = true;
+	if(first) {
+		first = false;
+		strset_init(&warn_once_set);
 	}
 
 	va_list al;
@@ -96,8 +99,9 @@ bool warn_once(const char *fmt, ...)
 	int len = strlen(str);
 	while(len > 0 && str[len - 1] == '\n') len--;
 	str[MAX(0, len - 1)] = '\0';
-	if(g_hash_table_lookup(warn_once_hash, str) == NULL) {
-		g_hash_table_insert(warn_once_hash, str, GINT_TO_POINTER(1));
+	if(strset_get(&warn_once_set, str) == NULL) {
+		bool ok = strset_add(&warn_once_set, str);
+		assert(ok || errno != EEXIST);
 		fprintf(stderr, "warning: %s\n", str);
 		return true;
 	} else {
@@ -107,11 +111,13 @@ bool warn_once(const char *fmt, ...)
 }
 
 
-void reset_warn_once(void)
-{
-	if(warn_once_hash != NULL) {
-		g_hash_table_remove_all(warn_once_hash);
-	}
+static bool free_member(const char *member, void *unused) {
+	g_free((char *)member);
+	return true;
+}
+
+void reset_warn_once(void) {
+	strset_iterate(&warn_once_set, &free_member, NULL);
 }
 
 

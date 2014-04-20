@@ -24,15 +24,22 @@
 #include <stdbool.h>
 #include <string.h>
 #include <ctype.h>
+#include <errno.h>
 #include <assert.h>
 #include <libIDL/IDL.h>
+#include <ccan/strmap/strmap.h>
 
 #include "defs.h"
 #include "llvmutil.h"
 #include "l4x2.h"
 
 
-static GHashTable *packed_cache = NULL;
+static struct { STRMAP_MEMBERS(struct packed_format *); } packed_cache;
+
+
+static const char *sdecl_name(IDL_tree sdecl) {
+	return IDL_IDENT(IDL_TYPE_STRUCT(sdecl).ident).repo_id;
+}
 
 
 static struct packed_item *new_packed_item(
@@ -176,16 +183,14 @@ static int item_by_bitsize_cmp(gconstpointer a, gconstpointer b)
 
 const struct packed_format *packed_format_of(IDL_tree stype)
 {
-	if(packed_cache == NULL) {
-		/* NOTE: if there ever is a flush_packed_cache() type function, it
-		 * should go over the hash table's bits and free each key
-		 * (g_strdup()'d) and value (g_new()'d).
-		 */
-		packed_cache = g_hash_table_new(&g_str_hash, &g_str_equal);
+	static bool first = true;
+	if(first) {
+		first = false;
+		strmap_init(&packed_cache);
 	}
 
-	const char *s_id = IDL_IDENT(IDL_TYPE_STRUCT(stype).ident).repo_id;
-	struct packed_format *ret = g_hash_table_lookup(packed_cache, s_id);
+	const char *s_id = sdecl_name(stype);
+	struct packed_format *ret = strmap_get(&packed_cache, s_id);
 	if(ret != NULL) return ret;
 
 	struct member_item *items = expand_member_list(
@@ -269,7 +274,8 @@ const struct packed_format *packed_format_of(IDL_tree stype)
 	for(int i=0; i<ret->num_items; i++) {
 		ret->num_bits += ret->items[i]->len;
 	}
-	g_hash_table_insert(packed_cache, g_strdup(s_id), ret);
+	bool ok = strmap_add(&packed_cache, s_id, ret);
+	assert(ok || errno != EEXIST);
 
 	return ret;
 }

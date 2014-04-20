@@ -21,9 +21,11 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <errno.h>
 #include <glib.h>
 #include <libIDL/IDL.h>
 #include <llvm-c/Core.h>
+#include <ccan/strset/strset.h>
 
 #include "defs.h"
 #include "llvmutil.h"
@@ -220,26 +222,28 @@ static LLVMValueRef build_exn_raise_fn(
 }
 
 
+#define msg_name(msg) (IDL_IDENT_REPO_ID(IDL_EXCEPT_DCL((msg)->node).ident))
+
+
 LLVMValueRef build_exception_raise_fns_for_iface(
 	struct llvm_ctx *ctx,
 	const struct iface_info *iface)
 {
-	GHashTable *seen_exn_hash = g_hash_table_new(&g_str_hash, &g_str_equal);
+	struct strset seen_exn;
+	strset_init(&seen_exn);
 	GLIST_FOREACH(o_cur, iface->ops) {
 		const struct method_info *op = o_cur->data;
 		for(int i=1; i < op->num_reply_msgs; i++) {
 			const struct message_info *msg = op->replies[i];
-			const char *key = IDL_IDENT_REPO_ID(
-				IDL_EXCEPT_DCL(msg->node).ident);
-			if(g_hash_table_lookup(seen_exn_hash, key) != NULL
-				|| is_negs_exn(msg->node))
-			{
+			const char *m_id = msg_name(msg);
+			if(strset_get(&seen_exn, m_id) != NULL || is_negs_exn(msg->node)) {
 				/* already emitted for this module, or one of those exceptions
 				 * that doesn't get a raise function
 				 */
 				continue;
 			}
-			g_hash_table_insert(seen_exn_hash, (char *)key, (void *)msg);
+			bool ok = strset_add(&seen_exn, m_id);
+			assert(ok || errno != EEXIST);
 
 			char *name = exn_raise_fn_name(msg->node);
 			V fn = build_exn_raise_fn(ctx, name, msg);
@@ -250,7 +254,7 @@ LLVMValueRef build_exception_raise_fns_for_iface(
 		}
 	}
 
-	g_hash_table_destroy(seen_exn_hash);
+	strset_clear(&seen_exn);
 	return NULL;
 }
 

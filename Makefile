@@ -8,7 +8,7 @@ LIBIDL_CFLAGS=-I libIDL/include
 LIBIDL_LIBS=libIDL/.libs/libIDL-2.a
 
 CCAN_DIR=~/src/ccan
-CCAN_BITS=htable hash str list
+CCAN_BITS=hash str strset strmap ilog
 
 CFLAGS:=-std=gnu99 -Wall -g -O2 -pthread -I include -I $(CCAN_DIR) \
 	$(LIBIDL_CFLAGS) \
