@@ -30,6 +30,28 @@
 #include "l4x2.h"
 
 
+/* this hash function is part of the exn_hash() definition. it affects the
+ * labels given to exception-raising results from operations.
+ *
+ * CCAN calls this same algorithm with a different name and attributes it to a
+ * different person, but we'll duplicate it for consistency's sake. it should
+ * not be removed or altered.
+ */
+static uint32_t djb2_hash(const char *key)
+{
+	/* djb2 (k=33).
+	 * from http://www.cse.yorku.ca/~oz/hash.html
+	 */
+	uint32_t hash = 5381;
+	const uint8_t *s = (const uint8_t *)key;
+	int len = strlen(key);
+	for(int i=0; i<len; i++) {
+		hash = (hash << 5) + hash + s[i];
+	}
+	return hash;
+}
+
+
 uint32_t exn_hash(IDL_tree exn)
 {
 	GString *str = g_string_sized_new(256);

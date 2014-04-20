@@ -295,21 +295,6 @@ struct member_item *expand_member_list(IDL_tree list)
 }
 
 
-uint32_t djb2_hash(const char *key)
-{
-	/* djb2 (k=33).
-	 * from http://www.cse.yorku.ca/~oz/hash.html
-	 */
-	uint32_t hash = 5381;
-	const uint8_t *s = (const uint8_t *)key;
-	int len = strlen(key);
-	for(int i=0; i<len; i++) {
-		hash = (hash << 5) + hash + s[i];
-	}
-	return hash;
-}
-
-
 static void make_keys(void)
 {
 	pthread_key_create(&llvm_ctx_key, NULL);

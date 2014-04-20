@@ -451,8 +451,6 @@ extern struct msg_param *find_pdecl(GList *params, IDL_tree pdecl);
 /* turn an IDL:blah/ItemName:1.0 repo id into a valid 1:1 C identifier */
 extern char *mangle_repo_id(const char *repo_id);
 
-extern uint32_t djb2_hash(const char *key);
-
 /* expand list of IDL_MEMBER, i.e. <type, [decls]>, into <type, name, dim>.
  * terminated by NULL type (because void is never a valid member type), and
  * caller-freed.
