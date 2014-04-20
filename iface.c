@@ -20,15 +20,20 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
+#include <assert.h>
 #include <glib.h>
 #include <libIDL/IDL.h>
+#include <ccan/str/str.h>
+#include <ccan/strset/strset.h>
+#include <ccan/strmap/strmap.h>
 
 #include "defs.h"
 
 
 static bool collect_methods(
 	GList **methods_p,
-	GHashTable *ifaces_seen,
+	struct strset *ifaces_seen,
 	IDL_ns ns,
 	IDL_tree iface)
 {
@@ -42,29 +47,30 @@ static bool collect_methods(
 	IDL_LIST_FOREACH(cur, IDL_INTERFACE(iface).inheritance_spec) {
 		IDL_tree inh_id = IDL_LIST(cur).data;
 		char *inh_repoid = IDL_IDENT_REPO_ID(inh_id);
-		if(g_hash_table_lookup(ifaces_seen, inh_repoid) == NULL) {
-			IDL_tree inh_iface_id = IDL_ns_resolve_this_scope_ident(ns,
-				IDL_IDENT_TO_NS(inh_id), inh_id);
-			if(inh_iface_id == NULL) {
-				fprintf(stderr, "can't find inherited interface `%s'\n",
-					inh_repoid);
-				return false;
-			}
+		if(strset_get(ifaces_seen, inh_repoid) != NULL) continue;
 
-			assert(IDL_NODE_TYPE(inh_iface_id) == IDLN_GENTREE);
-			inh_iface_id = IDL_GENTREE(inh_iface_id).data;
-			assert(IDL_NODE_TYPE(inh_iface_id) == IDLN_IDENT);
+		IDL_tree inh_iface_id = IDL_ns_resolve_this_scope_ident(ns,
+			IDL_IDENT_TO_NS(inh_id), inh_id);
+		if(inh_iface_id == NULL) {
+			fprintf(stderr, "can't find inherited interface `%s'\n",
+				inh_repoid);
+			return false;
+		}
+
+		assert(IDL_NODE_TYPE(inh_iface_id) == IDLN_GENTREE);
+		inh_iface_id = IDL_GENTREE(inh_iface_id).data;
+		assert(IDL_NODE_TYPE(inh_iface_id) == IDLN_IDENT);
 #if 0
-			printf("%s: recursing to `%s'\n", __FUNCTION__,
-				IDL_IDENT_REPO_ID(inh_iface_id));
+		printf("%s: recursing to `%s'\n", __FUNCTION__,
+			IDL_IDENT_REPO_ID(inh_iface_id));
 #endif
-			IDL_tree inh_iface = IDL_NODE_UP(inh_iface_id);
-			assert(IDL_NODE_TYPE(inh_iface) == IDLN_INTERFACE);
+		IDL_tree inh_iface = IDL_NODE_UP(inh_iface_id);
+		assert(IDL_NODE_TYPE(inh_iface) == IDLN_INTERFACE);
 
-			g_hash_table_insert(ifaces_seen, inh_repoid, inh_iface);
-			if(!collect_methods(methods_p, ifaces_seen, ns, inh_iface)) {
-				return false;
-			}
+		bool ok = strset_add(ifaces_seen, inh_repoid);
+		assert(ok || errno != EEXIST);
+		if(!collect_methods(methods_p, ifaces_seen, ns, inh_iface)) {
+			return false;
 		}
 	}
 
@@ -82,10 +88,12 @@ static bool collect_methods(
 GList *all_methods_of_iface(IDL_ns ns, IDL_tree iface)
 {
 	GList *methods = NULL;
-	GHashTable *ifaces_seen = g_hash_table_new(&g_str_hash, &g_str_equal);
-	g_hash_table_insert(ifaces_seen, IFACE_REPO_ID(iface), iface);
-	collect_methods(&methods, ifaces_seen, ns, iface);
-	g_hash_table_destroy(ifaces_seen);
+	struct strset ifaces_seen;
+	strset_init(&ifaces_seen);
+	bool ok = strset_add(&ifaces_seen, IFACE_REPO_ID(iface));
+	assert(ok || errno != EEXIST);
+	collect_methods(&methods, &ifaces_seen, ns, iface);
+	strset_clear(&ifaces_seen);
 	return g_list_reverse(methods);
 }
 
@@ -95,9 +103,16 @@ static int exns_by_repoid_cmp(gconstpointer a, gconstpointer b) {
 }
 
 
+static bool build_value_glist(const char *key, IDL_tree value, GList **list) {
+	*list = g_list_prepend(*list, value);
+	return true;
+}
+
+
 GList *iface_exns_sorted(IDL_ns ns, IDL_tree iface)
 {
-	GHashTable *ex_repo_ids = g_hash_table_new(&g_str_hash, &g_str_equal);
+	struct { STRMAP_MEMBERS(IDL_tree); } ex_repo_ids;
+	strmap_init(&ex_repo_ids);
 
 	GList *methods = all_methods_of_iface(ns, iface);
 	GLIST_FOREACH(cur, methods) {
@@ -105,7 +120,7 @@ GList *iface_exns_sorted(IDL_ns ns, IDL_tree iface)
 		IDL_LIST_FOREACH(r_cur, IDL_OP_DCL(op).raises_expr) {
 			IDL_tree exn_id = IDL_LIST(r_cur).data;
 			const char *rid = IDL_IDENT(exn_id).repo_id;
-			if(g_hash_table_lookup(ex_repo_ids, rid) != NULL) continue;
+			if(strmap_get(&ex_repo_ids, rid) != NULL) continue;
 
 			/* exn_id actually refers to the IDL_EXCEPT_DCL's ident node.
 			 * the actual exception is an immediate parent.
@@ -113,14 +128,16 @@ GList *iface_exns_sorted(IDL_ns ns, IDL_tree iface)
 			IDL_tree exn = IDL_get_parent_node(exn_id, IDLN_EXCEPT_DCL,
 				NULL);
 			assert(exn != NULL);
-			assert(strcmp(rid, IDL_IDENT(IDL_EXCEPT_DCL(exn).ident).repo_id) == 0);
-			g_hash_table_insert(ex_repo_ids, (char *)rid, exn);
+			assert(streq(rid, IDL_IDENT(IDL_EXCEPT_DCL(exn).ident).repo_id));
+			bool ok = strmap_add(&ex_repo_ids, rid, exn);
+			assert(ok || errno != EEXIST);
 		}
 	}
 	g_list_free(methods);
 
-	GList *ret = g_hash_table_get_values(ex_repo_ids);
-	g_hash_table_destroy(ex_repo_ids);
+	GList *ret = NULL;
+	strmap_iterate(&ex_repo_ids, &build_value_glist, &ret);
+	strmap_clear(&ex_repo_ids);
 
 	return g_list_sort(ret, &exns_by_repoid_cmp);
 }
