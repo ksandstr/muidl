@@ -7,7 +7,10 @@ LLVM_BITS=all
 LIBIDL_CFLAGS=-I libIDL/include
 LIBIDL_LIBS=libIDL/.libs/libIDL-2.a
 
-CFLAGS:=-std=gnu99 -Wall -g -O2 -pthread -I include \
+CCAN_DIR=~/src/ccan
+CCAN_BITS=htable hash str list
+
+CFLAGS:=-std=gnu99 -Wall -g -O2 -pthread -I include -I $(CCAN_DIR) \
 	$(LIBIDL_CFLAGS) \
 	$(shell pkg-config --cflags $(PKG)) \
 	$(shell $(LLVM_CONFIG) --cflags | ./remove-unwanted-opts.pl)
@@ -52,7 +55,7 @@ check: muidl
 muidl: muidl.o util.o analyse.o verify.o llvmutil.o attr.o l4x2.o \
 		message.o sequence.o types.o struct.o header.o common.o \
 		dispatch.o stub.o except.o iface.o op.o \
-		stringfn.o $(LIBIDL_LIBS)
+		stringfn.o $(CCAN_BITS:%=ccan-%.o) $(LIBIDL_LIBS)
 	@echo "  LD $@"
 	@$(CXX) -o $@ $^ $(CFLAGS) $(LDFLAGS) $(LIBS)
 
@@ -70,6 +73,11 @@ tags: $(wildcard *.[ch])
 	@$(CC) -c -o $@ $< -MMD $(CFLAGS)
 	@test -d .deps || mkdir -p .deps
 	@mv $(<:.c=.d) .deps/
+
+
+ccan-%.o ::
+	@echo "  CC $@ <ccan>"
+	@$(CC) -c -o $@ $(CCAN_DIR)/ccan/$*/$*.c $(CFLAGS)
 
 
 include $(wildcard .deps/*.d)
