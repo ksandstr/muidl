@@ -27,6 +27,7 @@
 #include <errno.h>
 #include <assert.h>
 #include <libIDL/IDL.h>
+#include <ccan/talloc/talloc.h>
 #include <ccan/strmap/strmap.h>
 
 #include "defs.h"
@@ -618,11 +619,11 @@ LLVMValueRef get_struct_fn(
 	bool for_encode)
 {
 	const char *s_id = IDL_IDENT(IDL_TYPE_STRUCT(ctyp).ident).repo_id;
-	char *lookup_name = g_strdup_printf("%c%s", for_encode ? 'e' : 'd', s_id);
-	LLVMValueRef fn = g_hash_table_lookup(ctx->struct_decoder_fns,
-		lookup_name);
+	char *lookup_name = talloc_asprintf(ctx, "%c%s",
+		for_encode ? 'e' : 'd', s_id);
+	LLVMValueRef fn = strmap_get(&ctx->struct_decoder_fns, lookup_name);
 	if(fn != NULL) {
-		g_free(lookup_name);
+		talloc_free(lookup_name);
 		return fn;
 	}
 
@@ -668,7 +669,8 @@ LLVMValueRef get_struct_fn(
 		LLVMAddAttribute(params[i], LLVMInRegAttribute);
 	}
 	g_free(fnname);
-	g_hash_table_insert(ctx->struct_decoder_fns, lookup_name, fn);
+	bool ok = strmap_add(&ctx->struct_decoder_fns, lookup_name, fn);
+	assert(ok || errno != EEXIST);
 
 	return fn;
 }

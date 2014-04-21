@@ -22,6 +22,8 @@
 #include <glib.h>
 #include <libIDL/IDL.h>
 #include <llvm-c/Core.h>
+#include <ccan/talloc/talloc.h>
+#include <ccan/strmap/strmap.h>
 
 #include "defs.h"
 #include "l4x2.h"
@@ -93,13 +95,12 @@ static LLVMTypeRef llvm_mapgrant_type(struct llvm_ctx *ctx)
 /* TODO: [v2] get the word type from target info */
 struct llvm_ctx *create_llvm_ctx(struct print_ctx *pr)
 {
-	struct llvm_ctx *ctx = g_new0(struct llvm_ctx, 1);
+	struct llvm_ctx *ctx = talloc_zero(NULL, struct llvm_ctx);
 
 	ctx->pr = pr;
 	ctx->ns = pr->ns;
 	ctx->ctx = LLVMContextCreate();
-	ctx->struct_decoder_fns = g_hash_table_new_full(
-		&g_str_hash, &g_str_equal, &g_free, NULL);
+	strmap_init(&ctx->struct_decoder_fns);
 	ctx->i32t = LLVMInt32TypeInContext(ctx->ctx);
 	ctx->wordt = ctx->i32t;
 	ctx->voidptrt = LLVMPointerType(LLVMInt8TypeInContext(ctx->ctx), 0);
@@ -113,9 +114,9 @@ struct llvm_ctx *create_llvm_ctx(struct print_ctx *pr)
 void dispose_llvm_ctx(struct llvm_ctx *ctx)
 {
 	if(ctx == NULL) return;
-	g_hash_table_destroy(ctx->struct_decoder_fns);
+	strmap_clear(&ctx->struct_decoder_fns);
 	LLVMContextDispose(ctx->ctx);
-	g_free(ctx);
+	talloc_free(ctx);
 }
 
 
@@ -129,7 +130,7 @@ LLVMBasicBlockRef begin_function(struct llvm_ctx *ctx, LLVMValueRef fn)
 	LLVMPositionBuilderAtEnd(ctx->builder, entry_bb);
 	ctx->utcb = build_utcb_get(ctx);
 	ctx->alloc_bb = entry_bb;
-	ctx->malloc_ptrs = NULL;
+	assert(ctx->malloc_ptrs == NULL);
 
 	return entry_bb;
 }

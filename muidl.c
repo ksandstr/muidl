@@ -37,6 +37,7 @@
 #include <libIDL/IDL.h>
 #include <llvm-c/Analysis.h>
 #include <llvm-c/BitWriter.h>
+#include <ccan/talloc/talloc.h>
 
 #include "defs.h"
 #include "llvmutil.h"
@@ -489,6 +490,12 @@ typedef LLVMValueRef (*per_iface_fn)(
 	const struct iface_info *);
 
 
+static bool free_sdf_key(const char *key, LLVMValueRef fn, void *priv) {
+	talloc_free(key);
+	return true;
+}
+
+
 static LLVMModuleRef make_llvm_module(
 	struct llvm_ctx *ctx,
 	LLVMModuleRef mod,
@@ -502,8 +509,9 @@ static LLVMModuleRef make_llvm_module(
 	}
 	ctx->module = mod;
 
-	/* reset per-module context things */
-	g_hash_table_remove_all(ctx->struct_decoder_fns);
+	/* reset per-module context things. */
+	strmap_iterate(&ctx->struct_decoder_fns, &free_sdf_key, NULL);
+	strmap_clear(&ctx->struct_decoder_fns);
 	ctx->stritem_len_fn = NULL;
 	assert(ctx->malloc_ptrs == NULL);
 

@@ -31,6 +31,7 @@
 #include <setjmp.h>
 #include <libIDL/IDL.h>
 #include <glib.h>
+#include <ccan/strmap/strmap.h>
 
 #include <llvm-c/Core.h>
 
@@ -167,12 +168,19 @@ struct print_ctx
 };
 
 
-/* TODO: rename this structure. it's not actually a LLVM context; call it a
+/* talloc'd.
+ *
+ * TODO: rename this structure. it's not actually a LLVM context; call it a
  * build_ctx instead or something.
  */
 struct llvm_ctx
 {
+	/* TODO: this should be talloc'd, parented into llvm_ctx. however, right
+	 * now it's only ever allocated on the stack in muidl.c, so there's no
+	 * actual need.
+	 */
 	struct print_ctx *pr;
+
 	IDL_ns ns;
 	LLVMContextRef ctx;
 	LLVMModuleRef module;
@@ -184,12 +192,12 @@ struct llvm_ctx
 	void (*build_msgerr_bb)(struct llvm_ctx *);
 	LLVMBasicBlockRef msgerr_bb;
 
-	/* key: char * of struct repo id, value: LLVMValueRef of fn. key is
-	 * freed.
-	 *
-	 * (also contains the encoder functions.)
+	/* key is talloc'd under the containing llvm_ctx. (this map also contains
+	 * the encoder functions despite its name.)
 	 */
-	GHashTable *struct_decoder_fns;
+	struct {
+		STRMAP_MEMBERS(LLVMValueRef);
+	} struct_decoder_fns;
 
 	/* used by build_msg_{en,de}coder()
 	 * address of UTCB (pointer to ctx->wordt)
