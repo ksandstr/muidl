@@ -34,8 +34,13 @@ static LLVMTypeRef stub_fn_type(
 	struct method_info *inf,
 	int timeout_kind)
 {
-	struct message_info *reply = NULL;
+	struct message_info *reply, dummy;
 	if(inf->num_reply_msgs > 0) reply = inf->replies[0];
+	else {
+		/* to shut up the Clang static analyser */
+		dummy = (struct message_info){ };
+		reply = &dummy;
+	}
 
 	const bool has_context = has_complex_exn(inf->node);
 	int num_params = IDL_list_length(IDL_OP_DCL(inf->node).parameter_dcls),
@@ -77,6 +82,8 @@ static LLVMTypeRef stub_fn_type(
 			p = find_pdecl(inf->request->params, pdecl);
 			out = false;
 		} else {
+			assert(!inf->oneway);	/* ensured by analysis. */
+			assert(inf->num_reply_msgs > 0);
 			p = find_pdecl(reply->params, pdecl);
 			out = true;
 		}
