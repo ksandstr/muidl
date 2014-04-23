@@ -308,7 +308,7 @@ void decode_packed_struct_inline(
 	while(names[names_len] != NULL) names_len++;
 	assert(names_len == fmt->num_items);
 	assert(LLVMCountStructElementTypes(s_type) == names_len);
-	T types[names_len];
+	T types[MAX(names_len, 1)];
 	LLVMGetStructElementTypes(s_type, types);
 	int cur_word = 0;
 	V wordval = NULL;
@@ -465,7 +465,7 @@ LLVMValueRef encode_packed_struct_inline(
 	while(names[names_len] != NULL) names_len++;
 	assert(names_len == fmt->num_items);
 	assert(LLVMCountStructElementTypes(s_type) == names_len);
-	T types[names_len];
+	T types[MAX(names_len, 1)];
 	LLVMGetStructElementTypes(s_type, types);
 	V wordval = CONST_WORD(0);
 	int cur_word = 0, wordval_fill = 0;
