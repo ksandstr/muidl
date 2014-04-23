@@ -120,6 +120,10 @@ static gboolean supported_types_only(IDL_tree_func_data *tf, gpointer udptr)
 	while(node != NULL && IDL_NODE_TYPE(node) == IDLN_IDENT) {
 		node = IDL_get_parent_node(node, IDLN_ANY, NULL);
 	}
+	if(node == NULL) {
+		fail(v, "ident has no IDL_ANY parent? tres weird");
+		return FALSE;
+	}
 
 	bool in_const = IDL_get_parent_node(node, IDLN_CONST_DCL, NULL) != NULL;
 	switch(IDL_NODE_TYPE(node)) {
