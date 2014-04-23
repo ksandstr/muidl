@@ -668,17 +668,13 @@ static void add_rigid_dcl(
 	int param_ix,
 	int arg_ix)
 {
-	int count = -1, words = -1;
-	bool is_array = false;
+	bool is_array;
+	int words;
 	if(IDL_NODE_TYPE(dcl) == IDLN_IDENT) {
-		count = 1;
+		is_array = false;
 		words = size_in_words(mtype);
 	} else if(IDL_NODE_TYPE(dcl) == IDLN_TYPE_ARRAY) {
-		count = 1;
 		is_array = true;
-		IDL_LIST_FOREACH(size_cur, IDL_TYPE_ARRAY(dcl).size_list) {
-			count *= IDL_INTEGER(IDL_LIST(size_cur).data).value;
-		}
 		words = size_in_words(dcl);
 	} else {
 		g_assert_not_reached();
