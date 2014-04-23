@@ -37,29 +37,29 @@ LLVMValueRef build_decode_inline_sequence(
 {
 	const int bpe = seq->X.seq.bits_per_elem,
 		epw = seq->X.seq.elems_per_word;
-	/* compute length of sequence in words and items */
-	LLVMValueRef seq_words, seq_len;
+	/* compute length of sequence in items.
+	 *
+	 * TODO: length in words isn't used, but a clamping thing should be
+	 * applied to prevent encodings such as "129 half-word items" from causing
+	 * reads from outside the message register area in the UTCB.
+	 */
+	V seq_len;
 	if(!is_last || bpe < BITS_PER_WORD) {
-		/* not subject to trickery; take a length word. */
+		/* not subject to trickery; take a length word and bump @upos. */
 		seq_len = LLVMBuildTruncOrBitCast(ctx->builder,
 			build_utcb_load(ctx, upos, "inlseq.len.mr"),
 			ctx->i32t, "inlseq.len.explicit");
-		if(epw == 1) seq_words = seq_len;
-		else {
-			seq_words = LLVMBuildUDiv(ctx->builder, seq_len,
-				CONST_UINT(epw), "inlseq.len.int");
-		}
+		/* max length in words is seq_len / elems_per_word. */
 		upos = LLVMBuildAdd(ctx->builder, upos, CONST_UINT(1),
 			"inlseq.pos.bump");
 	} else {
 		/* last sequence of word-length items; compute length from "u". */
 		LLVMValueRef u = build_u_from_tag(ctx, ctx->tag);
-		seq_words = LLVMBuildSub(ctx->builder, u,
+		V seq_words = LLVMBuildSub(ctx->builder, u,
 			LLVMBuildSub(ctx->builder, upos, CONST_INT(1), "upos.minus.one"),
 			"inlseq.len.implicit");
-		seq_words = LLVMBuildTruncOrBitCast(ctx->builder, seq_words,
+		seq_len = LLVMBuildTruncOrBitCast(ctx->builder, seq_words,
 			ctx->i32t, "inlseq.len.int");
-		seq_len = seq_words;
 	}
 
 	LLVMBasicBlockRef loop_bb, exit_bb, odd_tail_bb = NULL,
