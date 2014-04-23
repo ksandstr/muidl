@@ -195,8 +195,6 @@ static LLVMValueRef build_exn_raise_fn(
 		/* special thing. */
 		tag = CONST_WORD(~0ull);
 	} else {
-		tag = LLVMBuildShl(ctx->builder, CONST_WORD(2), CONST_WORD(16),
-			"label.shifted");
 		unsigned num_args = LLVMCountParams(fn);
 		V *args = g_new(V, num_args);
 		LLVMGetParams(fn, args);
