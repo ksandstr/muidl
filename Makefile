@@ -16,7 +16,7 @@ CFLAGS:=-std=gnu99 -Wall -g -O2 -pthread -I include -I $(CCAN_DIR) \
 	$(shell $(LLVM_CONFIG) --cflags | ./remove-unwanted-opts.pl)
 LDFLAGS:=-Wl,--as-needed $(shell $(LLVM_CONFIG) --ldflags)
 LIBS:=$(shell pkg-config --libs $(PKG)) \
-	$(shell $(LLVM_CONFIG) --libs $(LLVM_BITS)) -lm -ldl
+	$(shell $(LLVM_CONFIG) --libs $(LLVM_BITS)) -lncurses -lm -ldl
 
 AUTOTEST_FILES := $(wildcard tests/*.idl)
 
