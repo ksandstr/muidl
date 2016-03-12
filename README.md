@@ -12,32 +12,27 @@ option) any later version published by the Free Software Foundation.
 How?
 ----
 
-Compiling the custom version of libIDL that µIDL uses requires the
+Compiling µIDL, including its customized version of libIDL, requires the
 
-    gnome-common flex bison
+    gnome-common flex bison llvm-3.6-dev
 
-packages on Debian GNU/Linux and compatible derivatives.
+packages on Devuan GNU/Linux and compatible Debian derivatives. Note that µIDL
+is currently incompatible with LLVM 3.7.
 
 The unit test framework requires the following Perl modules on the build
 system:
 
     File::Temp Test::More Test::Harness
 
-Once you've got these, say
-
-    $ make
-
-like there's ass in your pants.
+After that, use the Makefile with the appropriate program.
 
 
 Health warning
 --------------
 
-The code is an unwholesomely Lovecraftian mess. This is caused by a lack of
-formal testing and specification throughout development, a.k.a. early prototype
-disease.
-
-You have been warned.
+The code is an unwholesomely Lovecraftian mess. This is related to a lack of
+proper testing and specification throughout development, and a good bit of
+simple code rot. (who uses GLib anymore anyway.)
 
 
   -- Kalle A. Sandström <ksandstr@iki.fi>

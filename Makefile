@@ -1,7 +1,7 @@
 
 PKG=glib-2.0
 PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib/pkgconfig
-LLVM_CONFIG=llvm-config
+LLVM_CONFIG=llvm-config-3.6
 LLVM_BITS=all
 
 LIBIDL_CFLAGS=-I libIDL/include
@@ -16,7 +16,7 @@ CFLAGS:=-std=gnu99 -Wall -g -O2 -pthread -I include -I $(CCAN_DIR) \
 	$(shell $(LLVM_CONFIG) --cflags | ./remove-unwanted-opts.pl)
 LDFLAGS:=-Wl,--as-needed $(shell $(LLVM_CONFIG) --ldflags)
 LIBS:=$(shell pkg-config --libs $(PKG)) \
-	$(shell $(LLVM_CONFIG) --libs $(LLVM_BITS)) -lncurses -lm -ldl
+	$(shell $(LLVM_CONFIG) --libs --system-libs $(LLVM_BITS)) -lm -ldl
 
 AUTOTEST_FILES := $(wildcard tests/*.idl)
 
