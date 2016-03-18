@@ -195,9 +195,7 @@ struct llvm_ctx
 	/* key is talloc'd under the containing llvm_ctx. (this map also contains
 	 * the encoder functions despite its name.)
 	 */
-	struct {
-		STRMAP_MEMBERS(LLVMValueRef);
-	} struct_decoder_fns;
+	STRMAP(LLVMValueRef) struct_decoder_fns;
 
 	/* used by build_msg_{en,de}coder()
 	 * address of UTCB (pointer to ctx->wordt)

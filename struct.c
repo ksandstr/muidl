@@ -35,7 +35,7 @@
 #include "l4x2.h"
 
 
-static struct { STRMAP_MEMBERS(struct packed_format *); } packed_cache;
+static STRMAP(struct packed_format *) packed_cache;
 
 
 static const char *sdecl_name(IDL_tree sdecl) {

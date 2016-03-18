@@ -111,7 +111,7 @@ static bool build_value_glist(const char *key, IDL_tree value, GList **list) {
 
 GList *iface_exns_sorted(IDL_ns ns, IDL_tree iface)
 {
-	struct { STRMAP_MEMBERS(IDL_tree); } ex_repo_ids;
+	STRMAP(IDL_tree) ex_repo_ids;
 	strmap_init(&ex_repo_ids);
 
 	GList *methods = all_methods_of_iface(ns, iface);

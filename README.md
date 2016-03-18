@@ -12,12 +12,14 @@ option) any later version published by the Free Software Foundation.
 How?
 ----
 
-Compiling µIDL, including its customized version of libIDL, requires the
+Compiling µIDL, including its customized version of libIDL, requires a
+post-2016/02 CCAN tree under `~/src/ccan`. Alter the Makefile if this doesn't
+suit you. Also, `apt-get install`
 
-    gnome-common flex bison llvm-3.6-dev
+    gnome-common flex bison llvm-3.6-dev libedit-dev
 
-packages on Devuan GNU/Linux and compatible Debian derivatives. Note that µIDL
-is currently incompatible with LLVM 3.7.
+on Devuan GNU/Linux and compatible Debian derivatives. Note that µIDL is
+currently incompatible with LLVM 3.7.
 
 The unit test framework requires the following Perl modules on the build
 system:
