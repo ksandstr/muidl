@@ -1,7 +1,7 @@
 
 PKG=glib-2.0
 PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib/pkgconfig
-LLVM_CONFIG=llvm-config-3.6
+LLVM_CONFIG=llvm-config-3.8
 LLVM_BITS=all
 
 LIBIDL_CFLAGS=-I libIDL/include
@@ -11,7 +11,7 @@ CCAN_DIR=~/src/ccan
 CCAN_BITS=hash str strset strmap ilog talloc
 
 CFLAGS:=-std=gnu99 -Wall -g -O2 -pthread -I include -I $(CCAN_DIR) \
-	$(LIBIDL_CFLAGS) \
+	$(LIBIDL_CFLAGS) -Wno-sign-compare \
 	$(shell pkg-config --cflags $(PKG)) \
 	$(shell $(LLVM_CONFIG) --cflags | ./remove-unwanted-opts.pl)
 LDFLAGS:=-Wl,--as-needed $(shell $(LLVM_CONFIG) --ldflags)

@@ -1,10 +1,11 @@
 #!/usr/bin/perl -w
 use strict;
 
-# llvm-config puts optimization and linkage things in our command line. that
-# won't do.
+# llvm-config puts optimization, linkage, and warning things in our command
+# line. that won't do. off with their heads.
+my %skips = map { ($_, $_) }
+	qw/-DNDEBUG -D_GNU_SOURCE -pedantic -Wpedantic/;
 
-my %skips = ( '-DNDEBUG' => 1, '-D_GNU_SOURCE' => 1 );
 while(<>) {
 	my @bits = split /\s+/;
 	my @out = ();
