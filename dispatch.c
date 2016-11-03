@@ -354,7 +354,11 @@ static LLVMBasicBlockRef build_op_decode(
 		LLVMBuildStructGEP(ctx->builder, ctx->vtab_arg, inf->vtab_offset,
 				tmp_f(pr, "%s.offs", opname)),
 			tmp_f(pr, "%s.fnptr", opname));
-	assert(call_num_args == LLVMCountParams(fnptr));
+	/* FIXME: previously, LLVMCountParams(fnptr) would work here. as of llvm
+	 * 3.8 however, that causes a segfault. so the assertion is gone until
+	 * LLVM gets its shit back together.
+	 */
+	// assert(call_num_args == LLVMCountParams(fnptr));
 	V fncall = LLVMBuildCall(ctx->builder, fnptr, call_args, call_num_args,
 		IS_VOID_TYPEREF(rv_type) ? "" : tmp_f(pr, "%s.call", opname));
 
