@@ -69,6 +69,10 @@ bool op_has_sublabel(IDL_tree prop_node)
 }
 
 
+/* parse the label attributes in @prop_node while accounting for the
+ * IfaceLabel of its containing interface. @prop_node can be the IDL_IDENT
+ * node of a method or an exception. stores result in @inf.
+ */
 static bool get_msg_label(struct message_info *inf, IDL_tree prop_node)
 {
 	unsigned long tagmask = NO_TAGMASK;
@@ -88,8 +92,8 @@ static bool get_msg_label(struct message_info *inf, IDL_tree prop_node)
 		unsigned long ifacelabel = 0;
 		if(get_ul_property(&ifacelabel, ifprop, "IfaceLabel")) {
 			assert(op_has_sublabel(prop_node));
-			inf->sublabel = inf->label;
 			inf->label = ifacelabel;
+			inf->sublabel = labelval;
 		} else {
 			assert(!op_has_sublabel(prop_node));
 			inf->sublabel = NO_SUBLABEL;
@@ -939,33 +943,34 @@ static struct method_info *find_method_by_sublabel(GList *list, uint32_t label)
 }
 
 
+/* second pass over method lists to assign labels to operations that haven't
+ * got them, in such a way that there's no overlap with ones that do.
+ */
 static void assign_method_labels(
-	IDL_tree iface,
-	GList *methods,
-	GList *tagmask_methods)
+	IDL_tree iface, GList *methods, GList *tagmask_methods)
 {
 	IDL_tree iface_ident = IDL_INTERFACE(iface).ident;
 
-	/* assign labels to those methods that haven't got any. */
-	unsigned long ifacelabel = 0;
-	get_ul_property(&ifacelabel, iface_ident, "IfaceLabel");
-	/* skips reply labels of success (0), MSG_ERROR (1) and complex exceptions
-	 * (2), when not given an interface label.
+	/* the automagically assigned range. if FirstLabel isn't given, we'll skip
+	 * reply labels used for success (0), MSG_ERROR (1) and complex exceptions
+	 * (2). FirstLabel can be used to override this.
 	 */
-	unsigned long min_label = ifacelabel == 0 ? 3 : 0;
+	unsigned long min_label = 3;
 	if(get_ul_property(&min_label, iface_ident, "FirstLabel")) min_label--;
 
-	/* FIXME: this method of label assignment will cause wailing & gnashing of
-	 * teeth when someone provokes a label clash.
-	 */
-	uint32_t max_label = min_label;
+	unsigned next_label = min_label;
 	GLIST_FOREACH(m_cur, methods) {
 		struct method_info *inf = m_cur->data;
 		struct message_info *req = inf->request;
 
+		unsigned long ifacelabel = 0;
+		IDL_tree m_if = IDL_get_parent_node(inf->node, IDLN_INTERFACE, NULL);
+		assert(m_if != NULL);
+		get_ul_property(&ifacelabel, IDL_INTERFACE(m_if).ident, "IfaceLabel");
+
 		if(ifacelabel == 0 && req->label == 0) {
 			assert(req->tagmask == NO_TAGMASK);
-			int label = max_label + 1;
+			int label = next_label;
 			/* FIXME: set limit to where L4.X2 reserved labels begin */
 			while(find_method_by_label(methods, label) != NULL
 				&& label < 0x10000)
@@ -974,10 +979,14 @@ static void assign_method_labels(
 			}
 			if(label >= 0x10000) goto fail;
 			req->label = label;
-			max_label = label;
+			next_label = label + 1;
 		} else if(ifacelabel != 0 && req->sublabel == 0) {
 			assert(req->tagmask == NO_TAGMASK);
-			int sublabel = max_label + 1;
+			/* FIXME: this assigns sublabels from the same range as toplevel
+			 * labels. that's stupid, and should be changed, but seems
+			 * unlikely to break anything right now.
+			 */
+			int sublabel = next_label;
 			/* the limit is arbitrary (but reasonable). */
 			while(find_method_by_sublabel(tagmask_methods, sublabel) != NULL
 				&& sublabel < 0x10000)
@@ -986,11 +995,8 @@ static void assign_method_labels(
 			}
 			if(sublabel >= 0x10000) goto fail;
 			req->sublabel = sublabel;
-			max_label = sublabel;
+			next_label = sublabel + 1;
 		}
-
-		if(ifacelabel != 0) max_label = MAX(max_label, req->sublabel);
-		else max_label = MAX(max_label, req->label);
 	}
 
 /* FIXME: rewrite this to ensure that ifacelabels don't clash with regular
