@@ -25,6 +25,8 @@
 #include <string.h>
 #include <stdbool.h>
 #include <libIDL/IDL.h>
+#include <ccan/htable/htable.h>
+#include <ccan/talloc/talloc.h>
 
 #include "defs.h"
 
@@ -34,6 +36,20 @@
  */
 static int array_size_in_words(IDL_tree type_array, IDL_tree dcl);
 static int struct_size_in_words(IDL_tree type_struct);
+
+
+/* TODO: move this elsewhere */
+/* hash32shiftmult(); presumed to have been in the public domain. */
+static uint32_t int_hash(uint32_t key)
+{
+	uint32_t c2=0x27d4eb2du; // a prime or an odd constant
+	key = (key ^ 61) ^ (key >> 16);
+	key = key + (key << 3);
+	key = key ^ (key >> 4);
+	key = key * c2;
+	key = key ^ (key >> 15);
+	return key;
+}
 
 
 bool get_ul_property(
@@ -943,6 +959,24 @@ static struct method_info *find_method_by_sublabel(GList *list, uint32_t label)
 }
 
 
+struct label_bucket {
+	unsigned label;
+	unsigned next_sub;
+};
+
+
+static size_t hash_label_bucket(const void *ptr, void *unused) {
+	const struct label_bucket *b = ptr;
+	return int_hash(b->label);
+}
+
+
+static bool cmp_label_bucket(const void *cand, void *key) {
+	const struct label_bucket *b = cand;
+	return b->label == *(unsigned *)key;
+}
+
+
 /* second pass over method lists to assign labels to operations that haven't
  * got them, in such a way that there's no overlap with ones that do.
  */
@@ -957,6 +991,9 @@ static void assign_method_labels(
 	 */
 	unsigned long min_label = 3;
 	if(get_ul_property(&min_label, iface_ident, "FirstLabel")) min_label--;
+
+	struct htable *buckets = talloc(NULL, struct htable);
+	htable_init(buckets, &hash_label_bucket, NULL);
 
 	unsigned next_label = min_label;
 	GLIST_FOREACH(m_cur, methods) {
@@ -982,20 +1019,27 @@ static void assign_method_labels(
 			next_label = label + 1;
 		} else if(ifacelabel != 0 && req->sublabel == 0) {
 			assert(req->tagmask == NO_TAGMASK);
-			/* FIXME: this assigns sublabels from the same range as toplevel
-			 * labels. that's stupid, and should be changed, but seems
-			 * unlikely to break anything right now.
-			 */
-			int sublabel = next_label;
-			/* the limit is arbitrary (but reasonable). */
-			while(find_method_by_sublabel(tagmask_methods, sublabel) != NULL
-				&& sublabel < 0x10000)
-			{
-				sublabel++;
+			unsigned b_key = ifacelabel;
+			struct label_bucket *b = htable_get(buckets, int_hash(b_key),
+				&cmp_label_bucket, &b_key);
+			if(b == NULL) {
+				b = talloc(buckets, struct label_bucket);
+				b->label = ifacelabel;
+				b->next_sub = int_hash(ifacelabel ^ 0xb007c0de) & 0xffff;
+				htable_add(buckets, int_hash(b_key), b);
+				assert(htable_get(buckets, int_hash(b_key),
+					&cmp_label_bucket, &b_key) == b);
 			}
-			if(sublabel >= 0x10000) goto fail;
-			req->sublabel = sublabel;
-			next_label = sublabel + 1;
+			/* the limit is arbitrary (but reasonable). */
+			int spins = 0;
+			while(find_method_by_sublabel(tagmask_methods, b->next_sub) != NULL
+				&& spins++ < 4000)
+			{
+				if(++b->next_sub > 0xffff) b->next_sub = min_label;
+			}
+			if(b->next_sub >= 0x10000) goto fail;
+			req->sublabel = b->next_sub;
+			if(++b->next_sub > 0xffff) b->next_sub = min_label;
 		}
 	}
 
@@ -1021,6 +1065,8 @@ static void assign_method_labels(
 	g_hash_table_destroy(lab_hash);
 #endif
 
+	htable_clear(buckets);
+	talloc_free(buckets);
 	return;
 
 fail:
