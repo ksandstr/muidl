@@ -202,9 +202,11 @@ static LLVMValueRef build_stub_receive_strings(
 						LLVMBuildStructGEP(ctx->builder, exptr,
 							p->arg_ix + 1, "ex.lp.mem.ptr"),
 						indexes, 2, "ex.lp.1st.ptr");
+					si->lenptr = NULL;
 				} else {
 					/* it's in an ordinary reply */
 					si->memptr = args[p->arg_ix];
+					si->lenptr = args[p->arg_ix + 1];
 				}
 			}
 		}
@@ -219,8 +221,9 @@ static LLVMValueRef build_stub_receive_strings(
 		}
 
 		V si_words[2];
-		build_simple_string_item(ctx, si_words, si->memptr,
-			CONST_WORD(si->length), NULL);
+		V lenword = si->lenptr == NULL ? CONST_WORD(si->length)
+			: LLVMBuildLoad(ctx->builder, si->lenptr, "lenword.val");
+		build_simple_string_item(ctx, si_words, si->memptr, lenword, NULL);
 		if(si[1].length >= 0) {
 			/* we're not the last; set the C bit. */
 			si_words[0] = LLVMBuildOr(ctx->builder, CONST_WORD(1),

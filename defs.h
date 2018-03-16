@@ -314,6 +314,7 @@ struct stritem_info
 	 */
 	int offset;
 	LLVMValueRef memptr;	/* <i8 *> */
+	LLVMValueRef lenptr;	/* <i32 *> or NULL when static */
 
 	int reply_pos;		/* index in a method_info->replies */
 	struct msg_param *param;	/* long param in a message_info->_long */
