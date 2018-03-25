@@ -206,7 +206,14 @@ static LLVMValueRef build_stub_receive_strings(
 				} else {
 					/* it's in an ordinary reply */
 					si->memptr = args[p->arg_ix];
-					si->lenptr = args[p->arg_ix + 1];
+					/* FIXME: specify in msg_param whether these have a lenptr
+					 * or not. this hack is ad-hoc and terrible.
+					 */
+					if(IDL_NODE_TYPE(p->type) == IDLN_TYPE_STRING) {
+						si->lenptr = NULL;
+					} else {
+						si->lenptr = args[p->arg_ix + 1];
+					}
 				}
 			}
 		}
