@@ -130,6 +130,7 @@ void build_read_ipc_parameter(
 		int size = IDL_INTEGER(IDL_LIST(size_list).data).value;
 		build_decode_array(ctx, dst, first_mr, get_array_type(ctyp), size);
 	} else if(IS_MAPGRANT_TYPE(ctyp)) {
+		/* (TODO: when is dst[0] ever NULL?) */
 		if(dst[0] == NULL) {
 			dst[0] = build_local_storage(ctx, ctx->mapgrant, NULL,
 				"mapgrant.mem");
@@ -479,8 +480,7 @@ void build_msg_decoder(
 	GLIST_FOREACH(cur, msg->mapped) {
 		const struct msg_param *m = cur->data;
 		assert(IS_MAPGRANT_TYPE(m->type));
-		args[m->arg_ix] = build_local_storage(ctx, ctx->mapgrant,
-			CONST_INT(1), tmp_f(ctx->pr, "mgitem.%s.ptr", m->name));
+		assert(args[m->arg_ix] != NULL);
 		for(int i=0; i<2; i++) {
 			V word = build_ipc_input_val_ix(ctx,
 				i == 0 ? ctx->tpos
