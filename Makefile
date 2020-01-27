@@ -11,7 +11,7 @@ CCAN_DIR=~/src/ccan
 CCAN_BITS=hash htable str strset strmap ilog talloc
 
 CFLAGS:=-std=gnu99 -Wall -g -O2 -pthread -I include -I $(CCAN_DIR) \
-	$(LIBIDL_CFLAGS) -Wno-sign-compare \
+	$(LIBIDL_CFLAGS) -Wno-sign-compare -Wimplicit-fallthrough=2 \
 	$(shell pkg-config --cflags $(PKG)) \
 	$(shell $(LLVM_CONFIG) --cflags | ./remove-unwanted-opts.pl)
 LDFLAGS:=-Wl,--as-needed $(shell $(LLVM_CONFIG) --ldflags)

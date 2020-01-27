@@ -277,6 +277,7 @@ int size_in_words(IDL_tree type)
 int max_size(IDL_tree type)
 {
 	if(is_value_type(type)) return (size_in_bits(type) + 7) / 8;
+	struct llvm_ctx *ctx;
 	switch(IDL_NODE_TYPE(type)) {
 		case IDLN_TYPE_SEQUENCE:
 			return max_size(SEQ_SUBTYPE(type)) * SEQ_BOUND_VAL(type);
@@ -284,14 +285,13 @@ int max_size(IDL_tree type)
 		/* the unit is one 8-bit character, so... */
 		case IDLN_TYPE_STRING: return STR_BOUND_VAL(type);
 
-		case IDLN_TYPE_STRUCT: {
-			struct llvm_ctx *ctx = GET_CONTEXT();
+		case IDLN_TYPE_STRUCT:
+			ctx = GET_CONTEXT();
 			if(ctx != NULL) {
 				return LLVMConstIntGetSExtValue(
 					LLVMSizeOf(llvm_struct_type(ctx, NULL, type)));
 			}
-			/* FALL THRU to NOTDEFINED */
-		}
+			/* FALL THRU */
 
 		case IDLN_TYPE_WIDE_STRING:
 		case IDLN_TYPE_ARRAY:
