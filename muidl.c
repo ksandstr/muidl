@@ -38,6 +38,7 @@
 #include <llvm-c/Analysis.h>
 #include <llvm-c/BitWriter.h>
 #include <ccan/talloc/talloc.h>
+#include <ccan/darray/darray.h>
 
 #include "defs.h"
 #include "llvmutil.h"
@@ -734,9 +735,37 @@ static char *join_cpp_opts(const char *parm, char **strv)
 }
 
 
+/* glib's option parser doesn't easily handle -DVARIABLE=123 form, so let's
+ * help it along a tad.
+ */
+static char **separate_short_defines(int *argc, char *argv[])
+{
+	assert(*argc > 0);
+	darray(char *) output = darray_new();
+	darray_push(output, argv[0]);
+	int hits = 0;
+	for(int i=1; i < *argc; i++) {
+		if(argv[i][0] == '-' && argv[i][1] == 'D') {
+			darray_appends(output, strdup("-D"), argv[i] + 2);
+			hits++;
+		} else {
+			darray_push(output, argv[i]);
+		}
+	}
+	if(hits > 0) {
+		*argc += hits;
+		return output.item;
+	} else {
+		darray_free(output);
+		return argv;
+	}
+}
+
+
 int main(int argc, char *argv[])
 {
 	setlocale(LC_CTYPE, "");
+	argv = separate_short_defines(&argc, argv);
 	parse_cmdline(argc, argv);
 
 	if(arg_version) {
