@@ -1,0 +1,58 @@
+
+/* AUTOTEST: ./muidl -D __TEST__=%t -I idl -I share/idl %n */
+
+module InheritMultiple
+{
+
+interface InternalBase0 {
+	void hello_base_zero();
+};
+
+interface InternalBase1 {
+	void hello_base_one();
+};
+
+/* TEST 0: simple inheritance from within same module.
+ * expected: success
+ */
+#if __TEST__ == 0 || __TEST__ == 2
+interface InternalSimple: InternalBase0 {
+	void hello_derived();
+};
+#endif
+
+/* TEST 1: multiple inheritance from within same module.
+ * expected: success
+ */
+#if __TEST__ == 1
+interface InternalComplex: InternalBase0, InternalBase1 {
+	void hello_derived();
+};
+#endif
+
+/* TEST 2: multiple inheritance from within same module, using a
+ * simply-inherited parent.
+ *
+ * expected: success
+ */
+#if __TEST__ == 2
+interface InternalDifficult: InternalSimple, InternalBase1 {
+	void hello_difficult();
+};
+#endif
+
+};
+
+
+/* TEST 3: multiple inheritance from without a module, using a
+ * simply-inherited parent.
+ *
+ * expected: success
+ */
+#if __TEST__ == 3
+interface ExternalComplex:
+	InheritMultiple::InternalBase0, InheritMultiple::InternalBase1
+{
+	void hello_external();
+};
+#endif
