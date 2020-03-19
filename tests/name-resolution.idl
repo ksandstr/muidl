@@ -1,0 +1,20 @@
+
+/* AUTOTEST: ./muidl -D __TEST__=%t -I idl -I share/idl %n */
+
+module NameResolution
+{
+
+/* TEST 0: opdcl names and interface names shouldn't conflict.
+ * expected: success
+ */
+#if __TEST__ == 0
+interface Base {
+	void base();
+};
+
+interface Derived: Base {
+	void derived();
+};
+#endif
+
+};
