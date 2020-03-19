@@ -49,8 +49,12 @@ static bool collect_methods(
 		char *inh_repoid = IDL_IDENT_REPO_ID(inh_id);
 		if(strset_get(ifaces_seen, inh_repoid) != NULL) continue;
 
+		/* have to go up one more step because otherwise this'll match op_dcls
+		 * (presumably attr_dcls as well) of the same case-folded name,
+		 * which'd confuse the routine greatly.
+		 */
 		IDL_tree inh_iface_id = IDL_ns_resolve_this_scope_ident(ns,
-			IDL_IDENT_TO_NS(inh_id), inh_id);
+			IDL_NODE_UP(IDL_IDENT_TO_NS(inh_id)), inh_id);
 		if(inh_iface_id == NULL) {
 			fprintf(stderr, "can't find inherited interface `%s'\n",
 				inh_repoid);
