@@ -1,6 +1,5 @@
 #!/usr/bin/perl -w
-use strict;
-use feature "switch";	# from 5.10 on
+use Modern::Perl '2013';
 
 use File::Temp qw/tempfile tempdir/;
 use Fcntl qw/SEEK_SET/;
@@ -66,21 +65,17 @@ sub parse_tests {
 		my ($lineno, $text) = @$_;
 		my @lines = split("\n", $text);
 		my %t = ();
+		# TODO: this could, and should, support multi-line test specs;
+		# concatting lines after the first to $t{dest}.
 		foreach(@lines) {
 			chomp;
-			given($_) {
-				when(/\s*TEST\s+(\d+):\s+(.+)$/) {
-					$t{id} = int($1);
-					$t{desc} = $2;
-				}
-				when(/\s*expect\w*:\s+(.+)$/) {
-					$t{expect} = $1;
-				}
-				default {
-					if($t{id} && !($_ =~ /^\s+$/)) {
-						diag("warning: `$_' line in test spec ignored");
-					}
-				}
+			if(/\s*TEST\s+(\d+):\s+(.+)$/) {
+				$t{id} = int($1);
+				$t{desc} = $2;
+			} elsif(/\s*expect\w*:\s+(.+)$/) {
+				$t{expect} = $1;
+			} elsif($t{id} && !($_ =~ /^\s+$/)) {
+				diag("warning: `$_' line in test spec ignored");
 			}
 		}
 		if(exists $t{id}) {
