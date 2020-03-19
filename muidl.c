@@ -736,7 +736,7 @@ static char *join_cpp_opts(const char *parm, char **strv)
 
 
 /* glib's option parser doesn't easily handle -DVARIABLE=123 form, so let's
- * help it along a tad.
+ * help it along a tad by breaking them up. returns new argv.
  */
 static char **separate_short_defines(int *argc, char *argv[])
 {
@@ -745,7 +745,7 @@ static char **separate_short_defines(int *argc, char *argv[])
 	darray_push(output, argv[0]);
 	int hits = 0;
 	for(int i=1; i < *argc; i++) {
-		if(argv[i][0] == '-' && argv[i][1] == 'D') {
+		if(argv[i][0] == '-' && argv[i][1] == 'D' && argv[i][2] != '\0') {
 			darray_appends(output, strdup("-D"), argv[i] + 2);
 			hits++;
 		} else {
@@ -754,6 +754,7 @@ static char **separate_short_defines(int *argc, char *argv[])
 	}
 	if(hits > 0) {
 		*argc += hits;
+		assert(output.size == *argc);
 		return output.item;
 	} else {
 		darray_free(output);
