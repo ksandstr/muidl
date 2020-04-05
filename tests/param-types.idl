@@ -115,6 +115,14 @@ interface NativeTypes
 	void time_output(out L4X2::Time param);
 	void time_inout(inout L4X2::Time param);
 #endif
+
+/* TEST 102: inline sequences of words
+ * expected: success
+ */
+#if __TEST__ == 102
+	typedef sequence<long, 60> buncha_words;
+	boolean pass_words(in long a, in long b, in buncha_words rest);
+#endif
 };
 
 };

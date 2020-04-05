@@ -340,9 +340,9 @@ static LLVMBasicBlockRef build_op_decode(
 	GLIST_FOREACH(cur, req->seq) {
 		struct msg_param *seq = cur->data;
 		if(IDL_PARAM_DCL(seq->param_dcl).attr != IDL_PARAM_IN) continue;
-		V len = LLVMBuildLoad(ctx->builder, args[seq->arg_ix + 1],
+		V len = LLVMBuildLoad(ctx->builder, d_args[seq->arg_ix + 1],
 			"inlseq.len");
-		args[seq->arg_ix + 1] = len;
+		d_args[seq->arg_ix + 1] = len;
 	}
 	if(inf->num_reply_msgs > 1) {
 		/* if exceptions can be raised, clear the indicator. */
