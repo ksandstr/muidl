@@ -618,7 +618,7 @@ LLVMValueRef build_dispatcher_function(
 		build_store_br(ctx, acceptor, 0);
 		if(have_stringbufs) build_set_strbufs(ctx, stritems);
 		/* ~0 is L4_anythread. (it could also be a symbolic constant.) */
-		uint32_t replywait_tos = (0x4000 << 16) | 0;	/* zerotime, never */
+		uint32_t replywait_tos = (0x400 << 16) | 0;	/* zerotime, never */
 		ipc_tag = build_l4_ipc_call(ctx,
 			ctx->from, CONST_WORD(replywait_tos), LLVMConstNot(CONST_WORD(0)),
 			ctx->reply_tag, &ipc_from, &ipc_mr1, &ipc_mr2);
