@@ -35,6 +35,7 @@
 #define V LLVMValueRef
 #define T LLVMTypeRef
 #define BB LLVMBasicBlockRef
+#define A LLVMAttributeRef
 
 
 /* constant macros. more useful than piles of LLVMConstInt(ctx->i32t, ...). */
@@ -91,5 +92,7 @@ extern LLVMBasicBlockRef begin_function(
  * block with a branch to the specified basic block.
  */
 extern void end_function(struct llvm_ctx *ctx, LLVMBasicBlockRef start_bb);
+
+extern LLVMAttributeRef llvm_attr(struct llvm_ctx *ctx, const char *attr);
 
 #endif

@@ -660,14 +660,13 @@ LLVMValueRef get_struct_fn(
 		for_encode ? "en" : "de", flatname);
 	fn = LLVMAddFunction(ctx->module, fnname, fntype);
 	LLVMSetLinkage(fn, LLVMExternalLinkage);
-	V params[nparms];
 	assert(LLVMCountParams(fn) == nparms);
-	LLVMGetParams(fn, params);
-	LLVMAddAttribute(params[0], LLVMNoAliasAttribute);
-	LLVMAddAttribute(params[0], LLVMNoCaptureAttribute);
-	for(int i=0; i<nparms; i++) {
-		LLVMAddAttribute(params[i], LLVMInRegAttribute);
-	}
+
+	LLVMAddAttributeAtIndex(fn, 0, llvm_attr(ctx, "noalias"));
+	LLVMAddAttributeAtIndex(fn, 0, llvm_attr(ctx, "nocapture"));
+	LLVMAttributeRef inreg = llvm_attr(ctx, "inreg");
+	for(int i=0; i < nparms; i++) LLVMAddAttributeAtIndex(fn, i, inreg);
+
 	g_free(fnname);
 	bool ok = strmap_add(&ctx->struct_decoder_fns, lookup_name, fn);
 	assert(ok || errno != EEXIST);

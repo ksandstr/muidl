@@ -1,7 +1,7 @@
 
 PKG=glib-2.0
 PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib/pkgconfig
-LLVM_CONFIG=llvm-config-3.8
+LLVM_CONFIG=llvm-config-11
 LLVM_BITS=all
 
 LIBIDL_CFLAGS=-I libIDL/include

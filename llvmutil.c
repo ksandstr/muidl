@@ -144,3 +144,16 @@ void end_function(struct llvm_ctx *ctx, LLVMBasicBlockRef start_bb)
 	LLVMPositionBuilderAtEnd(ctx->builder, prev);
 	build_free_mallocs(ctx);
 }
+
+
+LLVMAttributeRef llvm_attr(struct llvm_ctx *ctx, const char *attr)
+{
+	/* TODO: stick these in a hash table or something? */
+	LLVMAttributeRef a = LLVMCreateStringAttribute(ctx->ctx,
+		attr, strlen(attr), "", 0);
+	if(a == NULL) {
+		printf("%s: couldn't create attr=`%s'!\n", __func__, attr);
+		abort();
+	}
+	return a;
+}
