@@ -437,11 +437,9 @@ extern struct llvm_ctx *replace_llvm_ctx(struct llvm_ctx *ctx);
 
 #define GET_CONTEXT() (get_llvm_ctx())
 
-/* g_free()s every element, then g_list_free()s the list */
-extern void list_dispose(GList *list);
 extern void free_message_info(struct message_info *inf);
 extern void free_method_info(struct method_info *inf);
-extern void free_iface_info(struct iface_info *inf);
+extern void free_iface_info(struct iface_info *inf, void *unused);
 
 /* output a "warning: %s[fmt]", but only once per program execution.
  * returns true if a message was output.

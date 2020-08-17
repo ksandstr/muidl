@@ -40,9 +40,11 @@ static bool keys_done = false;
 static pthread_once_t key_once = PTHREAD_ONCE_INIT;
 
 
-void list_dispose(GList *list)
+static void list_dispose(GList *list)
 {
-	g_list_foreach(list, (GFunc)&g_free, NULL);
+	GLIST_FOREACH(cur, list) {
+		g_free(cur->data);
+	}
 	g_list_free(list);
 }
 
@@ -71,7 +73,7 @@ void free_method_info(struct method_info *inf)
 }
 
 
-void free_iface_info(struct iface_info *inf)
+void free_iface_info(struct iface_info *inf, void *unused)
 {
 	if(inf == NULL) return;
 
