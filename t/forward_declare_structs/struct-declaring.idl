@@ -1,0 +1,19 @@
+
+module M
+{
+
+struct S1 {
+	long foo;
+	short bar;
+	octet zot;
+};
+
+
+interface I
+{
+	struct S2 {
+		octet a, b, c, d;
+	};
+};
+
+}; /* module M */

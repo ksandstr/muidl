@@ -1,0 +1,25 @@
+
+#include "struct-declaring.idl"
+
+
+[StubPrefix(__t)]
+interface T
+{
+	struct S3 {
+		octet foo;
+		unsigned short bar;
+		long poing;
+	};
+
+	void op01(in M::S1 foo, in long bar);
+	void op02(out M::S1 foo, in long bar);
+	void op03(inout M::S1 foo, in long bar);
+
+	void op11(in M::I::S2 foo, in long bar);
+	void op12(out M::I::S2 foo, in long bar);
+	void op13(inout M::I::S2 foo, in long bar);
+
+	void op21(in S3 foo, in long bar);
+	void op22(out S3 foo, in long bar);
+	void op23(inout S3 foo, in long bar);
+};
