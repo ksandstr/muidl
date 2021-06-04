@@ -10,7 +10,7 @@ LIBIDL_LIBS=libIDL/.libs/libIDL-2.a
 CCAN_DIR=~/src/ccan
 CCAN_BITS=hash htable str strset strmap ilog talloc
 
-CFLAGS:=-std=gnu99 -Wall -g -O2 -pthread -I include -I $(CCAN_DIR) \
+CFLAGS:=-std=gnu11 -Wall -g -O2 -pthread -I include -I $(CCAN_DIR) \
 	$(LIBIDL_CFLAGS) -Wno-sign-compare -Wimplicit-fallthrough=2 \
 	$(shell pkg-config --cflags $(PKG)) \
 	$(shell $(LLVM_CONFIG) --cflags | ./remove-unwanted-opts.pl)
@@ -23,44 +23,46 @@ AUTOTEST_FILES := $(wildcard tests/*.idl)
 .PHONY: all clean distclean
 
 
-all: tags $(LIBIDL_LIBS) muidl
+all: tags
+	+@make $(LIBIDL_LIBS)
+	+@make muidl
 
 
 clean:
-	rm -f *.o
-	+make output-clean
+	@rm -f *.o
+	+@make output-clean
 
 
 output-clean:
-	rm -f *-defs.h *-service.s *-client.s *-common.s
+	@rm -f *-defs.h *-service.s *-client.s *-common.s
 
 
 distclean: clean
-	rm -f muidl
-	+make -C libIDL distclean
+	@rm -f muidl
+	+@make -C libIDL distclean
 	@rm -f tags
 	@rm -rf .deps
 
 
 check: muidl
 	tests/run_all.pl
-	+make output-clean
-
-
-.NOTPARALLEL libIDL/.libs/libIDL-2.a libIDL/include/libIDL/IDL.h:
-	cd libIDL; ./autogen.sh
-	+make -C libIDL
+	+@make output-clean
 
 
 muidl: muidl.o util.o analyse.o verify.o llvmutil.o attr.o l4x2.o \
 		message.o sequence.o types.o struct.o header.o common.o \
 		dispatch.o stub.o except.o iface.o op.o \
-		stringfn.o $(CCAN_BITS:%=ccan-%.o) $(LIBIDL_LIBS)
+		stringfn.o $(CCAN_BITS:%=ccan-%.o)
 	@echo "  LD $@"
-	@$(CXX) -o $@ $^ $(CFLAGS) $(LDFLAGS) $(LIBS)
+	@$(CXX) -o $@ $^ $(LIBIDL_LIBS) $(CFLAGS) $(LDFLAGS) $(LIBS)
 
 
-tags: $(wildcard *.[ch])
+libIDL/.libs/libIDL-2.a libIDL/include/libIDL/IDL.h:
+	@cd libIDL; ./autogen.sh
+	+@make -C libIDL
+
+
+tags: $(wildcard *.[ch]) $(wildcard libIDL/*.[ch])
 	@ctags -R *
 
 
@@ -78,6 +80,9 @@ tags: $(wildcard *.[ch])
 ccan-%.o ::
 	@echo "  CC $@ <ccan>"
 	@$(CC) -c -o $@ $(CCAN_DIR)/ccan/$*/$*.c $(CFLAGS)
+
+
+ccan-hash.o :: CFLAGS += -Wno-implicit-fallthrough
 
 
 include $(wildcard .deps/*.d)
