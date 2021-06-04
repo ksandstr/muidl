@@ -18,7 +18,7 @@ LDFLAGS:=-Wl,--as-needed $(shell $(LLVM_CONFIG) --ldflags)
 LIBS:=$(shell pkg-config --libs $(PKG)) \
 	$(shell $(LLVM_CONFIG) --libs --system-libs $(LLVM_BITS)) -lm -ldl
 
-AUTOTEST_FILES := $(wildcard tests/*.idl)
+AUTOTEST_FILES := $(wildcard tests/autotest-idl/*.idl)
 
 .PHONY: all clean distclean
 
