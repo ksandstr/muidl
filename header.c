@@ -28,6 +28,7 @@
 #include <ccan/htable/htable.h>
 #include <ccan/hash/hash.h>
 #include <ccan/str/str.h>
+#include <ccan/talloc/talloc.h>
 #include <libIDL/IDL.h>
 
 #include "defs.h"
@@ -825,14 +826,7 @@ static bool cmp_ident_repo_id_str(const void *cand, void *key) {
 }
 
 
-struct forward_structs_ctx {
-	struct print_ctx *pr;
-	struct htable seen;
-	bool first;
-};
-
-
-static gboolean find_struct_decl_by_ident(IDL_tree_func_data *tf, void *priv)
+static gboolean _find_struct_decl_by_ident(IDL_tree_func_data *tf, void *priv)
 {
 	void **param = priv;
 	if(IDL_NODE_TYPE(tf->tree) != IDLN_TYPE_STRUCT) return TRUE;
@@ -842,6 +836,24 @@ static gboolean find_struct_decl_by_ident(IDL_tree_func_data *tf, void *priv)
 	*(IDL_tree *)param[1] = tf->tree;
 	return FALSE;
 }
+
+
+static IDL_tree find_local_struct(struct print_ctx *pr, IDL_tree ident)
+{
+	assert(IDL_NODE_TYPE(ident) == IDLN_IDENT);
+
+	IDL_tree struc = NULL;
+	void *param[] = { ident, &struc };
+	IDL_tree_walk_in_order(pr->tree, &_find_struct_decl_by_ident, param);
+	return struc;
+}
+
+
+struct forward_structs_ctx {
+	struct print_ctx *pr;
+	struct htable *seen;
+	bool first;
+};
 
 
 /* TODO: extend this to also print union and enum forwards */
@@ -858,18 +870,15 @@ static gboolean print_struct_forwards(IDL_tree_func_data *tf, void *priv)
 		/* do each repo_id once */
 		IDL_tree ident = IDL_TYPE_STRUCT(typ).ident;
 		size_t hash = hash_ident_repo_id(ident, NULL);
-		IDL_tree prev = htable_get(&ctx->seen, hash, &cmp_ident_repo_id_str,
+		IDL_tree prev = htable_get(ctx->seen, hash, &cmp_ident_repo_id_str,
 			IDL_IDENT(ident).repo_id);
 		if(prev != NULL) continue;
-		htable_add(&ctx->seen, hash, ident);
+		htable_add(ctx->seen, hash, ident);
 
 		/* determine if the structure is in fact defined in the current IDL
-		 * source, and don't forward it if true.
+		 * source, and don't forward-declare it if so.
 		 */
-		IDL_tree struc = NULL;
-		void *param[] = { ident, &struc };
-		IDL_tree_walk_in_order(ctx->pr->tree, &find_struct_decl_by_ident, param);
-		if(struc != NULL) continue;
+		if(find_local_struct(ctx->pr, ident) != NULL) continue;
 
 		if(ctx->first) {
 			ctx->first = false;
@@ -884,44 +893,42 @@ static gboolean print_struct_forwards(IDL_tree_func_data *tf, void *priv)
 }
 
 
-static gboolean print_struct_decls(IDL_tree_func_data *tf, gpointer userdata)
+static void print_struct_decl(struct print_ctx *pr, IDL_tree struc)
 {
-	struct print_ctx *print = userdata;
-	FILE *of = print->of;
+	assert(IDL_NODE_TYPE(struc) == IDLN_TYPE_STRUCT);
 
-	switch(IDL_NODE_TYPE(tf->tree)) {
-		default: return FALSE;
+	void *talctx = talloc_new(NULL);
+	char *l = long_name(pr->ns, struc), *upl = g_utf8_strup(l, -1);
 
-		case IDLN_LIST:
-		case IDLN_MODULE:
-		case IDLN_SRCFILE:
-		case IDLN_INTERFACE:
-			return TRUE;
+	/* cpp guard. this is nowhere near secure; really we'd like to siphash the
+	 * signature string, define as many variables as there are 64-bit limbs in
+	 * its output, and check all of them in the preprocessor. that type of
+	 * fugly can easily stay in a header file, so no worries about aesthetics.
+	 */
+	char *sig = struct_signature(talctx, struc);
+	code_f(pr, "#if defined(_MUIDL_%s_SIG) && _MUIDL_%s_SIG != %s", upl, upl, sig);
+	code_f(pr, "#error \"struct signature mismatch on %s!\"",
+		IDL_IDENT(IDL_TYPE_STRUCT(struc).ident).repo_id);
+	code_f(pr, "#elif !defined(_MUIDL_%s_SIG)", upl);
+	code_f(pr, "#define _MUIDL_%s_SIG %s", upl, sig);
+	g_free(upl);
 
-		case IDLN_TYPE_STRUCT:
-			break;
-	}
-
-	char *l = long_name(print->ns, tf->tree);
-	fprintf(of, "struct %s", l);
+	IDL_tree mems = IDL_TYPE_STRUCT(struc).member_list;
+	code_f(pr, "struct %s%s{", l, IDL_list_length(mems) > 2 ? "\n" : " ");
+	indent(pr, 1);
 	g_free(l);
 
-	const bool packed = is_packed(tf->tree);
-	fprintf(of, "\n{\n");
-	for(IDL_tree cur = IDL_TYPE_STRUCT(tf->tree).member_list;
-		cur != NULL;
-		cur = IDL_LIST(cur).next)
-	{
+	IDL_LIST_FOREACH(cur, mems) {
 		IDL_tree member = IDL_LIST(cur).data,
 			type = get_type_spec(IDL_MEMBER(member).type_spec);
 
 		char *typestr = NULL, *suffix = NULL;
 		unsigned long max_size = 0;
 		if(is_value_type(type)) {
-			typestr = value_type(print->ns, type);
+			typestr = value_type(pr->ns, type);
 		} else {
 			assert(is_rigid_type(type));
-			typestr = rigid_type(print->ns, type);
+			typestr = rigid_type(pr->ns, type);
 
 			/* and an array bound suffix, where applicable. */
 			IDL_tree bound = NULL;
@@ -951,24 +958,21 @@ static gboolean print_struct_decls(IDL_tree_func_data *tf, gpointer userdata)
 			}
 		}
 
-		for(IDL_tree dcl_node = IDL_MEMBER(member).dcls;
-			dcl_node != NULL;
-			dcl_node = IDL_LIST(dcl_node).next)
-		{
+		IDL_LIST_FOREACH(dcl_node, IDL_MEMBER(member).dcls) {
 			IDL_tree data = IDL_LIST(dcl_node).data;
 			if(IDL_NODE_TYPE(data) == IDLN_IDENT) {
 				const char *name = IDL_IDENT(data).str;
 				if(is_value_type(type)) {
-					fprintf(of, "\t%s %s;\n", typestr, name);
+					code_f(pr, "\t %s %s;", typestr, name);
 				} else if(is_rigid_type(type)) {
 					if(IDL_NODE_TYPE(type) == IDLN_TYPE_SEQUENCE) {
 						const char *t;
 						if(max_size <= 255) t = "uint8_t";
 						else if(max_size <= 65535) t = "uint16_t";
 						else t = "unsigned";
-						fprintf(of, "\t%s %s_len;\n", t, name);
+						code_f(pr, "%s %s_len;", t, name);
 					}
-					fprintf(of, "\t%s %s%s%s;\n", typestr, name,
+					code_f(pr, "%s %s%s%s;", typestr, name,
 						is_reserved_word(name) ? "_" : "",
 						suffix != NULL ? suffix : "");
 				} else {
@@ -989,7 +993,7 @@ static gboolean print_struct_decls(IDL_tree_func_data *tf, gpointer userdata)
 				{
 					NOTSUPPORTED("arrays of sequences, strings or wide strings");
 				}
-				fprintf(of, "\t%s %s%s[%ld];\n", typestr, name,
+				code_f(pr, "%s %s%s[%ld];", typestr, name,
 					is_reserved_word(name) ? "_" : "",
 					(long)IDL_INTEGER(IDL_LIST(size_list).data).value);
 			} else {
@@ -1000,9 +1004,79 @@ static gboolean print_struct_decls(IDL_tree_func_data *tf, gpointer userdata)
 		g_free(typestr);
 		g_free(suffix);
 	}
-	fprintf(of, "}%s;\n", packed ? " __attribute__((__packed__))" : "");
+	indent(pr, -1);
+	code_f(pr, "}%s;", is_packed(struc) ? " __attribute__((__packed__))" : "");
 
-	return FALSE;	/* let's not go into structures. they're silly. */
+	code_f(pr, "#endif");
+	talloc_free(talctx);
+}
+
+
+struct struct_decl_ctx {
+	struct print_ctx *pr;
+	bool first;
+	struct htable *seen;
+};
+
+
+static gboolean print_struct_decls(IDL_tree_func_data *tf, void *priv)
+{
+	struct struct_decl_ctx *ctx = priv;
+	switch(IDL_NODE_TYPE(tf->tree)) {
+		default: return FALSE;
+
+		case IDLN_LIST:
+		case IDLN_MODULE:
+		case IDLN_SRCFILE:
+		case IDLN_INTERFACE:
+			return TRUE;
+
+		case IDLN_TYPE_STRUCT: break;
+	}
+
+	IDL_tree ident = IDL_TYPE_STRUCT(tf->tree).ident;
+	size_t hash = hash_ident_repo_id(ident, NULL);
+	IDL_tree prev = htable_get(ctx->seen, hash, &cmp_ident_repo_id_str, IDL_IDENT(ident).repo_id);
+	if(prev == NULL) {
+		htable_add(ctx->seen, hash, ident);
+		if(ctx->first) {
+			ctx->first = false;
+			if(htable_count(ctx->seen) > 0) {
+				code_f(ctx->pr, "/* locally declared structs */");
+			}
+		}
+		print_struct_decl(ctx->pr, tf->tree);
+	}
+	return FALSE;
+}
+
+
+static gboolean print_composed_structs(IDL_tree_func_data *tf, void *priv)
+{
+	struct struct_decl_ctx *ctx = priv;
+	if(IDL_NODE_TYPE(tf->tree) != IDLN_TYPE_STRUCT) return TRUE;
+
+	IDL_LIST_FOREACH(cur, IDL_TYPE_STRUCT(tf->tree).member_list) {
+		IDL_tree member = IDL_LIST(cur).data,
+			type = get_type_spec(IDL_MEMBER(member).type_spec);
+		if(IDL_NODE_TYPE(type) != IDLN_TYPE_STRUCT) continue;
+		if(find_local_struct(ctx->pr, IDL_TYPE_STRUCT(type).ident) != NULL) continue;
+
+		IDL_tree m_id = IDL_TYPE_STRUCT(type).ident;
+		size_t hash = hash_ident_repo_id(m_id, NULL);
+		IDL_tree prev = htable_get(ctx->seen, hash, &cmp_ident_repo_id_str,
+			IDL_IDENT(m_id).repo_id);
+		if(prev != NULL) continue;
+		htable_add(ctx->seen, hash, m_id);
+
+		if(ctx->first) {
+			ctx->first = false;
+			code_f(ctx->pr, "/* structures declared in other IDL files */");
+		}
+		print_struct_decl(ctx->pr, type);
+	}
+
+	return TRUE;
 }
 
 
@@ -1099,25 +1173,30 @@ void print_common_header(struct print_ctx *pr)
 	};
 	print_headers(pr, hdrfiles, G_N_ELEMENTS(hdrfiles));
 
-	/* forward declaration of structs #included from other IDL files. */
-	struct forward_structs_ctx fsc = {
-		.pr = pr, .first = true,
-		.seen = HTABLE_INITIALIZER(fsc.seen, &hash_ident_repo_id, NULL),
-	};
-	IDL_tree_walk_in_order(pr->tree, &print_struct_forwards, &fsc);
-	code_f(pr, " ");
-	htable_clear(&fsc.seen);
-
 	/* constant declarations. */
 	IDL_tree_walk_in_order(pr->tree, &print_consts, pr);
 	code_f(pr, " ");
 
-	/* struct, union & enum declarations as they appear in the IDL source. this
-	 * is appropriate because IDL doesn't permit forward declaration of
-	 * structs, unions, enums, or typedefs.
+	/* local declaration of structs #included from other IDL files and used as
+	 * members of structs declared locally.
 	 */
-	IDL_tree_walk_in_order(pr->tree, &print_struct_decls, pr);
+	struct htable struc_seen = HTABLE_INITIALIZER(struc_seen, &hash_ident_repo_id, NULL);
+	struct struct_decl_ctx sdc = { .pr = pr, .first = true, .seen = &struc_seen };
+	IDL_tree_walk_in_order(pr->tree, &print_composed_structs, &sdc);
 	code_f(pr, " ");
+
+	/* struct, union & enum declarations as they appear in the IDL source. */
+	sdc.first = true;
+	IDL_tree_walk_in_order(pr->tree, &print_struct_decls, &sdc);
+	code_f(pr, " ");
+
+	/* forward declaration of structs #included from other IDL files, which
+	 * only appear as operation parameters.
+	 */
+	IDL_tree_walk_in_order(pr->tree, &print_struct_forwards,
+		&(struct forward_structs_ctx){ .pr = pr, .first = true, .seen = &struc_seen });
+	code_f(pr, " ");
+	htable_clear(&struc_seen);
 
 	/* context types and exception tag defines for the stub declarations. */
 	GLIST_FOREACH(cur, pr->ifaces) {

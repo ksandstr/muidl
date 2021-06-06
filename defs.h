@@ -603,6 +603,11 @@ extern char *return_type(
 	bool for_vtable);
 
 
+/* from signature.c */
+
+extern char *struct_signature(void *talctx, IDL_tree struct_type);
+
+
 /* from common.c */
 
 extern gboolean iter_build_common_module(IDL_tree_func_data *, void *);
