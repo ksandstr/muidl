@@ -39,6 +39,7 @@
 #include <llvm-c/BitWriter.h>
 #include <ccan/talloc/talloc.h>
 #include <ccan/darray/darray.h>
+#include <ccan/htable/htable.h>
 
 #include "defs.h"
 #include "llvmutil.h"
@@ -763,9 +764,27 @@ static char **separate_short_defines(int *argc, char *argv[])
 }
 
 
+static void *aborting_htable_alloc(struct htable *ht, size_t sz)
+{
+	void *ptr = calloc(1, sz);
+	if(ptr == NULL) {
+		fprintf(stderr, "calloc of sz=%zu failed for ht=%p\n", sz, ht);
+		abort();
+	}
+	return ptr;
+}
+
+
+static void std_htable_free(struct htable *ht, void *ptr) {
+	free(ptr);
+}
+
+
 int main(int argc, char *argv[])
 {
 	setlocale(LC_CTYPE, "");
+	htable_set_allocator(&aborting_htable_alloc, &std_htable_free);
+
 	argv = separate_short_defines(&argc, argv);
 	parse_cmdline(argc, argv);
 
