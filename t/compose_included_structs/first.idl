@@ -1,0 +1,15 @@
+
+module M
+{
+
+struct S1 {
+	long foo;
+	octet bar;
+};
+
+[StubPrefix(__first)]
+interface First {
+	void op01(in S1 foo, in long bar);
+};
+
+};

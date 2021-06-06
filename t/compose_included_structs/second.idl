@@ -1,0 +1,15 @@
+
+#include "first.idl"
+
+
+[StubPrefix(__second)]
+interface Second {
+	struct S2 {
+		M::S1 foo;
+		short bar;
+	};
+
+	void op11(in S2 foo, in long bar);
+	void op12(in M::S1 foo, in long bar);
+};
+

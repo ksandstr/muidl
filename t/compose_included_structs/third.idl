@@ -1,0 +1,13 @@
+
+module M {
+	struct S1 {
+		octet read_me;
+		unsigned short foobie_bletch;
+		long xixaxa_xoxaxa_xuxaxa;
+	};
+
+	[StubPrefix(__third)]
+	interface Third {
+		void op21(in S1 foo, in long bar);
+	};
+};
