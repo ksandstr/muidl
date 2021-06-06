@@ -237,6 +237,7 @@ char *long_name(IDL_ns ns, IDL_tree node)
 		case IDLN_TYPE_ENUM: ident = IDL_TYPE_ENUM(node).ident; break;
 		case IDLN_EXCEPT_DCL: ident = IDL_EXCEPT_DCL(node).ident; break;
 		case IDLN_CONST_DCL: ident = IDL_CONST_DCL(node).ident; break;
+		case IDLN_IDENT: ident = node; break; /* as for struct parameters */
 
 		case IDLN_OP_DCL:
 			/* FIXME: handle interface StubPrefix property! */

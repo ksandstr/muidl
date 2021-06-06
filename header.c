@@ -21,9 +21,13 @@
 #include <glib.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>
+#include <ccan/htable/htable.h>
+#include <ccan/hash/hash.h>
+#include <ccan/str/str.h>
 #include <libIDL/IDL.h>
 
 #include "defs.h"
@@ -811,6 +815,75 @@ static gboolean print_stub_protos(IDL_tree_func_data *tf, gpointer userdata)
 }
 
 
+static size_t hash_ident_repo_id(const void *ptr, void *priv) {
+	return hash_string(IDL_IDENT((IDL_tree)ptr).repo_id);
+}
+
+
+static bool cmp_ident_repo_id_str(const void *cand, void *key) {
+	return streq(IDL_IDENT((IDL_tree)cand).repo_id, (char *)key);
+}
+
+
+struct forward_structs_ctx {
+	struct print_ctx *pr;
+	struct htable seen;
+	bool first;
+};
+
+
+static gboolean find_struct_decl_by_ident(IDL_tree_func_data *tf, void *priv)
+{
+	void **param = priv;
+	if(IDL_NODE_TYPE(tf->tree) != IDLN_TYPE_STRUCT) return TRUE;
+	IDL_tree ident = IDL_TYPE_STRUCT(tf->tree).ident, want = (IDL_tree)param[0];
+	if(!streq(IDL_IDENT(want).repo_id, IDL_IDENT(ident).repo_id)) return TRUE;
+
+	*(IDL_tree *)param[1] = tf->tree;
+	return FALSE;
+}
+
+
+/* TODO: extend this to also print union and enum forwards */
+static gboolean print_struct_forwards(IDL_tree_func_data *tf, void *priv)
+{
+	struct forward_structs_ctx *ctx = priv;
+	if(IDL_NODE_TYPE(tf->tree) != IDLN_OP_DCL) return TRUE;
+
+	IDL_LIST_FOREACH(cur, IDL_OP_DCL(tf->tree).parameter_dcls) {
+		IDL_tree p = IDL_LIST(cur).data,
+			typ = get_type_spec(IDL_PARAM_DCL(p).param_type_spec);
+		if(IDL_NODE_TYPE(typ) != IDLN_TYPE_STRUCT) continue;
+
+		/* do each repo_id once */
+		IDL_tree ident = IDL_TYPE_STRUCT(typ).ident;
+		size_t hash = hash_ident_repo_id(ident, NULL);
+		IDL_tree prev = htable_get(&ctx->seen, hash, &cmp_ident_repo_id_str,
+			IDL_IDENT(ident).repo_id);
+		if(prev != NULL) continue;
+		htable_add(&ctx->seen, hash, ident);
+
+		/* determine if the structure is in fact defined in the current IDL
+		 * source, and don't forward it if true.
+		 */
+		IDL_tree struc = NULL;
+		void *param[] = { ident, &struc };
+		IDL_tree_walk_in_order(ctx->pr->tree, &find_struct_decl_by_ident, param);
+		if(struc != NULL) continue;
+
+		if(ctx->first) {
+			ctx->first = false;
+			fprintf(ctx->pr->of, "/* forwards of out-of-file structs */\n");
+		}
+		char *name = long_name(ctx->pr->ns, typ);
+		code_f(ctx->pr, "struct %s;", name);
+		g_free(name);
+	}
+
+	return TRUE;
+}
+
+
 static gboolean print_struct_decls(IDL_tree_func_data *tf, gpointer userdata)
 {
 	struct print_ctx *print = userdata;
@@ -1025,6 +1098,15 @@ void print_common_header(struct print_ctx *pr)
 		"l4/types.h",
 	};
 	print_headers(pr, hdrfiles, G_N_ELEMENTS(hdrfiles));
+
+	/* forward declaration of structs #included from other IDL files. */
+	struct forward_structs_ctx fsc = {
+		.pr = pr, .first = true,
+		.seen = HTABLE_INITIALIZER(fsc.seen, &hash_ident_repo_id, NULL),
+	};
+	IDL_tree_walk_in_order(pr->tree, &print_struct_forwards, &fsc);
+	code_f(pr, " ");
+	htable_clear(&fsc.seen);
 
 	/* constant declarations. */
 	IDL_tree_walk_in_order(pr->tree, &print_consts, pr);
