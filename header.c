@@ -783,6 +783,94 @@ static void print_iface_context_info(struct print_ctx *pr, IDL_tree iface)
 }
 
 
+struct labels_ctx {
+	struct print_ctx *pr;
+	bool first;
+};
+
+
+static gboolean print_label_walk(IDL_tree_func_data *tf, void *priv)
+{
+	switch(IDL_NODE_TYPE(tf->tree)) {
+		case IDLN_LIST: case IDLN_SRCFILE: case IDLN_MODULE: return TRUE;
+		case IDLN_INTERFACE: break;
+		default: return FALSE;
+	}
+
+	struct labels_ctx *ctx = priv;
+	struct iface_info *ifi = NULL;
+	bool first = true;
+	IDL_LIST_FOREACH(cur, IDL_INTERFACE(tf->tree).body) {
+		IDL_tree op = IDL_LIST(cur).data;
+		if(IDL_NODE_TYPE(op) != IDLN_OP_DCL) continue;
+
+		if(ifi == NULL) {
+			GLIST_FOREACH(ifcur, ctx->pr->ifaces) {
+				struct iface_info *ii = ifcur->data;
+				if(ii->node == tf->tree) {
+					ifi = ii;
+					break;
+				}
+			}
+			if(ifi == NULL) {
+				fprintf(stderr, "can't find iface_info for `%s'\n",
+					IDL_IDENT(IDL_INTERFACE(tf->tree).ident).repo_id);
+				abort();
+			}
+		}
+
+		if(first) {
+			first = false;
+			char *l = long_name(ctx->pr->ns, tf->tree), *upl = g_utf8_strup(l, -1);
+			code_f(ctx->pr, "#ifdef WANT_%s_LABELS", upl);
+			g_free(l);
+			g_free(upl);
+		}
+
+		struct method_info *mi = NULL;
+		GLIST_FOREACH(mcur, ifi->ops) {
+			struct method_info *cand = mcur->data;
+			if(cand->node == op) {
+				mi = cand;
+				break;
+			}
+		}
+		if(mi == NULL) {
+			fprintf(stderr, "can't find method_info for `%s'\n",
+				IDL_IDENT(IDL_OP_DCL(op).ident).repo_id);
+			abort();
+		}
+
+		char *l = long_name(ctx->pr->ns, op), *upl = g_utf8_strup(l, -1);
+		if(mi->request->tagmask != NO_TAGMASK) {
+			code_f(ctx->pr, "#define %s_TAGMASK %#08lx", upl,
+				(unsigned long)mi->request->tagmask);
+		}
+		code_f(ctx->pr, "#define %s_LABEL %#04x", upl, (unsigned)mi->request->label);
+		if(mi->request->sublabel != NO_SUBLABEL) {
+			code_f(ctx->pr, "#define %s_SUBLABEL %#04lx", upl,
+				(unsigned long)mi->request->sublabel);
+		}
+		g_free(l);
+		g_free(upl);
+	}
+	if(!first) {
+		code_f(ctx->pr, "#endif");
+		code_f(ctx->pr, " ");
+	}
+
+	return FALSE;
+}
+
+
+static bool print_labels(struct print_ctx *pr, IDL_tree main_file)
+{
+	struct labels_ctx ctx = { .pr = pr, .first = true };
+	IDL_tree_walk_in_order(main_file, &print_label_walk, &ctx);
+	return !ctx.first;
+}
+
+
 static gboolean print_stub_protos(IDL_tree_func_data *tf, gpointer userdata)
 {
 	struct print_ctx *pr = userdata;
@@ -1204,6 +1292,9 @@ void print_common_header(struct print_ctx *pr)
 		print_iface_context_info(pr, inf->node);
 	}
 	if(pr->ifaces != NULL) code_f(pr, " ");
+
+	/* operation labels and sublabels. */
+	if(print_labels(pr, pr->tree)) code_f(pr, " ");
 
 	/* stub prototypes. */
 	IDL_tree_walk_in_order(pr->tree, &print_stub_protos, pr);
