@@ -201,14 +201,13 @@ struct llvm_ctx
 	 * address of UTCB (pointer to ctx->wordt)
 	 */
 	LLVMValueRef utcb;
-	LLVMValueRef stritem_len_fn;
 	/* used by build_msg_decoder(); IPC receive regs */
 	LLVMValueRef mr1, mr2, tag;
 
 	/* dispatcher-specific things */
 	LLVMBasicBlockRef reply_bb, wait_bb, alloc_bb;
 	LLVMValueRef vtab_arg, reply_tag, errval_phi;
-	LLVMValueRef tpos, tmax, from;
+	LLVMValueRef tpos, tmax, from, tpos_mem;
 	LLVMValueRef supp_ctx_ptr;
 
 	/* stub-specific things */

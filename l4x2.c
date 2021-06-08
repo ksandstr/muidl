@@ -18,6 +18,8 @@
  * along with µiX.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <llvm-c/Core.h>
 
 #include "defs.h"
@@ -31,58 +33,58 @@ LLVMValueRef build_utcb_get(struct llvm_ctx *ctx)
 	LLVMValueRef func = LLVMConstInlineAsm(fntype, "movl %gs:0,$0\n",
 			"=r,~{dirflag},~{fpsr},~{flags}", 0, 0);
 	LLVMValueRef call = LLVMBuildCall(ctx->builder, func, NULL, 0, "utcbget");
-	LLVMSetTailCall(call, 1);
 	return LLVMBuildIntToPtr(ctx->builder, call,
 		LLVMPointerType(ctx->wordt, 0), "utcb.wordp");
 }
 
 
-LLVMValueRef build_l4_ipc_call(
-	struct llvm_ctx *ctx,
-	LLVMValueRef arg_to,
-	LLVMValueRef arg_timeouts,
-	LLVMValueRef arg_fromspec,
-	LLVMValueRef arg_mr0,
-	LLVMValueRef *from_p,
-	LLVMValueRef *mr1_p,
-	LLVMValueRef *mr2_p)
+LLVMValueRef build_l4_ipc_call(struct llvm_ctx *ctx,
+	V arg_to, V arg_timeouts, V arg_fromspec, V arg_mr0,
+	V *from_p, V *mr1_p, V *mr2_p)
 {
-	LLVMTypeRef params[5];
-	for(int i=0; i<5; i++) params[i] = ctx->wordt;
-	LLVMTypeRef ipc_result_type = LLVMStructTypeInContext(ctx->ctx,
-		params, 4, 0);
-	LLVMTypeRef ipc_type = LLVMFunctionType(ipc_result_type,
-		params, 5, 0);
-	LLVMValueRef fn = LLVMConstInlineAsm(ipc_type,
-		/* NOTE: this compensates against LLVM 3.3's inability to save %ebp
-		 * over an asm statement. clearly a bug, but w/e.
-		 *
-		 * it's been around since at least LLVM 3.2.
-		 */
+	T params[5];
+	for(int i=0; i < G_N_ELEMENTS(params); i++) params[i] = ctx->wordt;
+	T ipc_result_type = LLVMStructTypeInContext(ctx->ctx, params, 5, 0),
+		ipc_type = LLVMFunctionType(ipc_result_type, params, 5, 0);
+	/* protect %ebp because LLVM won't. how come something like this persists
+	 * for over a decade anyway?
+	 */
+	char *asmstr =
 		"  pushl %ebp\n"
 		"\tcall __L4_Ipc\n"
 		"\tmovl %ebp, %ecx\n"
-		"\tpopl %ebp\n",
-		"={ax},={si},={bx},={cx},{ax},{cx},{dx},{si},{di},~{dirflag},~{fpsr},~{flags}",
-		1, 0);
-	LLVMValueRef args[5] = {
-		arg_to, arg_timeouts, arg_fromspec, arg_mr0,
-		LLVMBuildPtrToInt(ctx->builder, ctx->utcb, ctx->wordt,
-			"l4ipc.utcb"),
-	};
-	LLVMValueRef result = LLVMBuildCall(ctx->builder, fn, args, 5, "l4ipc");
-	LLVMSetTailCall(result, 1);
+		"\tpopl %ebp\n";
+	/* (we disregard the UTCB output value from Ipc, because it radically
+	 * breaks the compiler somehow somewhere. instead LLVM will reload UTCB,
+	 * leaving a spot to optimize for a few cycles' worth.)
+	 */
+	char *constraint = "={eax},={esi},={ebx},={ecx},={edi}"
+		",{eax},{ecx},{edx},{esi},{edi}"
+		",~{dirflag},~{fpsr},~{flags},~{memory}";
+	V fn = LLVMGetInlineAsm(ipc_type, asmstr, strlen(asmstr),
+			constraint, strlen(constraint), 1, 0, LLVMInlineAsmDialectATT),
+		args[5] = {
+			arg_to, arg_timeouts, arg_fromspec, arg_mr0,
+			LLVMBuildPtrToInt(ctx->builder, ctx->utcb, ctx->wordt, "ipc.utcb.in"),
+		},
+		result = LLVMBuildCall(ctx->builder, fn, args, 5, "ipc.result");
 
 	if(from_p != NULL) {
-		*from_p = LLVMBuildExtractValue(ctx->builder, result, 0, "from");
+		*from_p = LLVMBuildExtractValue(ctx->builder, result, 0, "ipc.from.out");
 	}
 	if(mr1_p != NULL) {
-		*mr1_p = LLVMBuildExtractValue(ctx->builder, result, 2, "mr1");
+		*mr1_p = LLVMBuildExtractValue(ctx->builder, result, 2, "ipc.mr1.out");
 	}
 	if(mr2_p != NULL) {
-		*mr2_p = LLVMBuildExtractValue(ctx->builder, result, 3, "mr2");
+		*mr2_p = LLVMBuildExtractValue(ctx->builder, result, 3, "ipc.mr2.out");
 	}
-	return LLVMBuildExtractValue(ctx->builder, result, 1, "mr0");
+#if 0
+	/* re-enabling this smegfaults the compiler. so don't do that. it should
+	 * work but doesn't.
+	 */
+	ctx->utcb = LLVMBuildExtractValue(ctx->builder, result, 4, "ipc.utcb.out");
+#endif
+	return LLVMBuildExtractValue(ctx->builder, result, 1, "ipc.mr0.out");
 }
 
 
@@ -160,127 +162,26 @@ void build_mapgrant_item(
 
 static LLVMValueRef get_stritem_len_fn(struct llvm_ctx *ctx)
 {
-	if(ctx->stritem_len_fn != NULL) return ctx->stritem_len_fn;
-
-	/* returns (i32 len, i32 new_tpos)
-	 * params (word *utcbptr, i32 tpos)
-	 *
-	 * when return value "new_tpos" > tmax + 1, the result is invalid. the function
-	 * should also not be called when tpos > tmax + 1.
-	 */
-	LLVMTypeRef ret_types[2] = { ctx->i32t, ctx->i32t },
-		parm_types[2] = { LLVMPointerType(ctx->wordt, 0), ctx->i32t },
-		ret_type = LLVMStructTypeInContext(ctx->ctx, ret_types, 2, 0),
-		fn_type = LLVMFunctionType(ret_type, parm_types, 2, 0);
-	LLVMValueRef fn = LLVMAddFunction(ctx->module, "__muidl_get_stritem_len",
-		fn_type);
-	LLVMSetVisibility(fn, LLVMHiddenVisibility);
-	LLVMSetLinkage(fn, LLVMInternalLinkage);
-	LLVMAddAttributeAtIndex(fn, 0, llvm_attr(ctx, "nocapture"));
-	A inreg = llvm_attr(ctx, "inreg");
-	for(int i=0; i<2; i++) LLVMAddAttributeAtIndex(fn, i, inreg);
-	ctx->stritem_len_fn = fn;
-
-	LLVMBuilderRef old_builder = ctx->builder;
-	ctx->builder = LLVMCreateBuilderInContext(ctx->ctx);
-	LLVMBasicBlockRef entry_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn,
-			"EntryBlock"),
-		loop_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "loop"),
-		valid_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "valid"),
-		exit_bb = LLVMAppendBasicBlockInContext(ctx->ctx, fn, "exit");
-
-	LLVMPositionBuilderAtEnd(ctx->builder, entry_bb);
-	LLVMValueRef old_utcb = ctx->utcb, old_tpos = ctx->tpos;
-	V fn_args[2];
-	LLVMGetParams(fn, fn_args);
-	ctx->utcb = fn_args[0];
-	ctx->tpos = fn_args[1];
-	LLVMBuildBr(ctx->builder, loop_bb);
-
-	LLVMPositionBuilderAtEnd(ctx->builder, exit_bb);
-	LLVMValueRef exit_len_phi = LLVMBuildPhi(ctx->builder, ctx->i32t,
-			"exit.len.phi"),
-		exit_tpos_phi = LLVMBuildPhi(ctx->builder, ctx->i32t,
-			"exit.tpos.phi");
-	LLVMValueRef rvals[2] = { exit_len_phi, exit_tpos_phi };
-	LLVMBuildAggregateRet(ctx->builder, rvals, 2);
-
-	LLVMPositionBuilderAtEnd(ctx->builder, loop_bb);
-	LLVMValueRef len_phi = LLVMBuildPhi(ctx->builder, ctx->i32t, "len.phi"),
-		tpos_phi = LLVMBuildPhi(ctx->builder, ctx->i32t, "tpos.phi");
-	LLVMAddIncoming(len_phi, &ctx->zero, &entry_bb, 1);
-	LLVMAddIncoming(tpos_phi, &ctx->tpos, &entry_bb, 1);
-	ctx->tpos = tpos_phi;
-	/* test: if *tpos doesn't look like a string item, conk out. */
-	LLVMValueRef infoword = build_utcb_load(ctx, ctx->tpos, "si.info");
-	LLVMValueRef is_cond = LLVMBuildICmp(ctx->builder, LLVMIntEQ,
-		ctx->zero, LLVMBuildAnd(ctx->builder, infoword,
-			CONST_WORD(1 << 4), "infoword.si.mask"),
-		"infoword.si.cond");
-	/* anything + 100 is sure to be > tmax + 1. */
-	LLVMValueRef fucked_tpos = LLVMBuildAdd(ctx->builder, tpos_phi,
-		CONST_INT(100), "fucked.tpos");
-	branch_set_phi(ctx, exit_len_phi, len_phi);
-	branch_set_phi(ctx, exit_tpos_phi, fucked_tpos);
-	LLVMBuildCondBr(ctx->builder, is_cond, valid_bb, exit_bb);
-
-	LLVMPositionBuilderAtEnd(ctx->builder, valid_bb);
-	LLVMValueRef string_length = LLVMBuildTruncOrBitCast(ctx->builder,
-			LLVMBuildLShr(ctx->builder, infoword,
-				CONST_INT(10), "si.info.len"),
-			ctx->i32t, "si.info.len.int"),
-		string_j = LLVMBuildTruncOrBitCast(ctx->builder,
-			LLVMBuildAnd(ctx->builder, CONST_WORD(0x1f),
-				LLVMBuildLShr(ctx->builder, infoword, CONST_WORD(4),
-					"si.info.j.shift"),
-				"si.info.j.masked"),
-			ctx->i32t, "si.info.j"),
-		string_c = LLVMBuildTruncOrBitCast(ctx->builder,
-			LLVMBuildAnd(ctx->builder, CONST_WORD(1 << 9),
-				infoword, "si.info.c.masked"),
-			ctx->i32t, "si.info.c.masked.int"),
-		c_cond = LLVMBuildICmp(ctx->builder, LLVMIntNE,
-			string_c, CONST_WORD(0), "si.info.c.cond"),
-		new_len = LLVMBuildAdd(ctx->builder, len_phi,
-			LLVMBuildMul(ctx->builder, string_length,
-				LLVMBuildAdd(ctx->builder, string_j,
-					CONST_INT(1), "j.plus.one"),
-				"len.incr"),
-			"len.new"),
-		new_tpos = LLVMBuildAdd(ctx->builder, ctx->tpos,
-			LLVMBuildSelect(ctx->builder, c_cond,
-				LLVMBuildAdd(ctx->builder, CONST_INT(2),
-					string_j, "cont.tpos.bump"),
-				CONST_INT(2), "tpos.bump"),
-			"tpos.new");
-	LLVMAddIncoming(len_phi, &new_len, &valid_bb, 1);
-	LLVMAddIncoming(tpos_phi, &new_tpos, &valid_bb, 1);
-	LLVMAddIncoming(exit_len_phi, &new_len, &valid_bb, 1);
-	LLVMAddIncoming(exit_tpos_phi, &new_tpos, &valid_bb, 1);
-	LLVMBuildCondBr(ctx->builder, c_cond, loop_bb, exit_bb);
-
-	LLVMDisposeBuilder(ctx->builder);
-	ctx->builder = old_builder;
-	ctx->utcb = old_utcb;
-	ctx->tpos = old_tpos;
-
-	return ctx->stritem_len_fn;
+	V fn = LLVMGetNamedFunction(ctx->module, "__muidl_get_stritem_len");
+	if(fn == NULL) {
+		T types[] = { ctx->voidptrt, LLVMPointerType(ctx->i32t, 0) },
+			fntype = LLVMFunctionType(ctx->i32t, types, 2, 0);
+		fn = LLVMAddFunction(ctx->module, "__muidl_get_stritem_len", fntype);
+	}
+	return fn;
 }
 
 
 LLVMValueRef build_recv_stritem_len(
-	struct llvm_ctx *ctx,
-	LLVMValueRef *nullpos_p,
-	LLVMValueRef tpos)
+	struct llvm_ctx *ctx, LLVMValueRef *nullpos_p, LLVMValueRef tpos)
 {
-	LLVMValueRef args[2] = { ctx->utcb, tpos };
-	LLVMValueRef agg = LLVMBuildCall(ctx->builder,
-		get_stritem_len_fn(ctx), args, 2, "stritemlen.rval");
-	LLVMSetTailCall(agg, 1);
-	*nullpos_p = LLVMBuildExtractValue(ctx->builder, agg, 0,
-		"stritemlen.rval.len");
-	return LLVMBuildExtractValue(ctx->builder, agg, 1,
-		"stritemlen.rval.new.tpos");
+	if(ctx->tpos_mem == NULL) {
+		ctx->tpos_mem = build_local_storage(ctx, ctx->i32t, NULL, "tpos.mem");
+	}
+	LLVMBuildStore(ctx->builder, tpos, ctx->tpos_mem);
+	V args[2] = { LLVMBuildPointerCast(ctx->builder, ctx->utcb, ctx->voidptrt, "utcb.voidp"), ctx->tpos_mem };
+	*nullpos_p = LLVMBuildCall(ctx->builder, get_stritem_len_fn(ctx), args, 2, "stritemlen.rval");
+	return LLVMBuildLoad(ctx->builder, ctx->tpos_mem, "tpos.new");
 }
 
 

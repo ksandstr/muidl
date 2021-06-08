@@ -515,7 +515,6 @@ static LLVMModuleRef make_llvm_module(
 	/* reset per-module context things. */
 	strmap_iterate(&ctx->struct_decoder_fns, &free_sdf_key, NULL);
 	strmap_clear(&ctx->struct_decoder_fns);
-	ctx->stritem_len_fn = NULL;
 	assert(ctx->malloc_ptrs == NULL);
 
 	if(iface_fn != NULL) {

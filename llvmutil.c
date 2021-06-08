@@ -132,6 +132,8 @@ LLVMBasicBlockRef begin_function(struct llvm_ctx *ctx, LLVMValueRef fn)
 	ctx->alloc_bb = entry_bb;
 	assert(ctx->malloc_ptrs == NULL);
 
+	ctx->tpos_mem = NULL;
+
 	return entry_bb;
 }
 
