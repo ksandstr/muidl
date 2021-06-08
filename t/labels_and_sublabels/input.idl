@@ -1,0 +1,22 @@
+
+#include "header.idl"
+
+module M {
+
+/* no ifacelabel. */
+interface I1 {
+	[Label(0xf00f)]
+	void foof(in long a, in short b);
+};
+
+[IfaceLabel(0xb00b)]
+interface I2 {
+	/* no label. */
+	void yffy(in short a, in long b);
+	void uggu(in short a, in long b);
+
+	[Label(0xabcd)]
+	void kddk(in long a, in short b);
+};
+
+};

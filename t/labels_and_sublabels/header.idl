@@ -1,0 +1,7 @@
+module M {
+	[IfaceLabel(0xbead)]
+	interface I666 {
+		[Label(0x601f)]
+		void fore(in long x, in short y);
+	};
+};
