@@ -21,20 +21,21 @@ suit you. Also, `apt-get install`
 on Devuan GNU/Linux and compatible Debian derivatives. Note that µIDL is
 currently only compatible with LLVM version 11.
 
-The unit test framework requires the following Perl modules on the build
-system:
-
-    File::Temp Test::More Test::Harness
-
 After that, use the Makefile with the appropriate program.
+
+The test suite requires a copy of the `mung` microkernel's source tree in
+`../mung` for the `<l4/types.h>` header file. With tweaks to
+`perl5/Muidl/Test.pm` it should be possible to use e.g. L4Ka::Pistachio's
+headers instead.
 
 
 Health warning
 --------------
 
-The code is an unwholesomely Lovecraftian mess. This is related to a lack of
+The code is an unwholesomely Lovecraftian mess. This comes from a lack of
 proper testing and specification throughout development, and a good bit of
-simple code rot. (who uses GLib anymore anyway.)
+simple code rot. (who uses GLib anymore anyway.) It's getting better, but
+won't be properly nice anytime soon.
 
 
   -- Kalle A. Sandström <ksandstr@iki.fi>
