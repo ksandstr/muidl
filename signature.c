@@ -98,6 +98,6 @@ char *struct_signature(void *talctx, IDL_tree struct_type)
 	/* TODO: use a cryptographically strong hash here, such as siphash or
 	 * sha256, and return a set of strings.
 	 */
-	return talloc_asprintf(talctx, "%#llxull",
+	return talloc_asprintf(talctx, "%#" PRIx64 "ull",
 		hash64_stable(ss, strlen(ss), 0xdeadbeef01234567ull));
 }
