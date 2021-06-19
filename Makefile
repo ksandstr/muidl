@@ -60,8 +60,10 @@ libIDL/.libs/libIDL-2.a libIDL/include/libIDL/IDL.h:
 	+@make -C libIDL
 
 
-tags: $(wildcard *.[ch]) $(wildcard libIDL/*.[ch])
-	@ctags -R *
+tags: $(shell find . -iname \*.[ch] -print) $(shell find . -iname \*.p[ml] -print)
+	@ctags --exclude=Makefile\* --exclude=configure\* \
+		--exclude=libtool\* --exclude=\*.in --exclude=\*.m4 \
+		-R .
 
 
 .deps:
