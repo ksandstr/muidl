@@ -230,6 +230,10 @@ static LLVMValueRef build_stub_receive_strings(
 		V si_words[2];
 		V lenword = si->lenptr == NULL ? CONST_WORD(si->length)
 			: LLVMBuildLoad(ctx->builder, si->lenptr, "lenword.val");
+		if(IDL_NODE_TYPE(si->param->type) == IDLN_TYPE_SEQUENCE) {
+			int bs = size_in_bits(SEQ_SUBTYPE(si->param->type));
+			lenword = LLVMBuildMul(ctx->builder, lenword, CONST_UINT(bs / 8), "lenword.mult");
+		}
 		build_simple_string_item(ctx, si_words, si->memptr, lenword, NULL);
 		if(si[1].length >= 0) {
 			/* we're not the last; set the C bit. */
